@@ -19,6 +19,14 @@ Users create avatars, move through rooms, chat in real time, and interact with w
 - Database: PostgreSQL (Docker Compose)
 - Testing: Vitest (JS), pytest (Python)
 
+## Documentation
+
+Detailed, split documentation is available in:
+
+- [docs/README.md](docs/README.md)
+
+That index routes to feature-level and functionality-level documents, including architecture and runtime diagrams.
+
 ## Repository Structure
 
 ```text
