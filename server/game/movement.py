@@ -64,7 +64,7 @@ def move_toward(current: dict[str, float], target: dict[str, float], step: float
             "x": current["x"] + (target["x"] - current["x"]) * ratio,
             "y": current["y"] + (target["y"] - current["y"]) * ratio,
         }
-    return resolve_collision(current, clamp_position(desired))
+    return resolve_collision(current, desired)
 
 
 def move_by_direction(current: dict[str, float], direction: dict[str, float], step: float) -> dict[str, float]:
@@ -75,11 +75,10 @@ def move_by_direction(current: dict[str, float], direction: dict[str, float], st
         return {"x": current["x"], "y": current["y"]}
     norm_x = dx / length
     norm_y = dy / length
-    desired = clamp_position({
+    return resolve_collision(current, {
         "x": current["x"] + norm_x * step,
         "y": current["y"] + norm_y * step,
     })
-    return resolve_collision(current, desired)
 
 
 def clamp_position(pos: dict[str, float]) -> dict[str, float]:

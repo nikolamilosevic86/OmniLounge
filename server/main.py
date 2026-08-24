@@ -20,12 +20,13 @@ from server.game.combat import (
 from server.game.ai_bot import AIBot, BOT_ID, BOT_AVATAR
 from server.game.movement import move_by_direction, move_toward
 from server.game.room import Room
+from server.game.rooms_registry import RoomsRegistry
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 
 sio     = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 db      = Database()
-lobby   = Room("lobby")
+rooms   = RoomsRegistry()
 ai_bot  = AIBot()
 _game_loop_task: asyncio.Task | None = None
 
@@ -45,6 +46,9 @@ def player_payload(player: dict) -> dict:
 
 
 def all_players_payload() -> list[dict]:
+    lobby = rooms.get_room("lobby")
+    if not lobby:
+        return []
     return [player_payload(p) for p in lobby.get_all_players()]
 
 
@@ -53,6 +57,9 @@ async def broadcast_room_state() -> None:
 
 
 async def broadcast_bubbles() -> None:
+    lobby = rooms.get_room("lobby")
+    if not lobby:
+        return
     for player in lobby.get_all_players():
         bubbles = lobby.get_active_bubbles(player["id"])
         await sio.emit("chat:bubbles", bubbles, room=player["id"])
@@ -68,6 +75,10 @@ async def game_loop() -> None:
         delta_ms = (now - last_time) * 1000
         last_time = now
         moved = False
+
+        lobby = rooms.get_room("lobby")
+        if not lobby:
+            continue
 
         for player in lobby.get_all_players():
             # Regen stamina for everyone
@@ -143,6 +154,8 @@ async def lifespan(app: FastAPI):
     global _game_loop_task
     await db.connect()
     # Spawn AI fighter on the right side of the lounge
+    lobby = rooms.get_room("lobby")
+    assert lobby is not None
     bot = lobby.add_player(BOT_ID, BOT_AVATAR)
     bot['position'] = {'x': 620.0, 'y': 400.0}
     _game_loop_task = asyncio.create_task(game_loop())
@@ -179,7 +192,7 @@ async def connect(sid, environ):
 
 @sio.event
 async def disconnect(sid):
-    lobby.remove_player(sid)
+    rooms.leave_current_room(sid)
     await sio.emit("player:left", {"id": sid})
 
 
@@ -191,7 +204,13 @@ async def player_join(sid, data):
         return
 
     await db.save_avatar(avatar)
-    player = lobby.add_player(sid, avatar)
+    player = rooms.join_room(sid, avatar, "lobby")
+    if not player:
+        await sio.emit("error", {"message": "Failed to join lobby"}, room=sid)
+        return
+
+    lobby = rooms.get_room("lobby")
+    assert lobby is not None
 
     await sio.emit(
         "player:joined",
@@ -215,7 +234,11 @@ async def player_join(sid, data):
 
 @sio.on("player:move")
 async def player_move(sid, data):
-    player = lobby.set_player_target(sid, {"x": data["x"], "y": data["y"]})
+    room_id = rooms.get_player_room_id(sid) or "lobby"
+    room = rooms.get_room(room_id)
+    if not room:
+        return
+    player = room.set_player_target(sid, {"x": data["x"], "y": data["y"]})
     if player:
         await sio.emit(
             "player:moving",
@@ -230,7 +253,12 @@ async def player_action(sid, data):
     target = data.get("target")             # { x, y } anchor position
     teleport = data.get("teleport", False)  # bypass collision (e.g. climb)
 
-    player = lobby.get_player(sid)
+    room_id = rooms.get_player_room_id(sid) or "lobby"
+    room = rooms.get_room(room_id)
+    if not room:
+        return
+
+    player = room.get_player(sid)
     if not player:
         return
 
@@ -244,7 +272,7 @@ async def player_action(sid, data):
         player["pendingAction"] = None
     elif target:
         # Walk to anchor, then activate action on arrival
-        lobby.set_player_target(sid, target, clear_action=False)
+        room.set_player_target(sid, target, clear_action=False)
         player["actionState"] = None
         player["pendingAction"] = action_state
     else:
@@ -257,7 +285,12 @@ async def player_action(sid, data):
 
 @sio.on("player:direction")
 async def player_direction(sid, data):
-    player = lobby.set_player_direction(
+    room_id = rooms.get_player_room_id(sid) or "lobby"
+    room = rooms.get_room(room_id)
+    if not room:
+        return
+
+    player = room.set_player_direction(
         sid,
         {"x": data.get("x", 0), "y": data.get("y", 0)},
     )
@@ -270,7 +303,12 @@ async def player_direction(sid, data):
 
 @sio.on("chat:send")
 async def chat_send(sid, data):
-    player = lobby.get_player(sid)
+    room_id = rooms.get_player_room_id(sid) or "lobby"
+    room = rooms.get_room(room_id)
+    if not room:
+        return
+
+    player = room.get_player(sid)
     if not player:
         return
 
@@ -289,8 +327,8 @@ async def chat_send(sid, data):
         recipient_id=recipient_id,
     )
 
-    lobby.add_message(message)
-    await db.save_message(message, "lobby")
+    room.add_message(message)
+    await db.save_message(message, room_id)
 
     if message["type"] == "public":
         await sio.emit("chat:message", message)
@@ -305,7 +343,12 @@ async def chat_send(sid, data):
 @sio.on("combat:attack")
 async def combat_attack(sid, data):
     now_ms   = time.time() * 1000
-    attacker = lobby.get_player(sid)
+    room_id = rooms.get_player_room_id(sid) or "lobby"
+    room = rooms.get_room(room_id)
+    if not room:
+        return
+
+    attacker = room.get_player(sid)
     if not attacker:
         return
 
@@ -318,7 +361,7 @@ async def combat_attack(sid, data):
     if attack_type not in ATTACK_TYPES:
         return
 
-    target = lobby.get_player(target_id)
+    target = room.get_player(target_id)
     if not target:
         return
 
@@ -362,9 +405,64 @@ async def combat_attack(sid, data):
 
 @sio.on("combat:block")
 async def combat_block(sid, data):
-    player = lobby.get_player(sid)
+    room_id = rooms.get_player_room_id(sid) or "lobby"
+    room = rooms.get_room(room_id)
+    if not room:
+        return
+
+    player = room.get_player(sid)
     if player:
         player["blocking"] = bool(data.get("blocking", False))
+
+
+@sio.on("room:list")
+async def room_list(sid):
+    await sio.emit("room:list", {"rooms": rooms.list_rooms()}, room=sid)
+
+
+@sio.on("room:create")
+async def room_create(sid, data):
+    room_name = (data.get("name") or "").strip()
+    if not room_name:
+        await sio.emit("error", {"message": "Room name is required"}, room=sid)
+        return
+
+    topic_tags = data.get("topicTags") or []
+    access = data.get("access", "public")
+    max_users = int(data.get("maxUsers", 30))
+    room = rooms.create_room(
+        host_id=sid,
+        name=room_name,
+        topic_tags=topic_tags,
+        access=access,
+        max_users=max_users,
+    )
+    await sio.emit("room:created", room, room=sid)
+    await sio.emit("room:list", {"rooms": rooms.list_rooms()})
+
+
+@sio.on("room:join")
+async def room_join(sid, data):
+    room_id = data.get("roomId")
+    if not room_id:
+        await sio.emit("error", {"message": "roomId is required"}, room=sid)
+        return
+
+    current_room_id = rooms.get_player_room_id(sid)
+    current_room = rooms.get_room(current_room_id) if current_room_id else None
+    player = current_room.get_player(sid) if current_room else None
+    if not player:
+        await sio.emit("error", {"message": "Join the app before joining rooms"}, room=sid)
+        return
+
+    avatar = player["avatar"]
+    joined = rooms.join_room(sid, avatar, room_id)
+    if not joined:
+        await sio.emit("error", {"message": "Room not found"}, room=sid)
+        return
+
+    await sio.emit("room:joined", {"roomId": room_id}, room=sid)
+    await sio.emit("room:list", {"rooms": rooms.list_rooms()})
 
 
 socket_app = socketio.ASGIApp(sio, app)

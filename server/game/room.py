@@ -73,11 +73,9 @@ class Room:
             "y": direction.get("y", 0),
         }
         if direction.get("x", 0) != 0 or direction.get("y", 0) != 0:
+            player["targetPosition"] = None
             player["actionState"] = None
             player["pendingAction"] = None
-        return player
-        if player["direction"]["x"] != 0 or player["direction"]["y"] != 0:
-            player["targetPosition"] = None
         return player
 
     def add_message(self, message: dict[str, Any]) -> None:
