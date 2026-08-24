@@ -1,0 +1,27 @@
+{
+  "name": "hobboverse",
+  "version": "1.0.0",
+  "description": "A Habbo Hotel-inspired metaverse browser game",
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:js && npm run test:python",
+    "test:js": "vitest run",
+    "test:python": "pytest",
+    "test:watch": "vitest",
+    "dev": "concurrently \"npm run dev:db\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:db": "docker compose up -d",
+    "dev:server": "python3 -m server.main",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "python3 -m server.main"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "jsdom": "^25.0.1",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}

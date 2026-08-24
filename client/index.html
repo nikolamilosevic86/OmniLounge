@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hobboverse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="creator-screen" class="screen active">
+      <div class="stars"></div>
+      <div class="creator-container">
+        <header class="creator-header">
+          <div class="logo-badge">✦ HOBBOVERSE</div>
+          <h1>Hobboverse</h1>
+          <p class="subtitle">Design your character · Explore the lounge · Chat with friends</p>
+        </header>
+
+        <div class="creator-body">
+          <div class="avatar-preview-panel">
+            <div class="preview-stage">
+              <div class="preview-glow"></div>
+              <div id="avatar-preview" class="avatar-preview"></div>
+            </div>
+            <input type="text" id="username-input" class="username-input" placeholder="Choose your name..." maxlength="16" />
+          </div>
+
+          <div class="customization-panel">
+            <div class="option-group">
+              <label><span class="label-icon">🎨</span> Skin Color</label>
+              <div id="skin-colors" class="color-swatches"></div>
+            </div>
+            <div class="option-group">
+              <label><span class="label-icon">💇</span> Hair</label>
+              <div id="hair-options" class="option-buttons"></div>
+            </div>
+            <div class="option-group">
+              <label><span class="label-icon">🧔</span> Beard</label>
+              <div id="beard-options" class="option-buttons"></div>
+            </div>
+            <div class="option-group">
+              <label><span class="label-icon">👓</span> Glasses</label>
+              <div id="glasses-options" class="option-buttons"></div>
+            </div>
+            <div class="option-group">
+              <label><span class="label-icon">👕</span> Clothes</label>
+              <div id="clothes-options" class="option-buttons"></div>
+            </div>
+            <div class="option-group">
+              <label><span class="label-icon">🎒</span> Accessory</label>
+              <div id="accessory-options" class="option-buttons"></div>
+            </div>
+          </div>
+        </div>
+
+        <button id="enter-room-btn" class="enter-btn" disabled>
+          <span>Enter the Lounge</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="game-screen" class="screen">
+      <div class="game-layout">
+        <div class="room-container">
+          <div class="room-frame">
+            <canvas id="room-canvas" width="800" height="600"></canvas>
+            <div id="players-layer" class="players-layer"></div>
+          </div>
+
+          <div class="room-hud">
+            <div class="hud-pill online-pill">
+              <span class="pulse-dot"></span>
+              <span id="online-count">0 online</span>
+            </div>
+            <div class="hud-pill controls-pill">
+              <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · click to walk
+            </div>
+            <div class="hud-pill controls-pill">
+              <kbd>SPACE</kbd> punch · <kbd>CTRL</kbd> kick · <kbd>B</kbd> block
+            </div>
+          </div>
+        </div>
+
+        <aside class="chat-panel">
+          <div class="chat-header">
+            <div class="chat-title">
+              <span class="chat-icon">💬</span>
+              <h2>Lounge Chat</h2>
+            </div>
+            <div class="chat-mode-toggle">
+              <button id="mode-public" class="mode-btn active" data-mode="public">🌍 Public</button>
+              <button id="mode-private" class="mode-btn" data-mode="private">🔒 Private</button>
+            </div>
+          </div>
+
+          <div id="recipient-select" class="recipient-select hidden">
+            <label>Message to:</label>
+            <select id="recipient-dropdown">
+              <option value="">Select player...</option>
+            </select>
+          </div>
+
+          <div id="chat-messages" class="chat-messages"></div>
+
+          <form id="chat-form" class="chat-form">
+            <input type="text" id="chat-input" placeholder="Say something..." maxlength="200" autocomplete="off" />
+            <button type="submit" class="send-btn" aria-label="Send">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+          </form>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
