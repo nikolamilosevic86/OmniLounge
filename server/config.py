@@ -2,7 +2,7 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://hobboverse:hobboverse@localhost:5432/hobboverse",
+    "postgresql://omnilaunge:omnilaunge@localhost:5432/omnilaunge",
 )
 PORT = int(os.getenv("PORT", "8000"))
 MOVE_SPEED = float(os.getenv("MOVE_SPEED", "4"))

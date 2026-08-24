@@ -256,7 +256,7 @@ function drawNeonSign(ctx, x, y) {
   ctx.shadowColor = 'rgba(192,132,252,0.6)';
   ctx.shadowBlur = 12 * pulse;
   ctx.fillStyle = `rgba(230,210,255,${0.78 + 0.14 * pulse})`;
-  ctx.fillText('✦ HOBBOVERSE ✦', x, y);
+  ctx.fillText('✦ OMNILAUNGE ✦', x, y);
   ctx.shadowBlur = 0;
 }
 

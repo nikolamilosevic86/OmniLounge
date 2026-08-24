@@ -1,7 +1,7 @@
 # Educational Room Builder and Story World Feature Design
 
 ## 1. Product Intent
-This feature set turns Hobboverse into an educational world-building platform where users can:
+This feature set turns OmniLaunge into an educational world-building platform where users can:
 - Create an avatar and identity.
 - Join live rooms created by others.
 - Create custom, multi-screen educational spaces.
@@ -477,7 +477,7 @@ Safety and UX requirements for advanced mode:
 
 ## 23. Follow-Up Questions to Finalize the Spec
 1. Should generative mode be available to all creators, or only verified/approved creators?
-2. Do you want API keys stored in Hobboverse backend (encrypted secrets), or entered per session and never stored?
+2. Do you want API keys stored in OmniLaunge backend (encrypted secrets), or entered per session and never stored?
 3. Should knowledge base be room-level shared data, character-level isolated data, or both?
 4. For the 5x5 limit, should every room start at 1x1 and expand manually, or choose initial size upfront?
 5. In depth-first builder V1, which advanced controls are mandatory at launch: layering, collision zones, scripted triggers, or timeline sequencing?

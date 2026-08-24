@@ -1,6 +1,6 @@
-# Hobboverse
+# OmniLaunge
 
-Hobboverse is a real-time virtual lounge app inspired by social metaverse spaces.
+OmniLaunge is a real-time virtual lounge app inspired by social metaverse spaces.
 Users create avatars, move through rooms, chat in real time, and interact with world objects.
 
 ## What You Can Do
@@ -113,9 +113,9 @@ npm start
 ## Environment Notes
 
 - Default PostgreSQL credentials are defined in `docker-compose.yml`:
-	- User: `hobboverse`
-	- Password: `hobboverse`
-	- Database: `hobboverse`
+	- User: `omnilaunge`
+	- Password: `omnilaunge`
+	- Database: `omnilaunge`
 - Backend DB connection can be overridden via `DATABASE_URL`.
 
 ## Gameplay Controls

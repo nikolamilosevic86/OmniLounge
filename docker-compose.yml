@@ -1,29 +1,29 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: hobboverse-db
+    container_name: omnilaunge-db
     environment:
-      POSTGRES_USER: hobboverse
-      POSTGRES_PASSWORD: hobboverse
-      POSTGRES_DB: hobboverse
+      POSTGRES_USER: omnilaunge
+      POSTGRES_PASSWORD: omnilaunge
+      POSTGRES_DB: omnilaunge
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./server/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hobboverse -d hobboverse"]
+      test: ["CMD-SHELL", "pg_isready -U omnilaunge -d omnilaunge"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   server:
     build: .
-    container_name: hobboverse-server
+    container_name: omnilaunge-server
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://hobboverse:hobboverse@postgres:5432/hobboverse
+      DATABASE_URL: postgresql://omnilaunge:omnilaunge@postgres:5432/omnilaunge
       PORT: "8000"
     depends_on:
       postgres:
