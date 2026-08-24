@@ -25,3 +25,5 @@ The third path is for quality and operations work. Read [07-testing-operations-a
 ## Scope Note
 
 These docs describe the currently implemented OmniLaunge runtime and also clarify boundaries between implemented behavior and roadmap design artifacts. For future educational world-builder expansion plans, see [feature_designs/educational_rooms_feature_design.md](../feature_designs/educational_rooms_feature_design.md).
+
+Current implementation status has advanced beyond a single fixed lobby. Basic multi-room foundation now exists in the backend with create/list/join events, and the client includes a room chooser overlay for creating and joining server rooms.

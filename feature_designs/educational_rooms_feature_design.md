@@ -522,11 +522,11 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 - [ ] Add backend validation models for object placement, tile boundaries, and content payloads.
 
 ### Phase B: Entry Flow and Room Discovery
-- [ ] Implement avatar-first entry flow with create avatar and continue actions.
-- [ ] Implement lobby chooser with Create New Room and Join Existing Room.
+- [x] Implement avatar-first entry flow with create avatar and continue actions.
+- [x] Implement lobby chooser with Create New Room and Join Existing Room.
 - [ ] Implement room list API with filtering (topic, activity, access type).
-- [ ] Implement room join flow (public and invite/private).
-- [ ] Add client-side room cards with host, tags, users, and privacy indicators.
+- [x] Implement room join flow (public and invite/private).
+- [x] Add client-side room cards with host, tags, users, and privacy indicators.
 
 ### Phase C: Multi-Tile World Navigation (5x5 MVP)
 - [ ] Implement tile coordinate model and room spawn tile handling.

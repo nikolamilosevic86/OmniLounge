@@ -42,10 +42,15 @@ Room occupancy, live positions, movement intent, action states, block state, sta
 
 The event surface is intentionally small but expressive. Join events establish identity and initial state. Movement and direction events express intent. Object action events carry target anchor coordinates and optional teleport flags. Chat events carry message payloads and type. Combat events split between attack requests, block-state updates, and server-generated hit outcomes.
 
+The event surface now includes room discovery and room switching primitives. Clients can request room lists, create new rooms with metadata, and join selected rooms, after which room-specific state and message history are returned.
+
 ```mermaid
 flowchart LR
   subgraph ClientToServer
     J[player:join]
+    RL[room:list]
+    RC[room:create]
+    RJ[room:join]
     M[player:move]
     D[player:direction]
     A[player:action]
@@ -56,6 +61,9 @@ flowchart LR
 
   subgraph ServerToClient
     PJ[player:joined]
+    RL2[room:list]
+    RC2[room:created]
+    RJ2[room:joined]
     RS[room:state]
     CE[player:entered/player:left]
     CM[chat:message/chat:history/chat:bubbles]
@@ -63,6 +71,8 @@ flowchart LR
     ERR[error]
   end
 ```
+
+Room metadata is currently in-memory through the room registry foundation layer, while avatar and chat persistence remain PostgreSQL-backed.
 
 ## Practical Notes for Contributors
 

@@ -461,6 +461,17 @@ async def room_join(sid, data):
         await sio.emit("error", {"message": "Room not found"}, room=sid)
         return
 
+    room = rooms.get_room(room_id)
+    if room:
+        await sio.emit(
+            "room:state",
+            {"players": [player_payload(p) for p in room.get_all_players()]},
+            room=sid,
+        )
+        db_messages = await db.get_recent_messages(room_id, 50)
+        visible = filter_messages_for_user(db_messages, sid)
+        await sio.emit("chat:history", visible, room=sid)
+
     await sio.emit("room:joined", {"roomId": room_id}, room=sid)
     await sio.emit("room:list", {"rooms": rooms.list_rooms()})
 

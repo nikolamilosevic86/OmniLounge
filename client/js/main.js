@@ -6,6 +6,7 @@ import { getObjectAtPoint } from './room-objects.js';
 import { showRadialMenu, dismissRadialMenu, hasActiveMenu } from './radial-menu.js';
 import { initCombat, destroyCombat, isBlocking } from './combat-ui.js';
 import { ATTACK_DURATIONS, computeAttackPhase, getPunchAngles, getKickAngles, getBlockAngles } from './attack-anim.js';
+import { normalizeRooms, buildRoomMetaLine, canJoinRoom } from './room-discovery.js';
 
 const BUBBLE_DURATION = 6000;
 
@@ -35,6 +36,8 @@ const state = {
   wasStunned: new Map(),     // playerId → bool (previous frame)
   wakingUpUntil: new Map(),  // playerId → timestamp ms
   chatMode: 'public',
+  roomList: [],
+  currentRoomId: 'lobby',
   socket: null,
   keys: { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false },
   gameLoopId: null,
@@ -53,6 +56,13 @@ const chatInput = document.getElementById('chat-input');
 const recipientSelect = document.getElementById('recipient-select');
 const recipientDropdown = document.getElementById('recipient-dropdown');
 const onlineCount = document.getElementById('online-count');
+const roomChooser = document.getElementById('room-chooser');
+const roomChooserClose = document.getElementById('room-chooser-close');
+const roomListEl = document.getElementById('room-list');
+const roomCreateName = document.getElementById('room-create-name');
+const roomCreateTags = document.getElementById('room-create-tags');
+const roomCreateBtn = document.getElementById('room-create-btn');
+const roomRefreshBtn = document.getElementById('room-refresh-btn');
 
 function initCreator() {
   buildColorSwatches();
@@ -158,6 +168,29 @@ function initGame() {
     }
   });
 
+  roomChooserClose.addEventListener('click', () => {
+    roomChooser.classList.add('hidden');
+  });
+
+  roomCreateBtn.addEventListener('click', () => {
+    const name = roomCreateName.value.trim();
+    if (!name) return;
+    const topicTags = roomCreateTags.value
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    state.socket?.emit('room:create', {
+      name,
+      topicTags,
+      access: 'public',
+      maxUsers: 30,
+    });
+  });
+
+  roomRefreshBtn.addEventListener('click', () => {
+    state.socket?.emit('room:list');
+  });
+
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
 
@@ -215,6 +248,8 @@ function connectSocket() {
   state.socket.on('connect', () => {
     state.playerId = state.socket.id;
     state.socket.emit('player:join', { avatar: state.avatar });
+    state.socket.emit('room:list');
+    roomChooser.classList.remove('hidden');
 
     // Init combat bindings once socket is ready
     initCombat({
@@ -232,7 +267,27 @@ function connectSocket() {
     state.playerId = data.id;
     state.players.set(data.id, { id: data.id, avatar: data.avatar, position: data.position });
     state.playerStamina.set(data.id, data.stamina ?? 100);
+    state.currentRoomId = 'lobby';
     renderPlayers();
+  });
+
+  state.socket.on('room:list', (payload) => {
+    state.roomList = normalizeRooms(payload.rooms || []);
+    renderRoomList();
+  });
+
+  state.socket.on('room:created', (room) => {
+    addSystemMessage(`Created room: ${room.name}`);
+    state.socket?.emit('room:join', { roomId: room.id });
+    state.socket?.emit('room:list');
+  });
+
+  state.socket.on('room:joined', (payload) => {
+    state.currentRoomId = payload.roomId || 'lobby';
+    clearSceneStateForRoomSwitch();
+    addSystemMessage(`Joined room: ${state.currentRoomId}`);
+    roomChooser.classList.add('hidden');
+    state.socket?.emit('room:list');
   });
 
   state.socket.on('combat:hit', (evt) => {
@@ -620,6 +675,59 @@ function updateRecipientList() {
     opt.textContent = player.avatar.username;
     recipientDropdown.appendChild(opt);
   }
+}
+
+function clearSceneStateForRoomSwitch() {
+  state.players.clear();
+  state.activeBubbles.clear();
+  state.walkPhases.clear();
+  state.talkingUntil.clear();
+  state.blinkDelay.clear();
+  state.actionStates.clear();
+  state.playerStamina.clear();
+  state.playerBlocking.clear();
+  state.playerStunned.clear();
+  state.hitFlash.clear();
+  state.attackAnim.clear();
+  state.blockAnim.clear();
+  state.wasStunned.clear();
+  state.wakingUpUntil.clear();
+  playersLayer.innerHTML = '';
+  chatMessages.innerHTML = '';
+}
+
+function renderRoomList() {
+  if (!roomListEl) return;
+  if (!state.roomList.length) {
+    roomListEl.innerHTML = '<div class="room-card"><p>No rooms yet. Create the first one.</p></div>';
+    return;
+  }
+
+  roomListEl.innerHTML = '';
+  state.roomList.forEach((room) => {
+    const card = document.createElement('div');
+    card.className = 'room-card';
+    const isCurrent = room.id === state.currentRoomId;
+    const joinable = canJoinRoom(room);
+    const joinDisabled = isCurrent || !joinable;
+    const joinLabel = isCurrent ? 'Current Room' : (joinable ? 'Join Room' : 'Room Full');
+    card.innerHTML = `
+      <h4>${escapeHtml(room.name)}</h4>
+      <p>${escapeHtml(buildRoomMetaLine(room))}</p>
+      <div class="room-card-actions">
+        <button class="room-join-btn" data-room-id="${escapeHtml(room.id)}" ${joinDisabled ? 'disabled' : ''}>${joinLabel}</button>
+      </div>
+    `;
+
+    const joinBtn = card.querySelector('.room-join-btn');
+    if (!joinDisabled) {
+      joinBtn.addEventListener('click', () => {
+        state.socket?.emit('room:join', { roomId: room.id });
+      });
+    }
+
+    roomListEl.appendChild(card);
+  });
 }
 
 function escapeHtml(text) {

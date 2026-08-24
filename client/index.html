@@ -65,6 +65,25 @@
     </div>
 
     <div id="game-screen" class="screen">
+      <div id="room-chooser" class="room-chooser hidden">
+        <div class="room-chooser-card">
+          <div class="room-chooser-header">
+            <h3>Choose a Room</h3>
+            <button id="room-chooser-close" class="room-chooser-close" type="button">Continue in Lobby</button>
+          </div>
+          <p class="room-chooser-subtitle">Create a new room or join an existing one on the server.</p>
+
+          <div class="room-create-row">
+            <input id="room-create-name" type="text" maxlength="50" placeholder="New room name (for example: History Lab)" />
+            <input id="room-create-tags" type="text" maxlength="80" placeholder="Tags (comma-separated)" />
+            <button id="room-create-btn" type="button">Create Room</button>
+            <button id="room-refresh-btn" type="button" class="room-refresh-btn">Refresh</button>
+          </div>
+
+          <div id="room-list" class="room-list"></div>
+        </div>
+      </div>
+
       <div class="game-layout">
         <div class="room-container">
           <div class="room-frame">

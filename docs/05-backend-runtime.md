@@ -2,6 +2,8 @@
 
 The backend runtime centers around three responsibilities that execute continuously: maintaining room authority, processing user intents, and advancing the simulation tick. FastAPI provides process lifecycle and HTTP serving support, while python-socketio handles low-latency bidirectional communication.
 
+The runtime now includes a multi-room registry foundation. Instead of a single hardcoded room object, the server maintains a registry that can create rooms, list room summaries, map players to current rooms, and switch membership between rooms.
+
 At startup, the server opens a PostgreSQL pool, spawns the AI bot in the room, and starts a background loop task. At shutdown, it cleanly cancels the loop and closes database resources. This lifecycle pattern avoids hidden global thread state and keeps startup/shutdown deterministic.
 
 The room model stores player records with position, movement direction, targetPosition, action state, pendingAction, stamina, block status, stun timestamp, and attack cooldown timestamps. This compact state shape is enough for the current lounge behavior while remaining easy to inspect during debugging.
@@ -30,7 +32,7 @@ flowchart TD
 
 ## Socket Event Responsibilities
 
-The server accepts join, movement, directional input, object actions, chat send, combat attack, and combat block events. For each event, the server either mutates room state directly after validation or records intent that the tick loop resolves. This separation is important: movement intents are cheap event writes, while actual movement progression remains tick-governed.
+The server accepts join, movement, directional input, object actions, chat send, combat attack, and combat block events. It also now accepts room discovery and selection events: room:list, room:create, and room:join. For each event, the server either mutates room state directly after validation or records intent that the tick loop resolves. This separation is important: movement intents are cheap event writes, while actual movement progression remains tick-governed.
 
 ## Important Runtime Constraints
 
