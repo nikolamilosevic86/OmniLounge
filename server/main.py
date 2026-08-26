@@ -3,6 +3,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 import socketio
@@ -87,6 +88,17 @@ def player_payload(player: dict, moderation=None) -> dict:
 
 def room_channel(room_id: str) -> str:
     return f"room:{room_id}"
+
+
+def _valid_position(pos: Any) -> bool:
+    """True if `pos` is a dict with numeric x/y — the minimum shape that
+    movement.clamp_position() can safely process. A raw/malicious socket
+    client can send any JSON, so handlers must validate before forwarding
+    to clamp_position() rather than trusting client-supplied coordinates."""
+    if not isinstance(pos, dict):
+        return False
+    x, y = pos.get("x"), pos.get("y")
+    return isinstance(x, (int, float)) and isinstance(y, (int, float)) and not isinstance(x, bool) and not isinstance(y, bool)
 
 
 def all_players_payload(room_id: str) -> list[dict]:
@@ -343,6 +355,9 @@ async def player_move(sid, data):
     room = rooms.get_room(room_id)
     if not room:
         return
+    data = data or {}
+    if not _valid_position(data):
+        return
     player = room.set_player_target(sid, {"x": data["x"], "y": data["y"]})
     if player:
         await sio.emit(
@@ -367,7 +382,7 @@ async def player_action(sid, data):
     if not player:
         return
 
-    if teleport and target:
+    if teleport and target and _valid_position(target):
         # Directly place player at target (e.g. climbing onto table)
         from server.game.movement import clamp_position
         player["position"] = clamp_position(target)
@@ -375,7 +390,7 @@ async def player_action(sid, data):
         player["direction"] = {"x": 0, "y": 0}
         player["actionState"] = action_state
         player["pendingAction"] = None
-    elif target:
+    elif target and _valid_position(target):
         # Walk to anchor, then activate action on arrival
         room.set_player_target(sid, target, clear_action=False)
         player["actionState"] = None
