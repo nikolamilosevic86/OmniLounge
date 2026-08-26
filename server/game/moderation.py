@@ -66,6 +66,17 @@ class ModerationState:
         self._roles[user_id] = role
         self._log(actor_id, "assign_role", user_id, {"role": role})
 
+    def reassign_owner(self, new_owner_id: str) -> None:
+        """Transfer room ownership to `new_owner_id`. Used when a room
+        creator's connection identity changes (e.g. reconnect/refresh) and
+        they re-prove ownership via a host-reclaim token; the token check
+        itself is the authorization, so no actor/permission check is done
+        here."""
+        previous_owner_id = self._owner_id
+        self._owner_id = new_owner_id
+        self._roles.pop(new_owner_id, None)
+        self._log(previous_owner_id, "reassign_owner", new_owner_id)
+
     def has_permission(self, user_id: str, permission: str) -> bool:
         role = self.get_role(user_id)
         return permission in _ROLE_PERMISSIONS.get(role, set())

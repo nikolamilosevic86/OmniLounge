@@ -1,3 +1,4 @@
+import secrets
 import time
 from typing import Any
 
@@ -66,6 +67,7 @@ class RoomsRegistry:
             "maxUsers": max_users,
             "createdAtMs": int(time.time() * 1000),
             "inviteCode": invite_code if normalized_access == "invite" else None,
+            "hostToken": secrets.token_urlsafe(24),
         }
         self.room_tiles[room_id] = {(0, 0)}
         self.room_builders[room_id] = RoomBuilderState()
@@ -84,6 +86,27 @@ class RoomsRegistry:
     def get_room_host_id(self, room_id: str) -> str | None:
         meta = self.room_meta.get(room_id)
         return meta.get("hostId") if meta else None
+
+    def get_room_host_token(self, room_id: str) -> str | None:
+        meta = self.room_meta.get(room_id)
+        return meta.get("hostToken") if meta else None
+
+    def reclaim_host(self, room_id: str, new_player_id: str, host_token: str | None) -> bool:
+        """Re-establish `new_player_id` as the owner/host of `room_id` if
+        `host_token` matches the room's private host token (handed only to
+        the original creator). Used so a room creator who reconnects with a
+        new session id doesn't permanently lose ownership of their room."""
+        meta = self.room_meta.get(room_id)
+        if not meta or not host_token:
+            return False
+        expected_token = meta.get("hostToken")
+        if not expected_token or not secrets.compare_digest(expected_token, host_token):
+            return False
+        meta["hostId"] = new_player_id
+        moderation = self.room_moderation.get(room_id)
+        if moderation:
+            moderation.reassign_owner(new_player_id)
+        return True
 
     def get_player_room_id(self, player_id: str) -> str | None:
         return self.player_room.get(player_id)

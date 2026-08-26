@@ -581,7 +581,11 @@ async def room_create(sid, data):
         max_users=max_users,
         invite_code=invite_code,
     )
-    await sio.emit("room:created", room, room=sid)
+    await sio.emit(
+        "room:created",
+        {**room, "hostToken": rooms.get_room_host_token(room["id"])},
+        room=sid,
+    )
     await sio.emit("room:list", {"rooms": rooms.list_rooms()}, room=sid)
     await sio.emit("room:list:changed", {}, skip_sid=sid)
 
@@ -622,6 +626,13 @@ async def room_join(sid, data):
     if not joined:
         await sio.emit("error", {"message": "Unable to join room"}, room=sid)
         return
+
+    host_token = data.get("hostToken")
+    if host_token:
+        # Lets a room creator who reconnected with a new session id (page
+        # refresh, dropped connection) reclaim ownership of a room they
+        # created, since identity is otherwise tied to the ephemeral sid.
+        rooms.reclaim_host(room_id, sid, str(host_token))
 
     if current_room_id and current_room_id != room_id:
         await sio.leave_room(sid, room_channel(current_room_id))

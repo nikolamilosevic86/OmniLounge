@@ -16,6 +16,32 @@ import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from '
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey } from './focus-trap.js';
 
 const BUBBLE_DURATION = 6000;
+const HOST_TOKENS_STORAGE_KEY = 'hobboverse-host-tokens';
+
+// A room creator's identity is tied to their socket session, which changes
+// on reconnect (page refresh, dropped connection). The server hands back a
+// private hostToken on room:created; persisting it here and sending it back
+// on room:join lets the creator reclaim ownership of their own room instead
+// of permanently losing it.
+function storeHostToken(roomId, hostToken) {
+  if (!roomId || !hostToken) return;
+  try {
+    const tokens = JSON.parse(localStorage.getItem(HOST_TOKENS_STORAGE_KEY) || '{}');
+    tokens[roomId] = hostToken;
+    localStorage.setItem(HOST_TOKENS_STORAGE_KEY, JSON.stringify(tokens));
+  } catch {
+    // ignore storage failures (e.g. private browsing)
+  }
+}
+
+function getHostToken(roomId) {
+  try {
+    const tokens = JSON.parse(localStorage.getItem(HOST_TOKENS_STORAGE_KEY) || '{}');
+    return tokens[roomId] || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const state = {
   avatar: {
@@ -1004,7 +1030,8 @@ function connectSocket() {
 
   state.socket.on('room:created', (room) => {
     addSystemMessage(`Created room: ${room.name}`);
-    state.socket?.emit('room:join', { roomId: room.id });
+    storeHostToken(room.id, room.hostToken);
+    state.socket?.emit('room:join', { roomId: room.id, hostToken: room.hostToken });
     requestRoomList();
   });
 
@@ -2229,7 +2256,7 @@ function renderRoomList() {
     if (!joinDisabled) {
       joinBtn.addEventListener('click', () => {
         const inviteCode = room.access === 'invite' ? (roomInviteCode?.value.trim() || undefined) : undefined;
-        state.socket?.emit('room:join', { roomId: room.id, inviteCode });
+        state.socket?.emit('room:join', { roomId: room.id, inviteCode, hostToken: getHostToken(room.id) });
       });
     }
 

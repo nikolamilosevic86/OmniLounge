@@ -365,3 +365,68 @@ class TestRoomJoinedPayloadIncludesRoleInfo:
         payload = joined_events[-1][1]
         assert payload["hostId"] == "host1"
         assert payload["myRole"] == "participant"
+
+
+class TestHostReclaimAfterReconnect:
+    """A room creator's identity is their socket sid, which changes on
+    reconnect (page refresh, dropped connection). Without a reclaim
+    mechanism, the creator would permanently lose ownership of their own
+    room. The server hands the creator a private hostToken on room:create;
+    presenting it again on room:join re-establishes ownership under the
+    new sid."""
+
+    async def test_room_create_emits_host_token_privately_to_creator(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("host1", avatar, "lobby")
+
+        await main_module.room_create("host1", {"name": "Edu Room"})
+
+        created_events = [e for e in fake_sio.emitted if e[0] == "room:created" and e[2] == "host1"]
+        assert created_events
+        payload = created_events[-1][1]
+        assert payload["hostToken"]
+        assert payload["hostToken"] == rooms.get_room_host_token(payload["id"])
+
+    async def test_room_join_with_correct_host_token_reclaims_ownership_on_new_sid(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        host_token = rooms.get_room_host_token(room["id"])
+        # host1 "disconnects" (e.g. leaves lobby/room state) and comes back
+        # as a brand new sid, as would happen on a real reconnect.
+        avatar = create_default_avatar("Host")
+        rooms.join_room("host1-new-sid", avatar, "lobby")
+
+        await main_module.room_join("host1-new-sid", {"roomId": room["id"], "hostToken": host_token})
+
+        assert rooms.get_room_host_id(room["id"]) == "host1-new-sid"
+        joined_events = [e for e in fake_sio.emitted if e[0] == "room:joined" and e[2] == "host1-new-sid"]
+        assert joined_events
+        payload = joined_events[-1][1]
+        assert payload["hostId"] == "host1-new-sid"
+        assert payload["myRole"] == "owner"
+
+    async def test_room_join_with_wrong_host_token_does_not_reclaim_ownership(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        await _join_room(rooms, "attacker", room["id"])
+
+        await main_module.room_join("attacker", {"roomId": room["id"], "hostToken": "not-the-real-token"})
+
+        assert rooms.get_room_host_id(room["id"]) == "host1"
+        joined_events = [e for e in fake_sio.emitted if e[0] == "room:joined" and e[2] == "attacker"]
+        assert joined_events
+        assert joined_events[-1][1]["myRole"] == "participant"
+
+    async def test_room_join_without_host_token_field_still_joins_normally(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        avatar = create_default_avatar("Bob")
+        rooms.join_room("bob", avatar, "lobby")
+
+        await main_module.room_join("bob", {"roomId": room["id"]})
+
+        joined_events = [e for e in fake_sio.emitted if e[0] == "room:joined" and e[2] == "bob"]
+        assert joined_events
+        assert rooms.get_room_host_id(room["id"]) == "host1"
+
