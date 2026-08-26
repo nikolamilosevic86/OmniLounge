@@ -249,6 +249,22 @@ class TestGenerativeAnswer:
         assert result["mode"] == "predefined"
         assert result["answer"]
 
+    def test_ask_generative_truncates_overlong_user_message_before_calling_caller(self):
+        # Abuse-protection: a malicious/careless client could send an
+        # arbitrarily long userMessage, which would otherwise be forwarded
+        # verbatim to the room-host's (potentially pay-per-token) external
+        # API, inflating cost or hitting upstream request-size limits.
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        captured = {}
+
+        def fake_caller(api_base_url, api_key, knowledge_base, user_message):
+            captured["user_message"] = user_message
+            return "A generated answer."
+
+        overlong_message = "a" * 5000
+        self.engine.ask_generative("npc-1", "char-1", overlong_message, caller=fake_caller)
+        assert len(captured["user_message"]) <= 200
+
     def test_ask_generative_is_rate_limited_per_user_after_default_max_requests(self):
         self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
         caller = lambda *a: "A generated answer."

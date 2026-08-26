@@ -211,6 +211,7 @@ class StoryEngine:
             rate_key = f"{object_id}:{character_id}:{user_id}"
             if not self._generative_rate_limiter.allow(rate_key, now_ms):
                 return {"answer": _RATE_LIMITED_ANSWER, "mode": "rate_limited"}
+        user_message = (user_message or "")[:200]
         try:
             answer = caller(record["apiBaseUrl"], record["apiKey"], record["knowledgeBase"], user_message)
         except Exception:

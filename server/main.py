@@ -417,7 +417,7 @@ async def chat_send(sid, data):
     if not player:
         return
 
-    text = (data.get("text") or "").strip()
+    text = (data.get("text") or "").strip()[:200]
     if not text:
         return
 

@@ -44,6 +44,21 @@ class TestChatSendBroadcastsBubbles:
         bubble_events = [e for e in fake_sio.emitted if e[0] == "chat:bubbles"]
         assert bubble_events, "expected chat:bubbles to be emitted after chat:send"
 
+    async def test_chat_send_truncates_text_beyond_max_length_server_side(self, isolate_registry):
+        # Security: the client enforces maxlength=200 on the chat input, but a
+        # raw/malicious socket client can send arbitrarily long text; the
+        # server must not trust client-side-only validation.
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+
+        overlong_text = "a" * 5000
+        await main_module.chat_send("p1", {"text": overlong_text, "type": "public"})
+
+        message_events = [e for e in fake_sio.emitted if e[0] == "chat:message"]
+        assert message_events, "expected chat:message to be emitted"
+        assert len(message_events[-1][1]["text"]) <= 200
+
 
 class TestApplyPlayerMovement:
     def test_bot_id_player_still_moves_toward_target(self, isolate_registry):
