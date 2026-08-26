@@ -13,6 +13,7 @@ import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookCont
 import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem } from './media.js';
 import { formatModeLabel, parseChoicesInput, resolveCharacterMode } from './story.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
+import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey } from './focus-trap.js';
 
 const BUBBLE_DURATION = 6000;
 
@@ -1649,6 +1650,46 @@ function renderBuilderBookList() {
     </li>`).join('');
 }
 
+// ─── Modal accessibility: focus trap + Escape-to-close ─────────────────────
+// Shared by the reader/media/dialogue modals (all use the `.reader-modal`
+// markup pattern with role="dialog"/aria-modal in index.html).
+let activeModal = null; // { el, onClose, previousFocus }
+
+function getModalFocusableElements(modalEl) {
+  return Array.from(modalEl.querySelectorAll(FOCUSABLE_SELECTOR));
+}
+
+function handleModalKeydown(evt) {
+  if (!activeModal) return;
+  if (isEscapeKey(evt.key)) {
+    evt.preventDefault();
+    activeModal.onClose();
+    return;
+  }
+  if (evt.key !== 'Tab') return;
+  const focusable = getModalFocusableElements(activeModal.el);
+  if (!focusable.length) return;
+  evt.preventDefault();
+  const currentIndex = focusable.indexOf(document.activeElement);
+  const nextIndex = getNextFocusIndex(currentIndex, focusable.length, { shiftKey: evt.shiftKey });
+  focusable[nextIndex].focus();
+}
+
+function activateModal(modalEl, onClose) {
+  activeModal = { el: modalEl, onClose, previousFocus: document.activeElement };
+  const focusable = getModalFocusableElements(modalEl);
+  (focusable[0] || modalEl).focus();
+  document.addEventListener('keydown', handleModalKeydown);
+}
+
+function deactivateModal(modalEl) {
+  if (!activeModal || activeModal.el !== modalEl) return;
+  document.removeEventListener('keydown', handleModalKeydown);
+  const previousFocus = activeModal.previousFocus;
+  activeModal = null;
+  previousFocus?.focus?.();
+}
+
 function openReaderModal(objectId) {
   state.readerModalObjectId = objectId;
   state.readerCurrentBook = null;
@@ -1656,6 +1697,7 @@ function openReaderModal(objectId) {
   readerBookListView?.classList.remove('hidden');
   readerBookView?.classList.add('hidden');
   if (readerModalTitle) readerModalTitle.textContent = 'Bookshelf';
+  if (readerModal) activateModal(readerModal, closeReaderModal);
 }
 
 function closeReaderModal() {
@@ -1663,6 +1705,7 @@ function closeReaderModal() {
   readerModal?.classList.add('hidden');
   state.readerModalObjectId = null;
   state.readerCurrentBook = null;
+  if (readerModal) deactivateModal(readerModal);
 }
 
 function renderReaderBookList(objectId, books) {
@@ -1802,6 +1845,7 @@ function openMediaModal(objectId, objectType) {
   mediaPlaylistView?.classList.remove('hidden');
   mediaPlayerView?.classList.add('hidden');
   if (mediaModalTitle) mediaModalTitle.textContent = objectType === 'tv' ? 'TV Playlist' : 'Music Playlist';
+  if (mediaModal) activateModal(mediaModal, closeMediaModal);
 }
 
 function closeMediaModal() {
@@ -1811,6 +1855,7 @@ function closeMediaModal() {
   state.mediaCurrentItem = null;
   state.mediaSyncSession = null;
   if (mediaVideoFrame) mediaVideoFrame.innerHTML = '';
+  if (mediaModal) deactivateModal(mediaModal);
 }
 
 function renderMediaPlaylist(objectType, items) {
@@ -1989,12 +2034,14 @@ function openDialogueModal(objectId, character, node, mode) {
   if (dialogueAnswer) dialogueAnswer.textContent = '';
   if (dialogueAskInput) dialogueAskInput.value = '';
   renderDialogueNode(node, mode);
+  if (dialogueModal) activateModal(dialogueModal, closeDialogueModal);
 }
 
 function closeDialogueModal() {
   dialogueModal?.classList.add('hidden');
   state.dialogueModalObjectId = null;
   state.dialogueCurrentNode = null;
+  if (dialogueModal) deactivateModal(dialogueModal);
 }
 
 function renderDialogueNode(node, mode) {
