@@ -880,7 +880,7 @@ async def room_object_move(sid, data):
             data["objectId"], data["x"], data["y"],
             requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
-    except (KeyError, PermissionError) as exc:
+    except (KeyError, PermissionError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)
         return
 
@@ -922,7 +922,7 @@ async def room_object_rotate(sid, data):
             data["objectId"], data["rotation"],
             requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
-    except (KeyError, PermissionError) as exc:
+    except (KeyError, PermissionError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)
         return
 

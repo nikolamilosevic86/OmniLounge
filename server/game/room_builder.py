@@ -298,12 +298,28 @@ class RoomBuilderState:
         if not self._can_edit(record, requester_id, is_room_host):
             raise PermissionError(f"object {record['objectId']} cannot be edited by this user")
 
+    @staticmethod
+    def _require_numeric(value: Any, field_name: str) -> float:
+        """Reject non-numeric client input before it is stored in shared
+        room state or used in an arithmetic/comparison expression. Unlike
+        `create_object` (which validates through `RoomObjectPlacementModel`),
+        move/resize/rotate take raw numeric args directly from socket
+        handlers, so a malicious client could otherwise send a string
+        (silently corrupting broadcast state, e.g. `move_object`) or trigger
+        an uncaught `TypeError` (e.g. `"x" <= 0` in `resize_object`, or a
+        string running through the `%` operator in `rotate_object`)."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{field_name} must be numeric, got {value!r}")
+        return value
+
     def move_object(
         self, object_id: str, x: float, y: float, requester_id: str | None = None, is_room_host: bool = False
     ) -> dict[str, Any]:
         record = self._require_object(object_id)
         self._require_edit_permission(record, requester_id, is_room_host)
         self._require_unlocked(record)
+        x = self._require_numeric(x, "x")
+        y = self._require_numeric(y, "y")
         record["x"] = x
         record["y"] = y
         return dict(record)
@@ -319,6 +335,8 @@ class RoomBuilderState:
         record = self._require_object(object_id)
         self._require_edit_permission(record, requester_id, is_room_host)
         self._require_unlocked(record)
+        width = self._require_numeric(width, "width")
+        height = self._require_numeric(height, "height")
         if width <= 0 or height <= 0:
             raise ValueError("geometry dimensions must be positive")
         record["width"] = width
@@ -332,6 +350,7 @@ class RoomBuilderState:
         record = self._require_object(object_id)
         self._require_edit_permission(record, requester_id, is_room_host)
         self._require_unlocked(record)
+        rotation = self._require_numeric(rotation, "rotation")
         record["rotation"] = rotation % 360
         return dict(record)
 
