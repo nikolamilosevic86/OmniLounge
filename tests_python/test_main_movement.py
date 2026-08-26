@@ -100,3 +100,53 @@ class TestPlayerActionHandlesMalformedTarget:
         room = rooms.get_room("lobby")
         player = room.get_player("p1")
         assert player["position"]["x"] == 200
+
+
+class TestPlayerDirectionRejectsMalformedInput:
+    """`player:direction` stores its payload verbatim on the player's
+    `direction` field with no validation. That field is read every single
+    game-loop tick (server/main.py `apply_player_movement` ->
+    `move_by_direction`, which computes `dx * dx`) for EVERY player in
+    EVERY room -- unlike player:move/player:action, a bad value here isn't
+    just mishandled for one request, it raises inside the single shared
+    `game_loop()` asyncio task on the very next tick, silently killing
+    movement/AI processing server-wide until restart (game_loop has no
+    try/except and nothing restarts it)."""
+
+    async def test_player_direction_with_valid_numbers_still_works(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+
+        await main_module.player_direction("p1", {"x": 1, "y": 0})
+
+        room = rooms.get_room("lobby")
+        assert room.get_player("p1")["direction"] == {"x": 1, "y": 0}
+
+    async def test_player_direction_with_non_numeric_x_does_not_corrupt_state(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+
+        await main_module.player_direction("p1", {"x": "boom", "y": 0})
+
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        # Malformed input must be ignored, not stored -- otherwise the next
+        # game_loop tick crashes computing dx * dx on a non-numeric value.
+        assert player["direction"] == {"x": 0, "y": 0}
+
+    async def test_player_direction_with_non_numeric_input_does_not_crash_next_game_tick(self, isolate_registry):
+        """Reproduces the real-world crash: send a malformed direction
+        through the handler exactly as a client would, then run the same
+        movement computation the game loop runs every tick."""
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+
+        await main_module.player_direction("p1", {"x": "boom", "y": 0})
+
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        # Must not raise -- this is exactly what game_loop() does every tick.
+        main_module.apply_player_movement(room, "lobby", player, now_ms=0)

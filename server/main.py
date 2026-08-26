@@ -410,9 +410,13 @@ async def player_direction(sid, data):
     if not room:
         return
 
+    data = data or {}
+    if not _valid_position(data):
+        return
+
     player = room.set_player_direction(
         sid,
-        {"x": data.get("x", 0), "y": data.get("y", 0)},
+        {"x": data["x"], "y": data["y"]},
     )
     if player:
         await sio.emit(
