@@ -13,6 +13,22 @@ def is_within_world_bounds(tile_x: int, tile_y: int) -> bool:
     return -TILE_LIMIT <= tile_x <= TILE_LIMIT and -TILE_LIMIT <= tile_y <= TILE_LIMIT
 
 
+def tiles_within_radius(center: tuple[int, int], radius: int) -> set[tuple[int, int]]:
+    """Return every in-bounds tile coordinate within Chebyshev `radius` of
+    `center` (inclusive of the center tile itself). Used to scope lazy
+    object-loading requests to the tiles a client actually needs, instead of
+    sending every object in the room."""
+    if radius < 0:
+        raise ValueError("radius must not be negative")
+    cx, cy = center
+    return {
+        (x, y)
+        for x in range(cx - radius, cx + radius + 1)
+        for y in range(cy - radius, cy + radius + 1)
+        if is_within_world_bounds(x, y)
+    }
+
+
 def detect_edge_transition(position: dict[str, float]) -> Direction | None:
     x = position["x"]
     y = position["y"]

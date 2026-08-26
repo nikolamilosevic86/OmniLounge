@@ -263,6 +263,16 @@ class RoomBuilderState:
             for o in sorted(objects, key=lambda o: o["zIndex"])
         ]
 
+    def list_objects_for_tiles(self, tiles: set[tuple[int, int]]) -> list[dict[str, Any]]:
+        """Like `list_objects`, but scoped to any tile in `tiles`. Used to
+        lazily load only the objects near a client instead of the whole
+        room, which matters once a room has many tiles/objects."""
+        objects = [o for o in self._objects.values() if o["tile"] in tiles]
+        return [
+            {**o, "interactions": self._interactions_for(o)}
+            for o in sorted(objects, key=lambda o: o["zIndex"])
+        ]
+
     def _require_object(self, object_id: str) -> dict[str, Any]:
         record = self._objects.get(object_id)
         if record is None:

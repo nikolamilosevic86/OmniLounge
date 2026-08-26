@@ -188,6 +188,19 @@ class TestObjectPlacement:
         assert [o["objectId"] for o in self.builder.list_objects(tile=(0, 0))] == ["o1"]
         assert len(self.builder.list_objects()) == 2
 
+    def test_list_objects_for_tiles_filters_by_a_set_of_tiles(self):
+        self.builder.add_tile((0, 0), "right")
+        self.builder.add_tile((1, 0), "right")
+        self.builder.create_object("o1", "table", (0, 0), x=10, y=10, width=20, height=20)
+        self.builder.create_object("o2", "chair", (1, 0), x=10, y=10, width=20, height=20)
+        self.builder.create_object("o3", "sofa", (2, 0), x=10, y=10, width=20, height=20)
+        result = self.builder.list_objects_for_tiles({(0, 0), (1, 0)})
+        assert {o["objectId"] for o in result} == {"o1", "o2"}
+
+    def test_list_objects_for_tiles_empty_set_returns_no_objects(self):
+        self.builder.create_object("o1", "table", (0, 0), x=10, y=10, width=20, height=20)
+        assert self.builder.list_objects_for_tiles(set()) == []
+
     def test_create_object_rejects_unknown_object_type(self):
         with pytest.raises(ValidationError):
             self.builder.create_object("o1", "spaceship", (0, 0), x=10, y=10, width=20, height=20)

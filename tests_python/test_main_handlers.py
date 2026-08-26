@@ -615,6 +615,26 @@ class TestRoomBuilderHandlers:
         errors = [e for e in fake_sio.emitted if e[0] == "error"]
         assert errors
 
+    async def test_builder_request_with_radius_scopes_objects_to_nearby_tiles(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+        builder = rooms.get_builder("lobby")
+        builder.add_tile((0, 0), "right")
+        await main_module.room_object_create("p1", {
+            "objectType": "chair", "x": 10, "y": 10, "width": 20, "height": 20,
+        })
+        builder.create_object("far-obj", "chair", (1, 0), x=10, y=10, width=20, height=20)
+
+        await main_module.room_builder_request("p1", {"radius": 0})
+        radius_zero_objects = self._builder_state_events(fake_sio)[-1][1]["objects"]
+        assert {o["objectId"] for o in radius_zero_objects} == {
+            o["objectId"] for o in builder.list_objects(tile=(0, 0))
+        }
+
+        await main_module.room_builder_request("p1", {})
+        full_objects = self._builder_state_events(fake_sio)[-1][1]["objects"]
+        assert len(full_objects) == 2
+
 
 # Captured at import time, before the autouse `isolate_registry` fixture
 # monkeypatches `main_module.sio` to a fake for the rest of the test suite.

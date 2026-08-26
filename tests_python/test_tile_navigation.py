@@ -6,6 +6,7 @@ from server.game.tile_navigation import (
     can_add_neighbor_tile,
     detect_edge_transition,
     is_within_world_bounds,
+    tiles_within_radius,
     transition_to_neighbor,
 )
 
@@ -66,3 +67,28 @@ def test_can_add_neighbor_tile_requires_in_bounds_and_absent():
     assert can_add_neighbor_tile(existing_tiles, (0, 0), "top") is True
     assert can_add_neighbor_tile(existing_tiles, (0, 0), "right") is False
     assert can_add_neighbor_tile(existing_tiles, (TILE_LIMIT, 0), "right") is False
+
+
+def test_tiles_within_radius_zero_returns_only_center():
+    assert tiles_within_radius((0, 0), 0) == {(0, 0)}
+
+
+def test_tiles_within_radius_one_returns_center_and_eight_neighbors():
+    result = tiles_within_radius((0, 0), 1)
+    assert result == {
+        (-1, -1), (0, -1), (1, -1),
+        (-1, 0), (0, 0), (1, 0),
+        (-1, 1), (0, 1), (1, 1),
+    }
+
+
+def test_tiles_within_radius_clips_to_world_bounds():
+    result = tiles_within_radius((TILE_LIMIT, TILE_LIMIT), 1)
+    assert all(is_within_world_bounds(x, y) for x, y in result)
+    assert (TILE_LIMIT, TILE_LIMIT) in result
+    assert (TILE_LIMIT + 1, TILE_LIMIT) not in result
+
+
+def test_tiles_within_radius_rejects_negative_radius():
+    with pytest.raises(ValueError):
+        tiles_within_radius((0, 0), -1)

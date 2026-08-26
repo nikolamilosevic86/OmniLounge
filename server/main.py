@@ -26,6 +26,7 @@ from server.game.movement import move_by_direction, move_toward
 from server.game.metrics import MetricsCollector
 from server.game.room import Room
 from server.game.rooms_registry import RoomsRegistry
+from server.game.tile_navigation import tiles_within_radius
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 
@@ -675,13 +676,14 @@ async def room_tile_add(sid, data):
     )
 
 
-def builder_state_payload(room_id: str) -> dict:
+def builder_state_payload(room_id: str, tiles: set[tuple[int, int]] | None = None) -> dict:
     builder = rooms.get_builder(room_id)
     if not builder:
         return {"tiles": [], "objects": [], "zones": [], "triggers": []}
+    objects = builder.list_objects_for_tiles(tiles) if tiles is not None else builder.list_objects()
     return {
         "tiles": builder.list_tiles(),
-        "objects": builder.list_objects(),
+        "objects": objects,
         "zones": builder.list_zones(),
         "triggers": builder.list_triggers(),
     }
@@ -712,14 +714,17 @@ def _is_room_host(sid: str, room_id: str) -> bool:
 
 @sio.on("room:builder:request")
 async def room_builder_request(sid, data):
-    room_id, _tile, builder = _current_room_and_builder(sid)
+    room_id, tile, builder = _current_room_and_builder(sid)
     if not room_id:
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
+    radius = (data or {}).get("radius")
+    tiles = tiles_within_radius(tile, radius) if isinstance(radius, int) and radius >= 0 else None
+
     await sio.emit(
         "room:builder:state",
-        {"roomId": room_id, **builder_state_payload(room_id)},
+        {"roomId": room_id, **builder_state_payload(room_id, tiles)},
         room=sid,
     )
     await sio.emit(

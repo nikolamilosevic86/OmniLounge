@@ -594,7 +594,7 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 
 ### Phase J: Non-Functional Hardening
 - [x] Add performance budgets for tile/object counts and render cost.
-- [ ] Implement lazy tile/object loading where needed.
+- [x] Implement lazy tile/object loading where needed.
 - [x] Add accessibility pass for reader, dialog, and builder controls.
 - [x] Add rate limiting and abuse protections for generative requests.
 - [x] Add observability dashboards for latency, errors, and usage metrics.
