@@ -1242,7 +1242,10 @@ def _call_openai_compatible_endpoint(
 ) -> str:
     """Server-side call to a room-admin-configured OpenAI-compatible chat
     completion endpoint. The API key is only ever used here, server-side,
-    and is never sent to or exposed by any client-facing payload."""
+    and is never sent to or exposed by any client-facing payload.
+    `api_base_url` is validated against `is_safe_external_url` at
+    configure-time (see `StoryEngine.configure_generative_mode`); redirects
+    are not followed here as an additional SSRF safeguard."""
     messages = []
     if knowledge_base:
         messages.append({"role": "system", "content": knowledge_base})
@@ -1253,6 +1256,7 @@ def _call_openai_compatible_endpoint(
         headers={"Authorization": f"Bearer {api_key}"},
         json={"model": "gpt-3.5-turbo", "messages": messages},
         timeout=10.0,
+        follow_redirects=False,
     )
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]

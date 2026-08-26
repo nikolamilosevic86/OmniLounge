@@ -603,7 +603,7 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 - [ ] Expand automated tests across frontend, backend, and integration paths.
 - [ ] Run end-to-end scenarios for creator and learner journeys.
 - [ ] Validate migration safety in staging with rollback drills.
-- [ ] Run security review for secrets handling and external API proxying.
+- [x] Run security review for secrets handling and external API proxying.
 - [ ] Conduct beta with selected creators and collect feedback.
 - [ ] Apply launch fixes and publish MVP release notes.
 

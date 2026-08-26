@@ -14,6 +14,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.game.rate_limiter import SlidingWindowRateLimiter
+from server.game.url_safety import is_safe_external_url
 
 ALLOWED_ROLES = {"guide", "quiz_master", "narrator", "historical_persona", "mentor"}
 
@@ -122,6 +123,8 @@ class StoryEngine:
         self, object_id: str, character_id: str, api_base_url: str | None = None, api_key: str | None = None,
     ) -> dict[str, Any]:
         record = self._require_character(object_id, character_id)
+        if api_base_url and not is_safe_external_url(api_base_url):
+            raise ValueError("apiBaseUrl is not a permitted external address")
         record["apiBaseUrl"] = api_base_url
         record["apiKey"] = api_key
         record["generativeEnabled"] = bool(api_base_url and api_key)

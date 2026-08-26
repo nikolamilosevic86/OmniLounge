@@ -107,6 +107,28 @@ class TestGenerativeConfig:
         char = self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com/v1")
         assert char["generativeEnabled"] is False
 
+    def test_configure_generative_mode_rejects_loopback_url_ssrf_guard(self):
+        with pytest.raises(ValueError):
+            self.engine.configure_generative_mode(
+                "npc-1", "char-1", api_base_url="http://127.0.0.1/v1", api_key="secret",
+            )
+
+    def test_configure_generative_mode_rejects_cloud_metadata_url_ssrf_guard(self):
+        with pytest.raises(ValueError):
+            self.engine.configure_generative_mode(
+                "npc-1", "char-1", api_base_url="http://169.254.169.254/latest/meta-data/", api_key="secret",
+            )
+
+    def test_configure_generative_mode_rejects_non_http_scheme(self):
+        with pytest.raises(ValueError):
+            self.engine.configure_generative_mode(
+                "npc-1", "char-1", api_base_url="file:///etc/passwd", api_key="secret",
+            )
+
+    def test_configure_generative_mode_allows_clearing_url_to_none_even_though_unsafe_would_be_rejected(self):
+        char = self.engine.configure_generative_mode("npc-1", "char-1", api_base_url=None, api_key="secret")
+        assert char["generativeEnabled"] is False
+
 
 class TestStoryNodes:
     def setup_method(self):
