@@ -26,4 +26,10 @@ The third path is for quality and operations work. Read [07-testing-operations-a
 
 These docs describe the currently implemented OmniLaunge runtime and also clarify boundaries between implemented behavior and roadmap design artifacts. For future educational world-builder expansion plans, see [feature_designs/educational_rooms_feature_design.md](../feature_designs/educational_rooms_feature_design.md).
 
-Current implementation status has advanced beyond a single fixed lobby. Basic multi-room foundation now exists in the backend with create/list/join events, and the client includes a room chooser overlay for creating and joining server rooms.
+Current implementation status has advanced beyond a single fixed lobby. Basic multi-room foundation now exists in the backend with create/list/join events, server-side join guards (room full and invite-code checks), and room list filtering by topic, access, and activity/newest sorting. The client now includes a room chooser overlay with create/join flows and filter controls.
+
+Phase A foundation is now in place in the data layer: schema tables for rooms/tiles/objects/resources/story nodes/roles, versioning and publish snapshots, room-admin secret storage, and paired up/down migration scripts. Runtime movement reliability was also improved by making avatar spawn choose non-obstacle positions.
+
+Runtime movement/state broadcast is now room-aware instead of lobby-only, which fixes the issue where users could still perform combat actions but not move after switching out of lobby contexts. Phase C foundational tile-navigation utilities are also implemented and tested (edge detection, neighbor transitions, and 5x5 world bounds enforcement).
+
+Phase C is now visible in the player HUD through a current tile indicator and mini-map. Phase D has started with a build-mode toggle and directional tile-add controls, backed by server events and room tile graph updates.

@@ -4,6 +4,8 @@ OmniLaunge currently delivers a complete single-room social experience that star
 
 Once users enter the lounge, they now see a room chooser overlay that supports two core pathways: creating a new room and joining an existing room discovered from the server. If the user chooses not to switch immediately, they can continue in the default lobby. This gives the experience a transitional step toward the educational multi-room future while keeping the current social flow intact.
 
+The chooser now also includes discovery controls so users can filter by topic tag, access type (all/public/invite), and sorting mode (newest or most active). Invite rooms can be joined by providing an invite code, and full rooms are clearly marked as unavailable.
+
 After room selection, users move from setup into active multiplayer presence. The room conveys social activity through movement, layered avatar rendering, and chat visibility. Public messages appear in the chat panel and as short-lived speech bubbles above avatars, while private messages preserve one-to-one visibility.
 
 Movement supports two equally valid patterns. One pattern is directional movement using arrow keys for continuous control. The other pattern is click-to-walk, which lets users place intent targets in room space and watch the avatar move there with collision-aware path behavior. This duality supports both game-like control and relaxed social navigation.

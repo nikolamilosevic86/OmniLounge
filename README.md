@@ -15,6 +15,7 @@ Users create avatars, move through rooms, chat in real time, and interact with w
 ## Tech Stack
 
 - Frontend: Vite, vanilla JavaScript, SVG avatar renderer, Socket.IO client
+- UI Design System: [Material Design 3 (Material Web Components)](https://m3.material.io/develop/web) — all UI screens (login, registration, admin panel, profile) follow Material 3 component guidelines and use the official `@material/web` package
 - Backend: Python, FastAPI, python-socketio
 - Database: PostgreSQL (Docker Compose)
 - Testing: Vitest (JS), pytest (Python)

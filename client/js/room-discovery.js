@@ -24,3 +24,17 @@ export function buildRoomMetaLine(room) {
 export function canJoinRoom(room) {
   return (room.activeUsers ?? 0) < (room.maxUsers ?? 0);
 }
+
+export function normalizeRoomFilters(rawFilters = {}) {
+  const topic = (rawFilters.topic || '').trim().toLowerCase();
+  const access = rawFilters.access === 'public' || rawFilters.access === 'invite'
+    ? rawFilters.access
+    : 'all';
+  const sort = rawFilters.sort === 'active' ? 'active' : 'newest';
+
+  return {
+    topic,
+    access,
+    sort,
+  };
+}

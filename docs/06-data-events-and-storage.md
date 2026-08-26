@@ -6,6 +6,8 @@ This document summarizes the practical contract layer of OmniLaunge: what data i
 
 Two domains are currently persisted in PostgreSQL. The first domain is avatar profile data keyed by username, with upsert behavior so users can refresh their profile without duplicate identities. The second domain is chat message history with room id, sender metadata, message type, recipient id for private messages, and timestamp fields.
 
+Phase A foundation schema has now been added for educational world-builder entities: rooms, room tiles, room objects, content resources, story nodes, role mappings, room versions, publish snapshots, and room-admin secret storage.
+
 ```mermaid
 erDiagram
   AVATARS {
@@ -36,13 +38,17 @@ erDiagram
 
 ## Ephemeral Runtime State
 
-Room occupancy, live positions, movement intent, action states, block state, stamina, and stun windows are currently in-memory state. This makes tick simulation straightforward and low overhead for a single-room deployment model.
+Room occupancy, live positions, movement intent, action states, block state, stamina, and stun windows are currently in-memory state. This now includes a multi-room registry layer for room metadata and per-player room membership mapping, while simulation ticking is still focused on the lobby room.
 
 ## Event Contract Overview
 
 The event surface is intentionally small but expressive. Join events establish identity and initial state. Movement and direction events express intent. Object action events carry target anchor coordinates and optional teleport flags. Chat events carry message payloads and type. Combat events split between attack requests, block-state updates, and server-generated hit outcomes.
 
-The event surface now includes room discovery and room switching primitives. Clients can request room lists, create new rooms with metadata, and join selected rooms, after which room-specific state and message history are returned.
+The event surface now includes room discovery and room switching primitives. Clients can request room lists with filters (topic/access/sort), create new rooms with metadata, and join selected rooms, after which room-specific state and message history are returned. Join requests are validated server-side for not-found, full-room, and invite-code conditions.
+
+State progression events are now emitted per room channel, so movement, combat state updates, presence updates, and public chat are scoped to the currently joined room context.
+
+Room tile graph updates are emitted through room:tiles events so clients can update mini-map state and build-mode views in real time.
 
 ```mermaid
 flowchart LR

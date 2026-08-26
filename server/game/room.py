@@ -3,7 +3,9 @@ from typing import Any
 
 from server.config import BUBBLE_DURATION_MS, MAX_MESSAGES
 from server.game.chat import get_visible_messages, should_show_bubble
-from server.game.movement import clamp_position, create_position
+from server.game.movement import calculate_distance, clamp_position, collides_with_obstacle, create_position
+
+MIN_PLAYER_SPAWN_DISTANCE = 34.0
 
 
 class Room:
@@ -13,14 +15,12 @@ class Room:
         self.messages: list[dict[str, Any]] = []
 
     def add_player(self, player_id: str, avatar: dict[str, Any]) -> dict[str, Any]:
-        # Spread players across the left half of the room so they don't all stack
-        import random
-        x = random.uniform(120, 360)
-        y = random.uniform(380, 480)
+        # Spread players across the left half, retrying until a non-obstacle spawn is found.
+        spawn = self._pick_spawn_position()
         player = {
             "id": player_id,
             "avatar": avatar,
-            "position": create_position(x, y),
+            "position": spawn,
             "targetPosition": None,
             "direction": {"x": 0, "y": 0},
             "actionState": None,
@@ -33,6 +33,41 @@ class Room:
         }
         self.players[player_id] = player
         return player
+
+    def _pick_spawn_position(self) -> dict[str, float]:
+        import random
+
+        for _ in range(24):
+            x = random.uniform(120, 360)
+            y = random.uniform(380, 480)
+            candidate = clamp_position(create_position(x, y))
+            if collides_with_obstacle(candidate["x"], candidate["y"]):
+                continue
+            if self._overlaps_existing_player(candidate):
+                continue
+            return candidate
+
+        # Primary spawn strip is saturated (many players already there) —
+        # search a secondary area with random jitter so late joiners still
+        # avoid landing exactly on top of someone else.
+        for _ in range(24):
+            x = 400.0 + random.uniform(-80, 80)
+            y = 520.0 + random.uniform(-50, 50)
+            candidate = clamp_position(create_position(x, y))
+            if collides_with_obstacle(candidate["x"], candidate["y"]):
+                continue
+            if self._overlaps_existing_player(candidate):
+                continue
+            return candidate
+
+        # Deterministic fallback near bottom-center that is outside configured obstacles.
+        return clamp_position(create_position(400.0, 520.0))
+
+    def _overlaps_existing_player(self, candidate: dict[str, float]) -> bool:
+        return any(
+            calculate_distance(candidate, player["position"]) < MIN_PLAYER_SPAWN_DISTANCE
+            for player in self.players.values()
+        )
 
     def remove_player(self, player_id: str) -> None:
         self.players.pop(player_id, None)

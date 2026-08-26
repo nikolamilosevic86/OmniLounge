@@ -8,7 +8,13 @@ At startup, the server opens a PostgreSQL pool, spawns the AI bot in the room, a
 
 The room model stores player records with position, movement direction, targetPosition, action state, pendingAction, stamina, block status, stun timestamp, and attack cooldown timestamps. This compact state shape is enough for the current lounge behavior while remaining easy to inspect during debugging.
 
+Player entry now uses obstacle-safe spawn placement with retry logic, which prevents occasional stuck-on-entry behavior caused by spawning inside collision geometry.
+
 The tick loop processes player updates in a fixed cadence. It regenerates stamina, skips movement for stunned players, applies directional movement, applies click-target movement, resolves arrival-triggered pending actions, runs AI behavior, emits combat hit events when needed, and then broadcasts state and bubbles.
+
+Tick movement and state broadcasts are now room-aware across all active rooms, rather than being limited to the lobby simulation payload. This closes a reliability gap where non-lobby players could perform actions but not receive movement state progression.
+
+Tile transitions are now resolved during movement ticks using edge detection and room tile graph checks. When a neighboring tile exists, the server transitions the player tile coordinate and repositions the avatar to the opposite-edge entry point. A room:tile:add event is also available for build-mode tile expansion.
 
 ```mermaid
 flowchart TD
@@ -34,8 +40,10 @@ flowchart TD
 
 The server accepts join, movement, directional input, object actions, chat send, combat attack, and combat block events. It also now accepts room discovery and selection events: room:list, room:create, and room:join. For each event, the server either mutates room state directly after validation or records intent that the tick loop resolves. This separation is important: movement intents are cheap event writes, while actual movement progression remains tick-governed.
 
+Room list requests support server-side filtering by topic and access, plus sorting by newest or most active. Room join requests are now validated on the server for room existence, capacity, and invite-code requirements before membership is changed.
+
 ## Important Runtime Constraints
 
 Movement is collision-aware and bound-clamped. Combat is range and stamina constrained. Stun blocks movement and attacking. Chat visibility can be global or recipient-limited. AI behavior obeys the same core combat constraints as players.
 
-A known code-health note is that the direction setter currently contains unreachable lines after an early return, suggesting intended target-clearing logic that does not execute. This should be addressed in a focused refactor, ideally with corresponding tests.
+The multi-room registry currently underpins discovery and membership transitions. The simulation tick remains lobby-centric, so full per-room simulation broadcast is the next runtime evolution step.

@@ -1,32 +1,3 @@
-CREATE TABLE IF NOT EXISTS avatars (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(16) UNIQUE NOT NULL,
-    skin_color VARCHAR(7) NOT NULL,
-    gender VARCHAR(20) NOT NULL DEFAULT 'neutral',
-    hair VARCHAR(20) NOT NULL,
-    beard VARCHAR(20) NOT NULL DEFAULT 'none',
-    glasses VARCHAR(20) NOT NULL DEFAULT 'none',
-    clothes VARCHAR(20) NOT NULL,
-    accessory VARCHAR(20) NOT NULL DEFAULT 'none',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id VARCHAR(64) PRIMARY KEY,
-    room_id VARCHAR(50) NOT NULL DEFAULT 'lobby',
-    sender_id VARCHAR(64) NOT NULL,
-    sender_name VARCHAR(16) NOT NULL,
-    text TEXT NOT NULL,
-    type VARCHAR(10) NOT NULL DEFAULT 'public',
-    recipient_id VARCHAR(64),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    timestamp_ms BIGINT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, timestamp_ms DESC);
-CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id) WHERE recipient_id IS NOT NULL;
-
 CREATE TABLE IF NOT EXISTS rooms (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(80) NOT NULL,
@@ -90,16 +61,12 @@ CREATE TABLE IF NOT EXISTS content_resources (
     title VARCHAR(120) NOT NULL,
     author VARCHAR(120),
     summary TEXT,
-    reading_level VARCHAR(30),
-    est_read_minutes INTEGER,
-    cover_url TEXT,
     body_markdown TEXT,
     external_url TEXT,
     metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT chk_content_resources_type CHECK (content_type IN ('inline', 'markdown', 'external', 'video', 'audio')),
-    CONSTRAINT chk_content_resources_est_read_minutes CHECK (est_read_minutes IS NULL OR est_read_minutes > 0)
+    CONSTRAINT chk_content_resources_type CHECK (content_type IN ('inline', 'markdown', 'external', 'video', 'audio'))
 );
 
 CREATE TABLE IF NOT EXISTS story_nodes (
@@ -158,20 +125,9 @@ CREATE TABLE IF NOT EXISTS room_admin_secrets (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS reading_progress (
-    id BIGSERIAL PRIMARY KEY,
-    resource_id VARCHAR(64) NOT NULL REFERENCES content_resources(id) ON DELETE CASCADE,
-    user_id VARCHAR(64) NOT NULL,
-    progress DOUBLE PRECISION NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_reading_progress UNIQUE (resource_id, user_id),
-    CONSTRAINT chk_reading_progress_range CHECK (progress >= 0 AND progress <= 1)
-);
-
 CREATE INDEX IF NOT EXISTS idx_room_tiles_room ON room_tiles(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_objects_room_tile ON room_objects(room_id, tile_x, tile_y);
 CREATE INDEX IF NOT EXISTS idx_content_resources_room ON content_resources(room_id);
 CREATE INDEX IF NOT EXISTS idx_story_nodes_room_character ON story_nodes(room_id, character_id);
 CREATE INDEX IF NOT EXISTS idx_room_versions_room ON room_versions(room_id, version_number DESC);
 CREATE INDEX IF NOT EXISTS idx_room_publish_room_active ON room_publish_snapshots(room_id, is_active);
-CREATE INDEX IF NOT EXISTS idx_reading_progress_user ON reading_progress(user_id);

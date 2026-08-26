@@ -1,5 +1,6 @@
 export const AVATAR_OPTIONS = {
   skinColors: ['#FFDBAC', '#F1C27D', '#E0AC69', '#C68642', '#8D5524', '#5C3D2E'],
+  gender: ['neutral', 'feminine', 'masculine'],
   hair: ['short', 'long', 'curly', 'mohawk', 'bald', 'ponytail'],
   beards: ['none', 'stubble', 'goatee', 'full'],
   glasses: ['none', 'round', 'square', 'sunglasses'],
@@ -15,6 +16,7 @@ export function createAvatar(options = {}) {
   return {
     username: options.username ?? 'Guest',
     skinColor: options.skinColor ?? AVATAR_OPTIONS.skinColors[0],
+    gender: options.gender ?? AVATAR_OPTIONS.gender[0],
     hair: options.hair ?? AVATAR_OPTIONS.hair[0],
     beard: options.beard ?? 'none',
     glasses: options.glasses ?? 'none',
@@ -28,6 +30,9 @@ export function validateAvatar(avatar) {
     return false;
   }
   if (!AVATAR_OPTIONS.skinColors.includes(avatar.skinColor)) {
+    return false;
+  }
+  if (!AVATAR_OPTIONS.gender.includes(avatar.gender)) {
     return false;
   }
   if (!AVATAR_OPTIONS.hair.includes(avatar.hair)) {

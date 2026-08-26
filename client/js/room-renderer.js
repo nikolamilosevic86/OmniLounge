@@ -1,14 +1,22 @@
+import { resolveObjectColor, objectTypeIcon } from './builder-objects.js';
+
 const ROOM_WIDTH = 800;
 const ROOM_HEIGHT = 600;
 const WALL_HEIGHT = ROOM_HEIGHT * 0.42;
 
 let _animFrame = null;
 let _canvas = null;
+let _builderObjects = [];
 
 export function drawRoom(canvas) {
   _canvas = canvas;
   if (_animFrame) cancelAnimationFrame(_animFrame);
   _animLoop();
+}
+
+/** Sets the builder-placed objects (for the player's current tile) to render on the canvas. */
+export function setBuilderObjects(objects) {
+  _builderObjects = Array.isArray(objects) ? objects : [];
 }
 
 function _animLoop() {
@@ -19,6 +27,7 @@ function _animLoop() {
   drawWall(ctx);
   drawFloor(ctx);
   drawFurniture(ctx);
+  drawBuilderObjects(ctx);
   drawAmbientLight(ctx);
   drawDiscoBall(ctx, ROOM_WIDTH / 2, WALL_HEIGHT * 0.22);
 
@@ -362,4 +371,36 @@ export function canvasToRoomCoords(canvas, clientX, clientY) {
     x: (clientX - rect.left) * scaleX,
     y: (clientY - rect.top) * scaleY,
   };
+}
+
+function drawBuilderObjects(ctx) {
+  for (const obj of _builderObjects) {
+    const cx = obj.x + obj.width / 2;
+    const cy = obj.y + obj.height / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(((obj.rotation || 0) * Math.PI) / 180);
+
+    ctx.fillStyle = resolveObjectColor(obj.color);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-obj.width / 2, -obj.height / 2, obj.width, obj.height, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    if (obj.isLocked) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.roundRect(-obj.width / 2, -obj.height / 2, obj.width, obj.height, 6);
+      ctx.fill();
+    }
+
+    ctx.rotate(-((obj.rotation || 0) * Math.PI) / 180);
+    ctx.font = `${Math.min(obj.width, obj.height, 28)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(objectTypeIcon(obj.objectType), 0, 0);
+    ctx.restore();
+  }
 }

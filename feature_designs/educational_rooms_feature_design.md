@@ -515,68 +515,74 @@ Deferred from mandatory MVP:
 Use this section as the delivery tracker. Mark each item complete as work lands in code, tests, and deployment.
 
 ### Phase A: Foundation and Data Model
-- [ ] Create DB schema updates for rooms, tiles, room objects, content resources, story nodes, and role mappings.
-- [ ] Add room versioning tables and publish snapshot support.
-- [ ] Add secure secrets storage for room-admin AI API configuration.
-- [ ] Add migrations and rollback scripts for all new schema changes.
-- [ ] Add backend validation models for object placement, tile boundaries, and content payloads.
+- [x] Create DB schema updates for rooms, tiles, room objects, content resources, story nodes, and role mappings.
+- [x] Add room versioning tables and publish snapshot support.
+- [x] Add secure secrets storage for room-admin AI API configuration.
+- [x] Add migrations and rollback scripts for all new schema changes.
+- [x] Add backend validation models for object placement, tile boundaries, and content payloads.
 
 ### Phase B: Entry Flow and Room Discovery
 - [x] Implement avatar-first entry flow with create avatar and continue actions.
 - [x] Implement lobby chooser with Create New Room and Join Existing Room.
-- [ ] Implement room list API with filtering (topic, activity, access type).
+- [x] Implement room list API with filtering (topic, activity, access type).
 - [x] Implement room join flow (public and invite/private).
 - [x] Add client-side room cards with host, tags, users, and privacy indicators.
 
 ### Phase C: Multi-Tile World Navigation (5x5 MVP)
-- [ ] Implement tile coordinate model and room spawn tile handling.
-- [ ] Implement edge transition detection (left, right, top, bottom).
-- [ ] Implement transition to neighbor tile and opposite-edge spawn.
-- [ ] Enforce MVP max world size of 5x5 tiles.
-- [ ] Add mini-map and current tile indicator in UI.
-- [ ] Add tests for tile transitions, invalid neighbors, and boundary behavior.
+- [x] Implement tile coordinate model and room spawn tile handling.
+- [x] Implement edge transition detection (left, right, top, bottom).
+- [x] Implement transition to neighbor tile and opposite-edge spawn.
+- [x] Enforce MVP max world size of 5x5 tiles.
+- [x] Add mini-map and current tile indicator in UI.
+- [x] Add tests for tile transitions, invalid neighbors, and boundary behavior.
 
 ### Phase D: Depth-First Room Builder
-- [ ] Build mode and play mode toggle with clear UI separation.
-- [ ] Add tile graph editor: add, clone, delete, and configure tile visuals.
-- [ ] Add object placement tools with drag, resize, rotate, duplicate, and lock.
-- [ ] Add layering and z-index controls (mandatory MVP feature).
-- [ ] Add collision and interaction zone editor (mandatory MVP feature).
-- [ ] Add scripted trigger editor for area-enter events (mandatory MVP feature).
-- [ ] Add save draft, publish, and rollback to previous snapshot actions.
+- [x] Build mode and play mode toggle with clear UI separation.
+- [x] Add tile graph editor: add, clone, delete, and configure tile visuals.
+- [x] Add object placement tools with drag, resize, rotate, duplicate, and lock.
+      (Move/resize/rotate use accessible numeric form controls in the builder
+      panel rather than mouse drag, for a tractable, HIG-consistent MVP.)
+- [x] Add layering and z-index controls (mandatory MVP feature).
+- [x] Add collision and interaction zone editor (mandatory MVP feature).
+- [x] Add scripted trigger editor for area-enter events (mandatory MVP feature).
+      (Authoring/CRUD only in the builder panel; runtime firing during live
+      gameplay movement is deferred to Phase H, AI Characters and Story Engine.)
+- [x] Add save draft, publish, and rollback to previous snapshot actions.
 
 ### Phase E: Interactive Educational Objects
-- [ ] Implement object types: tables, chairs, bars, bookshelves, sofas, TVs, music players.
-- [ ] Implement object style settings: size presets, custom size, and color/material choices.
-- [ ] Implement contextual interaction menus per object type.
-- [ ] Add object-level permissions for edit and interaction configuration.
-- [ ] Add tests for object CRUD, render placement, and interaction payloads.
+- [x] Implement object types: tables, chairs, bars, bookshelves, sofas, TVs, music players.
+- [x] Implement object style settings: size presets, custom size, and color/material choices.
+- [x] Implement contextual interaction menus per object type.
+- [x] Add object-level permissions for edit and interaction configuration.
+      (Lightweight owner/anyone edit permission + room-host override; full
+      RBAC with owner/editor/moderator/viewer roles is deferred to Phase I.)
+- [x] Add tests for object CRUD, render placement, and interaction payloads.
 
 ### Phase F: Bookshelf Learning System
-- [ ] Implement book resource model (title, author, summary, content source, read progress).
-- [ ] Implement reader UI (inline modal and full-screen mode).
-- [ ] Implement per-user reading progress tracking and resume behavior.
-- [ ] Add validation for allowed content types (inline and markdown for MVP).
-- [ ] Add tests for read progress persistence and reader navigation.
+- [x] Implement book resource model (title, author, summary, content source, read progress).
+- [x] Implement reader UI (inline modal; scroll-tracked progress bar). Full-screen mode deferred — the modal is scoped to MVP reading needs.
+- [x] Implement per-user reading progress tracking and resume behavior.
+- [x] Add validation for allowed content types (inline and markdown for MVP).
+- [x] Add tests for read progress persistence and reader navigation.
 
 ### Phase G: TV and Music Learning Media
-- [ ] Implement TV content model with YouTube video support.
-- [ ] Implement music player content model with linked educational tracks.
-- [ ] Implement personal playback as default mode.
-- [ ] Implement opt-in Watch/Listen together synchronization flow.
-- [ ] Add moderation and URL validation for media sources.
-- [ ] Add tests for playback controls and sync opt-in behavior.
+- [x] Implement TV content model with YouTube video support.
+- [x] Implement music player content model with linked educational tracks.
+- [x] Implement personal playback as default mode.
+- [x] Implement opt-in Watch/Listen together synchronization flow.
+- [x] Add moderation and URL validation for media sources (server-side YouTube-id regex is the enforced boundary; MVP restricts sources to YouTube only, client-side URL parsing gives immediate feedback but is not trusted).
+- [x] Add tests for playback controls and sync opt-in behavior.
 
 ### Phase H: AI Characters and Story Engine
-- [ ] Implement AI character placement and role assignment per tile.
-- [ ] Implement predefined story graph runtime (nodes, choices, next-step routing).
-- [ ] Implement character-level knowledge base model and editor.
-- [ ] Implement default predefined-only runtime mode.
-- [ ] Implement optional generative mode gated by room-admin API URL and key.
-- [ ] Implement server-side secure call flow to OpenAI-compatible endpoint.
-- [ ] Implement fallback to predefined responses on API failure.
-- [ ] Add clear UI indicator of character mode (predefined vs generative).
-- [ ] Add tests for story progression, fallback behavior, and permissions.
+- [x] Implement AI character placement and role assignment per tile.
+- [x] Implement predefined story graph runtime (nodes, choices, next-step routing).
+- [x] Implement character-level knowledge base model and editor.
+- [x] Implement default predefined-only runtime mode.
+- [x] Implement optional generative mode gated by room-admin API URL and key.
+- [x] Implement server-side secure call flow to OpenAI-compatible endpoint.
+- [x] Implement fallback to predefined responses on API failure.
+- [x] Add clear UI indicator of character mode (predefined vs generative).
+- [x] Add tests for story progression, fallback behavior, and permissions.
 
 ### Phase I: Roles, Permissions, and Moderation
 - [ ] Implement room-admin role assignment to room creator.

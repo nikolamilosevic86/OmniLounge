@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#16111c" />
   <title>OmniLaunge</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
   <div id="app">
+    <button id="theme-toggle" class="theme-toggle-btn" type="button" aria-label="Switch to light mode" aria-pressed="false">
+      <span class="material-symbols-outlined" aria-hidden="true">light_mode</span>
+    </button>
+
     <div id="creator-screen" class="screen active">
       <div class="stars"></div>
       <div class="creator-container">
         <header class="creator-header">
-          <div class="logo-badge">✦ OMNILAUNGE</div>
+          <div class="logo-badge"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> OMNILAUNGE</div>
           <h1>OmniLaunge</h1>
           <p class="subtitle">Design your character · Explore the lounge · Chat with friends</p>
         </header>
@@ -31,27 +36,31 @@
 
           <div class="customization-panel">
             <div class="option-group">
-              <label><span class="label-icon">🎨</span> Skin Color</label>
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">palette</span> Skin Color</label>
               <div id="skin-colors" class="color-swatches"></div>
             </div>
             <div class="option-group">
-              <label><span class="label-icon">💇</span> Hair</label>
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">wc</span> Body Type</label>
+              <div id="gender-options" class="option-buttons"></div>
+            </div>
+            <div class="option-group">
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">content_cut</span> Hair</label>
               <div id="hair-options" class="option-buttons"></div>
             </div>
             <div class="option-group">
-              <label><span class="label-icon">🧔</span> Beard</label>
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">face</span> Beard</label>
               <div id="beard-options" class="option-buttons"></div>
             </div>
             <div class="option-group">
-              <label><span class="label-icon">👓</span> Glasses</label>
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">visibility</span> Glasses</label>
               <div id="glasses-options" class="option-buttons"></div>
             </div>
             <div class="option-group">
-              <label><span class="label-icon">👕</span> Clothes</label>
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">checkroom</span> Clothes</label>
               <div id="clothes-options" class="option-buttons"></div>
             </div>
             <div class="option-group">
-              <label><span class="label-icon">🎒</span> Accessory</label>
+              <label><span class="material-symbols-outlined label-icon" aria-hidden="true">backpack</span> Accessory</label>
               <div id="accessory-options" class="option-buttons"></div>
             </div>
           </div>
@@ -59,7 +68,7 @@
 
         <button id="enter-room-btn" class="enter-btn" disabled>
           <span>Enter the Lounge</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
         </button>
       </div>
     </div>
@@ -80,6 +89,20 @@
             <button id="room-refresh-btn" type="button" class="room-refresh-btn">Refresh</button>
           </div>
 
+          <div class="room-filter-row">
+            <input id="room-filter-topic" type="text" maxlength="40" placeholder="Filter by topic tag (for example: history)" />
+            <select id="room-filter-access">
+              <option value="all">All Access</option>
+              <option value="public">Public</option>
+              <option value="invite">Invite</option>
+            </select>
+            <select id="room-filter-sort">
+              <option value="newest">Newest</option>
+              <option value="active">Most Active</option>
+            </select>
+            <input id="room-invite-code" type="text" maxlength="30" placeholder="Invite code (for invite rooms)" />
+          </div>
+
           <div id="room-list" class="room-list"></div>
         </div>
       </div>
@@ -96,6 +119,15 @@
               <span class="pulse-dot"></span>
               <span id="online-count">0 online</span>
             </div>
+            <div class="hud-pill tile-pill">
+              <span id="current-tile-label">Tile (0, 0)</span>
+            </div>
+            <div class="hud-pill build-mode-pill">
+              <button id="build-mode-toggle" type="button" aria-pressed="false">Build Mode: Off</button>
+            </div>
+            <div class="hud-pill minimap-pill">
+              <div id="mini-map" class="mini-map"></div>
+            </div>
             <div class="hud-pill controls-pill">
               <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · click to walk
             </div>
@@ -105,15 +137,297 @@
           </div>
         </div>
 
+        <aside id="build-controls" class="builder-panel hidden" aria-label="Room builder">
+          <div class="builder-panel-header">
+            <span class="material-symbols-outlined" aria-hidden="true">construction</span>
+            <h3>Room Builder</h3>
+          </div>
+
+          <section class="builder-section">
+            <h4>Tiles</h4>
+            <div class="build-controls-grid">
+              <button type="button" data-dir="top">Add Up</button>
+              <button type="button" data-dir="left">Add Left</button>
+              <button type="button" data-dir="right">Add Right</button>
+              <button type="button" data-dir="bottom">Add Down</button>
+            </div>
+            <div class="build-controls-grid">
+              <button type="button" id="tile-clone-btn">Clone → Right</button>
+              <button type="button" id="tile-delete-btn">Delete Tile</button>
+            </div>
+            <label class="builder-field">
+              <span>Label</span>
+              <input type="text" id="tile-label-input" maxlength="80" placeholder="e.g. Library Wing" />
+            </label>
+            <label class="builder-field">
+              <span>Purpose</span>
+              <select id="tile-purpose-select">
+                <option value="">—</option>
+                <option value="intro">Intro</option>
+                <option value="lesson">Lesson</option>
+                <option value="quiz">Quiz</option>
+                <option value="lounge">Lounge</option>
+              </select>
+            </label>
+            <button type="button" id="tile-configure-btn" class="builder-primary-btn">Save Tile</button>
+          </section>
+
+          <section class="builder-section">
+            <h4>Objects</h4>
+            <label class="builder-field">
+              <span>Type</span>
+              <select id="object-type-select">
+                <option value="table">Table</option>
+                <option value="chair">Chair</option>
+                <option value="bar">Bar</option>
+                <option value="sofa">Sofa</option>
+                <option value="bookshelf">Bookshelf</option>
+                <option value="tv">TV</option>
+                <option value="music_player">Music Player</option>
+                <option value="ai_character">AI Character</option>
+              </select>
+            </label>
+            <label class="builder-field">
+              <span>Size</span>
+              <select id="object-size-select">
+                <option value="">Default</option>
+                <option value="S">Small</option>
+                <option value="M">Medium</option>
+                <option value="L">Large</option>
+              </select>
+            </label>
+            <label class="builder-field">
+              <span>Color</span>
+              <select id="object-color-select">
+                <option value="">—</option>
+                <option value="natural-wood">Natural Wood</option>
+                <option value="dark-wood">Dark Wood</option>
+                <option value="white">White</option>
+                <option value="black">Black</option>
+                <option value="navy">Navy</option>
+                <option value="forest-green">Forest Green</option>
+                <option value="burgundy">Burgundy</option>
+                <option value="gold-accent">Gold Accent</option>
+              </select>
+            </label>
+            <label class="builder-field">
+              <span>Material</span>
+              <select id="object-material-select">
+                <option value="">—</option>
+                <option value="wood">Wood</option>
+                <option value="metal">Metal</option>
+                <option value="fabric">Fabric</option>
+                <option value="glass">Glass</option>
+                <option value="stone">Stone</option>
+              </select>
+            </label>
+            <label class="builder-field builder-checkbox-field">
+              <input type="checkbox" id="object-edit-anyone-input" />
+              <span>Anyone can edit</span>
+            </label>
+            <button type="button" id="object-add-btn" class="builder-primary-btn">Add Object Here</button>
+            <ul id="object-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Bookshelf Books</h4>
+            <label class="builder-field">
+              <span>Shelf</span>
+              <select id="book-shelf-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Title</span>
+              <input type="text" id="book-title-input" maxlength="120" placeholder="Book title" />
+            </label>
+            <label class="builder-field">
+              <span>Author</span>
+              <input type="text" id="book-author-input" maxlength="120" placeholder="Author (optional)" />
+            </label>
+            <label class="builder-field">
+              <span>Summary</span>
+              <input type="text" id="book-summary-input" maxlength="240" placeholder="Short summary (optional)" />
+            </label>
+            <label class="builder-field">
+              <span>Format</span>
+              <select id="book-content-type-select">
+                <option value="inline">Plain text</option>
+                <option value="markdown">Markdown</option>
+              </select>
+            </label>
+            <label class="builder-field">
+              <span>Content</span>
+              <textarea id="book-content-input" rows="4" placeholder="Book content..."></textarea>
+            </label>
+            <button type="button" id="book-add-btn" class="builder-primary-btn">Add Book to Shelf</button>
+            <ul id="book-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>TV Videos</h4>
+            <label class="builder-field">
+              <span>TV</span>
+              <select id="video-tv-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Title</span>
+              <input type="text" id="video-title-input" maxlength="120" placeholder="Video title" />
+            </label>
+            <label class="builder-field">
+              <span>YouTube URL or ID</span>
+              <input type="text" id="video-youtube-input" placeholder="https://youtube.com/watch?v=..." />
+            </label>
+            <label class="builder-field">
+              <span>Description</span>
+              <input type="text" id="video-description-input" maxlength="240" placeholder="Description (optional)" />
+            </label>
+            <button type="button" id="video-add-btn" class="builder-primary-btn">Add Video to TV</button>
+            <ul id="video-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Music Tracks</h4>
+            <label class="builder-field">
+              <span>Music player</span>
+              <select id="track-player-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Title</span>
+              <input type="text" id="track-title-input" maxlength="120" placeholder="Track title" />
+            </label>
+            <label class="builder-field">
+              <span>Artist</span>
+              <input type="text" id="track-artist-input" maxlength="120" placeholder="Artist (optional)" />
+            </label>
+            <label class="builder-field">
+              <span>YouTube URL or ID</span>
+              <input type="text" id="track-youtube-input" placeholder="https://youtube.com/watch?v=..." />
+            </label>
+            <button type="button" id="track-add-btn" class="builder-primary-btn">Add Track to Player</button>
+            <ul id="track-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>AI Character</h4>
+            <label class="builder-field">
+              <span>Character</span>
+              <select id="character-npc-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Name</span>
+              <input type="text" id="character-name-input" maxlength="80" placeholder="Character name" />
+            </label>
+            <label class="builder-field">
+              <span>Role</span>
+              <select id="character-role-select">
+                <option value="guide">Guide</option>
+                <option value="quiz_master">Quiz Master</option>
+                <option value="narrator">Narrator</option>
+                <option value="historical_persona">Historical Persona</option>
+                <option value="mentor">Mentor</option>
+              </select>
+            </label>
+            <label class="builder-field">
+              <span>Start Node ID</span>
+              <input type="text" id="character-start-node-input" placeholder="node-1" />
+            </label>
+            <label class="builder-field">
+              <span>Portrait URL</span>
+              <input type="text" id="character-portrait-input" placeholder="Portrait URL (optional)" />
+            </label>
+            <button type="button" id="character-configure-btn" class="builder-primary-btn">Save Character</button>
+
+            <label class="builder-field">
+              <span>Knowledge Base</span>
+              <textarea id="character-knowledge-base-input" rows="3" placeholder="Facts this character can fall back on..."></textarea>
+            </label>
+            <button type="button" id="character-knowledge-base-btn" class="builder-primary-btn">Save Knowledge Base</button>
+
+            <label class="builder-field">
+              <span>Generative API Base URL</span>
+              <input type="text" id="character-api-url-input" placeholder="https://api.openai.com/v1 (optional)" />
+            </label>
+            <label class="builder-field">
+              <span>Generative API Key</span>
+              <input type="password" id="character-api-key-input" placeholder="API key (optional)" />
+            </label>
+            <button type="button" id="character-generative-btn" class="builder-primary-btn">Save Generative Config</button>
+
+            <label class="builder-field">
+              <span>New Node ID</span>
+              <input type="text" id="story-node-id-input" placeholder="node-2" />
+            </label>
+            <label class="builder-field">
+              <span>Character Line</span>
+              <textarea id="story-node-line-input" rows="2" placeholder="What the character says..."></textarea>
+            </label>
+            <label class="builder-field">
+              <span>Choices (one per line: Text | nextNodeId)</span>
+              <textarea id="story-node-choices-input" rows="3" placeholder="Continue | node-2"></textarea>
+            </label>
+            <button type="button" id="story-node-add-btn" class="builder-primary-btn">Add Story Node</button>
+            <ul id="story-node-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Zones</h4>
+            <label class="builder-field">
+              <span>Type</span>
+              <select id="zone-type-select">
+                <option value="collision">Collision</option>
+                <option value="interaction">Interaction</option>
+              </select>
+            </label>
+            <div class="builder-object-row-fields">
+              <label>Min X<input type="number" id="zone-min-x" value="0" /></label>
+              <label>Min Y<input type="number" id="zone-min-y" value="0" /></label>
+              <label>Max X<input type="number" id="zone-max-x" value="100" /></label>
+              <label>Max Y<input type="number" id="zone-max-y" value="100" /></label>
+            </div>
+            <button type="button" id="zone-add-btn" class="builder-primary-btn">Add Zone Here</button>
+            <ul id="zone-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Triggers</h4>
+            <label class="builder-field">
+              <span>Zone</span>
+              <select id="trigger-zone-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Event type</span>
+              <input type="text" id="trigger-event-input" maxlength="60" placeholder="e.g. show_lesson_card" />
+            </label>
+            <label class="builder-field builder-checkbox-field">
+              <input type="checkbox" id="trigger-repeatable-input" />
+              <span>Repeatable</span>
+            </label>
+            <button type="button" id="trigger-add-btn" class="builder-primary-btn">Add Trigger</button>
+            <ul id="trigger-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Versions</h4>
+            <div class="build-controls-grid">
+              <button type="button" id="version-save-btn">Save Draft</button>
+              <button type="button" id="version-publish-btn">Publish Latest</button>
+            </div>
+            <ul id="version-list" class="builder-version-list"></ul>
+          </section>
+        </aside>
+
         <aside class="chat-panel">
           <div class="chat-header">
             <div class="chat-title">
-              <span class="chat-icon">💬</span>
+              <span class="material-symbols-outlined chat-icon" aria-hidden="true">forum</span>
               <h2>Lounge Chat</h2>
             </div>
-            <div class="chat-mode-toggle">
-              <button id="mode-public" class="mode-btn active" data-mode="public">🌍 Public</button>
-              <button id="mode-private" class="mode-btn" data-mode="private">🔒 Private</button>
+            <div class="chat-mode-toggle" role="group" aria-label="Chat audience">
+              <button id="mode-public" class="mode-btn active" data-mode="public" aria-pressed="true">
+                <span class="material-symbols-outlined" aria-hidden="true">public</span> Public
+              </button>
+              <button id="mode-private" class="mode-btn" data-mode="private" aria-pressed="false">
+                <span class="material-symbols-outlined" aria-hidden="true">lock</span> Private
+              </button>
             </div>
           </div>
 
@@ -128,11 +442,80 @@
 
           <form id="chat-form" class="chat-form">
             <input type="text" id="chat-input" placeholder="Say something..." maxlength="200" autocomplete="off" />
-            <button type="submit" class="send-btn" aria-label="Send">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            <button type="submit" class="send-btn" aria-label="Send message">
+              <span class="material-symbols-outlined" aria-hidden="true">send</span>
             </button>
           </form>
         </aside>
+      </div>
+    </div>
+
+    <div id="reader-modal" class="reader-modal hidden">
+      <div class="reader-modal-card">
+        <div class="reader-modal-header">
+          <h3 id="reader-modal-title">Bookshelf</h3>
+          <button id="reader-modal-close" class="reader-modal-close" type="button" aria-label="Close">✕</button>
+        </div>
+
+        <div id="reader-book-list-view" class="reader-book-list-view">
+          <ul id="reader-book-list" class="reader-book-list"></ul>
+        </div>
+
+        <div id="reader-book-view" class="reader-book-view hidden">
+          <button id="reader-back-btn" class="reader-back-btn" type="button">&larr; Back to shelf</button>
+          <h4 id="reader-book-title"></h4>
+          <p id="reader-book-meta" class="reader-book-meta"></p>
+          <div id="reader-book-progress-bar" class="reader-book-progress-bar">
+            <div id="reader-book-progress-fill" class="reader-book-progress-fill"></div>
+          </div>
+          <div id="reader-book-content" class="reader-book-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="media-modal" class="reader-modal hidden">
+      <div class="reader-modal-card">
+        <div class="reader-modal-header">
+          <h3 id="media-modal-title">Media</h3>
+          <button id="media-modal-close" class="reader-modal-close" type="button" aria-label="Close">✕</button>
+        </div>
+
+        <div id="media-playlist-view" class="reader-book-list-view">
+          <ul id="media-playlist-list" class="reader-book-list"></ul>
+        </div>
+
+        <div id="media-player-view" class="reader-book-view hidden">
+          <button id="media-back-btn" class="reader-back-btn" type="button">&larr; Back to playlist</button>
+          <h4 id="media-item-title"></h4>
+          <p id="media-item-meta" class="reader-book-meta"></p>
+          <div id="media-video-frame" class="media-video-frame"></div>
+          <div id="media-sync-bar" class="media-sync-bar">
+            <span id="media-sync-status" class="media-sync-status"></span>
+            <button id="media-sync-toggle-btn" class="media-sync-toggle-btn" type="button">Watch Together</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="dialogue-modal" class="reader-modal hidden">
+      <div class="reader-modal-card">
+        <div class="reader-modal-header">
+          <h3 id="dialogue-modal-title">Character</h3>
+          <button id="dialogue-modal-close" class="reader-modal-close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="reader-book-view">
+          <p id="dialogue-mode-indicator" class="reader-book-meta"></p>
+          <p id="dialogue-character-line"></p>
+          <ul id="dialogue-choice-list" class="builder-object-list"></ul>
+          <form id="dialogue-ask-form" class="chat-form">
+            <input type="text" id="dialogue-ask-input" placeholder="Ask a question..." maxlength="200" autocomplete="off" />
+            <button type="submit" class="send-btn" aria-label="Ask">
+              <span class="material-symbols-outlined" aria-hidden="true">send</span>
+            </button>
+          </form>
+          <p id="dialogue-answer" class="reader-book-meta"></p>
+          <button type="button" id="dialogue-restart-btn" class="builder-primary-btn">Start Mission Over</button>
+        </div>
       </div>
     </div>
   </div>

@@ -19,10 +19,11 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO avatars (username, skin_color, hair, beard, glasses, clothes, accessory)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO avatars (username, skin_color, gender, hair, beard, glasses, clothes, accessory)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (username) DO UPDATE SET
                     skin_color = EXCLUDED.skin_color,
+                    gender = EXCLUDED.gender,
                     hair = EXCLUDED.hair,
                     beard = EXCLUDED.beard,
                     glasses = EXCLUDED.glasses,
@@ -32,6 +33,7 @@ class Database:
                 """,
                 avatar["username"],
                 avatar["skinColor"],
+                avatar.get("gender", "neutral"),
                 avatar["hair"],
                 avatar["beard"],
                 avatar["glasses"],
@@ -51,6 +53,7 @@ class Database:
         return {
             "username": row["username"],
             "skinColor": row["skin_color"],
+            "gender": row["gender"],
             "hair": row["hair"],
             "beard": row["beard"],
             "glasses": row["glasses"],

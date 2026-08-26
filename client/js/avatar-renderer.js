@@ -1,5 +1,6 @@
 export const AVATAR_OPTIONS = {
   skinColors: ['#FFDBAC', '#F1C27D', '#E0AC69', '#C68642', '#8D5524', '#5C3D2E'],
+  gender: ['neutral', 'feminine', 'masculine'],
   hair: ['short', 'long', 'curly', 'mohawk', 'bald', 'ponytail'],
   beards: ['none', 'stubble', 'goatee', 'full'],
   glasses: ['none', 'round', 'square', 'sunglasses'],
@@ -565,6 +566,8 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
     ${djExtra}`;
 
   // Body — trapezoid (body-shaped), flared for dress
+  const shoulderBroaden = avatar.gender === 'masculine' ? bodyW * 0.05 : 0;
+  const hipFlare        = avatar.gender === 'feminine' ? bodyW * 0.12 : 0;
   let svgBody = '';
   if (avatar.clothes === 'dress') {
     const spread = bodyW * 0.3;
@@ -579,10 +582,10 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
             fill="${clothHL}" opacity="0.26" stroke="none"/>`;
   } else {
     svgBody = `
-      <path d="M${bL + bodyW * 0.08},${bodyTop}
-               Q${bL},${bodyTop + bodyH * 0.42} ${bL},${bodyBot}
-               L${bL + bodyW},${bodyBot}
-               Q${bL + bodyW},${bodyTop + bodyH * 0.42} ${bL + bodyW - bodyW * 0.08},${bodyTop}Z"
+      <path d="M${bL + bodyW * 0.08 - shoulderBroaden},${bodyTop}
+               Q${bL - hipFlare * 0.6},${bodyTop + bodyH * 0.42} ${bL - hipFlare},${bodyBot}
+               L${bL + bodyW + hipFlare},${bodyBot}
+               Q${bL + bodyW + hipFlare * 0.6},${bodyTop + bodyH * 0.42} ${bL + bodyW - bodyW * 0.08 + shoulderBroaden},${bodyTop}Z"
             fill="${clothC}"/>
       <path d="M${bL + bodyW * 0.2},${bodyTop}
                Q${bL + bodyW * 0.1},${bodyTop + bodyH * 0.56} ${bL + bodyW * 0.12},${bodyBot}"
@@ -709,7 +712,7 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
     ${svgBody}
     ${svgClothDetail}
     ${svgNeck}
-    ${hBack}
+    <g stroke="rgba(255,255,255,0.22)" stroke-width="${w * 0.014}" stroke-linejoin="round">${hBack}</g>
     ${svgHead}
     ${svgEyes}
     ${svgBlush}
@@ -717,7 +720,7 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
     ${svgMouth}
     ${svgBeard}
     ${svgGlasses}
-    ${hFront}
+    <g stroke="rgba(255,255,255,0.22)" stroke-width="${w * 0.014}" stroke-linejoin="round">${hFront}</g>
     ${accFront}
   </svg>`;
 }
