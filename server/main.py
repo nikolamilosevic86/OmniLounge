@@ -23,6 +23,7 @@ from server.game.combat import (
 from server.game.ai_bot import AIBot, BOT_ID, BOT_AVATAR
 from server.game.moderation import contains_external_link
 from server.game.movement import move_by_direction, move_toward
+from server.game.metrics import MetricsCollector
 from server.game.room import Room
 from server.game.rooms_registry import RoomsRegistry
 
@@ -32,7 +33,36 @@ sio     = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 db      = Database()
 rooms   = RoomsRegistry()
 ai_bot  = AIBot()
+metrics = MetricsCollector()
 _game_loop_task: asyncio.Task | None = None
+
+# Wrap sio.on() registration so every "@sio.on(...)" handler below is timed and
+# its success/failure recorded in `metrics`, without needing to touch each
+# handler individually. Handlers registered via "@sio.event" (connect/
+# disconnect) are intentionally left uninstrumented for now.
+_uninstrumented_sio_on = sio.on
+
+
+def _instrumented_sio_on(event, handler=None, namespace=None):
+    def register(func):
+        async def timed_handler(*args, **kwargs):
+            start = time.monotonic()
+            try:
+                result = await func(*args, **kwargs)
+                metrics.record(event, (time.monotonic() - start) * 1000.0, success=True)
+                return result
+            except Exception:
+                metrics.record(event, (time.monotonic() - start) * 1000.0, success=False)
+                raise
+        return _uninstrumented_sio_on(event, namespace=namespace)(timed_handler)
+
+    if handler is not None:
+        return register(handler)
+    return register
+
+
+sio.on = _instrumented_sio_on
+
 
 
 def player_payload(player: dict, moderation=None) -> dict:
@@ -213,6 +243,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/metrics")
+async def get_metrics():
+    return {
+        "events": metrics.snapshot(),
+        "rooms_active": len(rooms.rooms),
+        "players_connected": len(rooms.player_room),
+    }
+
 
 if DIST_DIR.exists():
     assets_dir = DIST_DIR / "assets"

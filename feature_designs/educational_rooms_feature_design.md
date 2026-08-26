@@ -597,7 +597,7 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 - [ ] Implement lazy tile/object loading where needed.
 - [x] Add accessibility pass for reader, dialog, and builder controls.
 - [x] Add rate limiting and abuse protections for generative requests.
-- [ ] Add observability dashboards for latency, errors, and usage metrics.
+- [x] Add observability dashboards for latency, errors, and usage metrics.
 
 ### Phase K: QA, UAT, and Release
 - [ ] Expand automated tests across frontend, backend, and integration paths.
