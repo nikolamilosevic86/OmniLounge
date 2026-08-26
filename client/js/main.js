@@ -89,6 +89,7 @@ const state = {
   mediaModalObjectType: null, // 'tv' | 'music_player'
   mediaCurrentItem: null,
   mediaSyncSession: null,
+  mediaSyncSessions: new Map(), // objectId → session, kept fresh even while the modal is closed
   suppressMediaModalForBrowse: false,
   builderCharacters: {},  // objectId → character config
   builderStoryNodes: {},  // objectId → nodes[]
@@ -783,7 +784,7 @@ function initGame() {
     const itemId = li.getAttribute('data-item-id');
     const items = objectType === 'tv' ? (state.builderVideos[objectId] || []) : (state.builderTracks[objectId] || []);
     const item = items.find((i) => (objectType === 'tv' ? i.videoId : i.trackId) === itemId);
-    if (item) openMediaPlayerView(objectId, objectType, item, state.mediaSyncSession);
+    if (item) openMediaPlayerView(objectId, objectType, item, state.mediaSyncSessions.get(objectId) ?? null);
   });
 
   mediaSyncToggleBtn?.addEventListener('click', () => {
@@ -1043,6 +1044,10 @@ function connectSocket() {
     state.myRoomRole = payload.myRole || 'participant';
     state.playerRoles = new Map();
     state.mutedPlayers = new Set();
+    // Build mode is scoped to the room the user was building in; leaving it
+    // "on" after switching rooms falsely implies building is still active.
+    state.buildMode = false;
+    updateBuildModeUi();
     clearSceneStateForRoomSwitch();
     roomChooser.classList.add('hidden');
     renderMiniMap();
@@ -1117,6 +1122,11 @@ function connectSocket() {
   });
 
   state.socket.on('room:media:sync:updated', (payload) => {
+    // Keep the per-object session cache fresh even if this room's modal for
+    // that object isn't currently open, so reopening the playlist later
+    // reflects the real server-side session instead of a stale local value.
+    if (payload.session) state.mediaSyncSessions.set(payload.objectId, payload.session);
+    else state.mediaSyncSessions.delete(payload.objectId);
     if (payload.objectId !== state.mediaModalObjectId) return;
     updateMediaSyncUi(payload.session);
   });
@@ -2119,6 +2129,8 @@ function handleObjectInteractionResult(result) {
     return;
   }
   if (result.interactionType === 'watch_video') {
+    if (result.payload.syncSession) state.mediaSyncSessions.set(result.objectId, result.payload.syncSession);
+    else state.mediaSyncSessions.delete(result.objectId);
     openMediaPlayerView(result.objectId, 'tv', result.payload.video, result.payload.syncSession);
     return;
   }
@@ -2134,6 +2146,8 @@ function handleObjectInteractionResult(result) {
     return;
   }
   if (result.interactionType === 'play_track') {
+    if (result.payload.syncSession) state.mediaSyncSessions.set(result.objectId, result.payload.syncSession);
+    else state.mediaSyncSessions.delete(result.objectId);
     openMediaPlayerView(result.objectId, 'music_player', result.payload.track, result.payload.syncSession);
     return;
   }

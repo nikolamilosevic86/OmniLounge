@@ -18,6 +18,13 @@ let _blocking       = false;
 let _enabled        = false;
 
 export function initCombat({ socket, getMyId, getMyPos, getPlayers, onAttackStart }) {
+  // Idempotent: the caller re-invokes this on every socket 'connect' event
+  // (including reconnects after a dropped connection). Without tearing down
+  // any previously-registered listeners first, each reconnect would stack
+  // another pair of keydown/keyup handlers, causing a single keypress to
+  // fire multiple attack/block socket emits.
+  if (_enabled) destroyCombat();
+
   _socket        = socket;
   _getMyId       = getMyId;
   _getMyPos      = getMyPos;
