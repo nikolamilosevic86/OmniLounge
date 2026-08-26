@@ -32,6 +32,10 @@ describe('formatModeLabel', () => {
     expect(formatModeLabel('generative')).toBe('Generative Mode');
   });
 
+  it('formats rate-limited mode', () => {
+    expect(formatModeLabel('rate_limited')).toBe('Please Wait');
+  });
+
   it('falls back gracefully for an unknown mode', () => {
     expect(formatModeLabel(undefined)).toBe('Predefined Mode');
   });

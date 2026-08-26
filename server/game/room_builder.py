@@ -26,6 +26,11 @@ ZoneType = Literal["collision", "interaction"]
 
 _VALID_ZONE_TYPES = {"collision", "interaction"}
 
+# Phase J performance budget: caps how many objects a single tile can hold so
+# a tile's render/interaction cost stays bounded (avoids the canvas and
+# builder UI degrading from an unbounded number of objects on one screen).
+MAX_OBJECTS_PER_TILE = 40
+
 
 def _neighbor_coord(base: tuple[int, int], direction: str) -> tuple[int, int]:
     bx, by = base
@@ -153,6 +158,15 @@ class RoomBuilderState:
             return 0
         return max(obj["zIndex"] for obj in self._objects.values()) + 1
 
+    def _object_count_on_tile(self, tile: tuple[int, int]) -> int:
+        return sum(1 for obj in self._objects.values() if obj["tile"] == tile)
+
+    def _check_tile_object_budget(self, tile: tuple[int, int]) -> None:
+        if self._object_count_on_tile(tile) >= MAX_OBJECTS_PER_TILE:
+            raise ValueError(
+                f"tile object budget exceeded: tile {tile} already has {MAX_OBJECTS_PER_TILE} objects"
+            )
+
     def create_object(
         self,
         object_id: str,
@@ -174,6 +188,7 @@ class RoomBuilderState:
     ) -> dict[str, Any]:
         if tile not in self._tiles:
             raise ValueError(f"unknown tile: {tile}")
+        self._check_tile_object_budget(tile)
 
         if width is None or height is None:
             preset = size_preset or get_catalog_entry(object_type)["defaultSizePreset"]
@@ -381,6 +396,7 @@ class RoomBuilderState:
         record = self._require_object(object_id)
         if new_object_id in self._objects:
             raise ValueError(f"object id already exists: {new_object_id}")
+        self._check_tile_object_budget(record["tile"])
         clone = dict(record)
         clone["objectId"] = new_object_id
         clone["x"] = record["x"] + offset[0]
@@ -612,10 +628,12 @@ class RoomBuilderState:
         return self._story.restart_story(object_id, object_id, user_id=requester_id)
 
     def ask_character(
-        self, object_id: str, requester_id: str, user_message: str, caller: Any,
+        self, object_id: str, requester_id: str, user_message: str, caller: Any, now_ms: float = 0.0,
     ) -> dict[str, Any]:
         self._require_ai_character(object_id)
-        return self._story.ask_generative(object_id, object_id, user_message, caller=caller)
+        return self._story.ask_generative(
+            object_id, object_id, user_message, caller=caller, user_id=requester_id, now_ms=now_ms,
+        )
 
     def interact_with_object(
         self, object_id: str, interaction_type: str, requester_id: str, now_ms: float

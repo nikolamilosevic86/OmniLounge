@@ -1335,7 +1335,7 @@ async def room_character_ask(sid, data):
 
     try:
         result = await asyncio.to_thread(
-            builder.ask_character, data["objectId"], sid, data["userMessage"], caller,
+            builder.ask_character, data["objectId"], sid, data["userMessage"], caller, time.time() * 1000,
         )
     except (KeyError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)

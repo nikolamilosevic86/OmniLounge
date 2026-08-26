@@ -593,10 +593,10 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 - [x] Add audit logs for critical admin and moderation actions.
 
 ### Phase J: Non-Functional Hardening
-- [ ] Add performance budgets for tile/object counts and render cost.
+- [x] Add performance budgets for tile/object counts and render cost.
 - [ ] Implement lazy tile/object loading where needed.
 - [ ] Add accessibility pass for reader, dialog, and builder controls.
-- [ ] Add rate limiting and abuse protections for generative requests.
+- [x] Add rate limiting and abuse protections for generative requests.
 - [ ] Add observability dashboards for latency, errors, and usage metrics.
 
 ### Phase K: QA, UAT, and Release

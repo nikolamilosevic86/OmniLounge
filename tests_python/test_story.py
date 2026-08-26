@@ -226,3 +226,51 @@ class TestGenerativeAnswer:
         result = self.engine.ask_generative("npc-1", "char-1", "What is 2+2?", caller=failing_caller)
         assert result["mode"] == "predefined"
         assert result["answer"]
+
+    def test_ask_generative_is_rate_limited_per_user_after_default_max_requests(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        caller = lambda *a: "A generated answer."
+
+        for i in range(5):
+            result = self.engine.ask_generative(
+                "npc-1", "char-1", "hint?", caller=caller, user_id="p1", now_ms=i,
+            )
+            assert result["mode"] == "generative"
+
+        blocked = self.engine.ask_generative(
+            "npc-1", "char-1", "hint?", caller=caller, user_id="p1", now_ms=5,
+        )
+        assert blocked["mode"] == "rate_limited"
+        assert blocked["answer"]
+
+    def test_ask_generative_rate_limit_is_tracked_per_user(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        caller = lambda *a: "A generated answer."
+
+        for i in range(5):
+            self.engine.ask_generative("npc-1", "char-1", "hint?", caller=caller, user_id="p1", now_ms=i)
+        # A different user should not be affected by p1's rate limit.
+        result = self.engine.ask_generative("npc-1", "char-1", "hint?", caller=caller, user_id="p2", now_ms=5)
+        assert result["mode"] == "generative"
+
+    def test_ask_generative_rate_limit_resets_after_window_elapses(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        caller = lambda *a: "A generated answer."
+
+        for i in range(5):
+            self.engine.ask_generative("npc-1", "char-1", "hint?", caller=caller, user_id="p1", now_ms=i)
+        blocked = self.engine.ask_generative("npc-1", "char-1", "hint?", caller=caller, user_id="p1", now_ms=5)
+        assert blocked["mode"] == "rate_limited"
+
+        later = self.engine.ask_generative(
+            "npc-1", "char-1", "hint?", caller=caller, user_id="p1", now_ms=60_001,
+        )
+        assert later["mode"] == "generative"
+
+    def test_ask_generative_skips_rate_limiting_without_user_id(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        caller = lambda *a: "A generated answer."
+
+        for _ in range(10):
+            result = self.engine.ask_generative("npc-1", "char-1", "hint?", caller=caller)
+            assert result["mode"] == "generative"

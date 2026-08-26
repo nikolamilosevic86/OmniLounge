@@ -5,7 +5,9 @@ export function isValidCharacterRole(role) {
 }
 
 export function formatModeLabel(mode) {
-  return mode === 'generative' ? 'Generative Mode' : 'Predefined Mode';
+  if (mode === 'generative') return 'Generative Mode';
+  if (mode === 'rate_limited') return 'Please Wait';
+  return 'Predefined Mode';
 }
 
 export function resolveCharacterMode(character) {

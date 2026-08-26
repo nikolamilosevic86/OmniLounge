@@ -13,9 +13,18 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.game.rate_limiter import SlidingWindowRateLimiter
+
 ALLOWED_ROLES = {"guide", "quiz_master", "narrator", "historical_persona", "mentor"}
 
 _FALLBACK_ANSWER = "I'm not sure about that yet, but let's continue our story."
+_RATE_LIMITED_ANSWER = "You're asking questions a bit too fast — please wait a moment and try again."
+
+# Phase J abuse protection: cap generative (paid/third-party) requests per
+# user per character to a small burst per minute. Predefined-mode talk/hint
+# flows are unaffected — only actual generative API calls are throttled.
+GENERATIVE_RATE_LIMIT_MAX_REQUESTS = 5
+GENERATIVE_RATE_LIMIT_WINDOW_MS = 60_000.0
 
 
 class StoryChoiceModel(BaseModel):
@@ -41,6 +50,9 @@ class StoryEngine:
         self._characters: dict[str, dict[str, dict[str, Any]]] = {}
         self._nodes: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
         self._progress: dict[tuple[str, str, str], str] = {}
+        self._generative_rate_limiter = SlidingWindowRateLimiter(
+            max_requests=GENERATIVE_RATE_LIMIT_MAX_REQUESTS, window_ms=GENERATIVE_RATE_LIMIT_WINDOW_MS,
+        )
 
     # ─── Character placement and role ──────────────────────────────────
 
@@ -187,10 +199,15 @@ class StoryEngine:
     def ask_generative(
         self, object_id: str, character_id: str, user_message: str,
         caller: Callable[[str, str, str | None, str], str],
+        user_id: str | None = None, now_ms: float = 0.0,
     ) -> dict[str, Any]:
         record = self._require_character(object_id, character_id)
         if not record["generativeEnabled"]:
             return {"answer": self._fallback_answer(record), "mode": "predefined"}
+        if user_id is not None:
+            rate_key = f"{object_id}:{character_id}:{user_id}"
+            if not self._generative_rate_limiter.allow(rate_key, now_ms):
+                return {"answer": _RATE_LIMITED_ANSWER, "mode": "rate_limited"}
         try:
             answer = caller(record["apiBaseUrl"], record["apiKey"], record["knowledgeBase"], user_message)
         except Exception:

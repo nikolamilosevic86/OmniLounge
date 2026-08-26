@@ -98,6 +98,33 @@ class TestObjectPlacement:
         with pytest.raises(ValueError):
             self.builder.create_object("o1", "table", (4, 4), x=10, y=10, width=20, height=20)
 
+    def test_create_object_rejects_when_tile_object_budget_exceeded(self):
+        from server.game.room_builder import MAX_OBJECTS_PER_TILE
+
+        for i in range(MAX_OBJECTS_PER_TILE):
+            self.builder.create_object(f"o{i}", "table", (0, 0), x=10, y=10, width=20, height=20)
+        with pytest.raises(ValueError, match="tile object budget"):
+            self.builder.create_object("over-budget", "table", (0, 0), x=10, y=10, width=20, height=20)
+
+    def test_create_object_budget_is_tracked_per_tile(self):
+        from server.game.room_builder import MAX_OBJECTS_PER_TILE
+
+        self.builder.add_tile((0, 0), "right")
+        for i in range(MAX_OBJECTS_PER_TILE):
+            self.builder.create_object(f"o{i}", "table", (0, 0), x=10, y=10, width=20, height=20)
+        # A different tile should still have its own fresh budget.
+        obj = self.builder.create_object("o-other-tile", "table", (1, 0), x=10, y=10, width=20, height=20)
+        assert obj["tile"] == (1, 0)
+
+    def test_duplicate_object_rejects_when_tile_object_budget_exceeded(self):
+        from server.game.room_builder import MAX_OBJECTS_PER_TILE
+
+        self.builder.create_object("o0", "table", (0, 0), x=10, y=10, width=20, height=20)
+        for i in range(1, MAX_OBJECTS_PER_TILE):
+            self.builder.create_object(f"o{i}", "table", (0, 0), x=10, y=10, width=20, height=20)
+        with pytest.raises(ValueError, match="tile object budget"):
+            self.builder.duplicate_object("o0", "o0-clone")
+
     def test_move_object_updates_position(self):
         self.builder.create_object("o1", "table", (0, 0), x=10, y=10, width=20, height=20)
         moved = self.builder.move_object("o1", 55, 65)
@@ -835,4 +862,19 @@ class TestAiCharacterIntegration:
     def test_ask_character_raises_key_error_when_character_not_configured(self):
         with pytest.raises(KeyError):
             self.builder.ask_character("npc-1", requester_id="p1", user_message="hint?", caller=lambda *a: "x")
+
+    def test_ask_character_is_rate_limited_per_user_when_generative_enabled(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        self.builder.configure_character_generative_mode(
+            "npc-1", api_base_url="https://api.example.com", api_key="secret",
+            requester_id="host-1", is_room_host=True,
+        )
+        caller = lambda *a: "A generated hint."
+
+        for i in range(5):
+            result = self.builder.ask_character("npc-1", requester_id="p1", user_message="hint?", caller=caller, now_ms=i)
+            assert result["mode"] == "generative"
+
+        blocked = self.builder.ask_character("npc-1", requester_id="p1", user_message="hint?", caller=caller, now_ms=5)
+        assert blocked["mode"] == "rate_limited"
 
