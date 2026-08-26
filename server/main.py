@@ -312,6 +312,11 @@ async def player_join(sid, data):
         room=sid,
     )
     await sio.emit("room:state", {"players": all_players_payload("lobby")}, room=sid)
+    await sio.emit(
+        "room:builder:state",
+        {"roomId": "lobby", **builder_state_payload("lobby")},
+        room=sid,
+    )
 
     db_messages = await db.get_recent_messages("lobby", 50)
     visible = filter_messages_for_user(db_messages, sid)
@@ -642,6 +647,11 @@ async def room_join(sid, data):
             "hostId": rooms.get_room_host_id(room_id),
             "myRole": (rooms.get_moderation(room_id).get_role(sid) if rooms.get_moderation(room_id) else "participant"),
         },
+        room=sid,
+    )
+    await sio.emit(
+        "room:builder:state",
+        {"roomId": room_id, **builder_state_payload(room_id)},
         room=sid,
     )
     await sio.emit("room:list", {"rooms": rooms.list_rooms()}, room=sid)
@@ -1719,6 +1729,11 @@ async def _remove_player_from_room(target_id: str, room_id: str, reason: str) ->
         db_messages = await db.get_recent_messages(new_room_id, 50)
         visible = filter_messages_for_user(db_messages, target_id)
         await sio.emit("chat:history", visible, room=target_id)
+        await sio.emit(
+            "room:builder:state",
+            {"roomId": new_room_id, **builder_state_payload(new_room_id)},
+            room=target_id,
+        )
         await broadcast_room_state(new_room_id)
     await broadcast_room_state(room_id)
 

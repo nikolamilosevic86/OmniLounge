@@ -174,6 +174,25 @@ class TestKickAndBanHandlers:
         chat_history_events = [e for e in fake_sio.emitted if e[0] == "chat:history" and e[2] == "carol"]
         assert chat_history_events
 
+    async def test_kicked_player_receives_builder_state_snapshot_for_lobby(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        await _join_room(rooms, "mod1", room["id"])
+        await _join_room(rooms, "carol", room["id"])
+        rooms.get_moderation(room["id"]).assign_role("mod1", ROLE_MODERATOR, actor_id="host1")
+
+        lobby_builder = rooms.get_builder("lobby")
+        lobby_builder.create_object("bookshelf-1", "bookshelf", (0, 0), x=10, y=10, width=20, height=20)
+
+        await main_module.room_moderation_kick("mod1", {"targetId": "carol"})
+
+        builder_state_events = [
+            e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "carol"
+        ]
+        assert builder_state_events, "expected a builder state snapshot to be sent to the kicked player"
+        object_ids = {o["objectId"] for o in builder_state_events[-1][1]["objects"]}
+        assert "bookshelf-1" in object_ids
+
     async def test_moderator_can_ban_a_user_preventing_rejoin(self, isolate_registry):
         rooms, fake_sio = isolate_registry
         room = await _make_room_with_host(rooms)
