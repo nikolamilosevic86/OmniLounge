@@ -21,6 +21,7 @@ from server.game.combat import (
     apply_hit, can_attack, calculate_damage, is_in_range, regen_stamina,
 )
 from server.game.ai_bot import AIBot, BOT_ID, BOT_AVATAR
+from server.game.moderation import contains_external_link
 from server.game.movement import move_by_direction, move_toward
 from server.game.room import Room
 from server.game.rooms_registry import RoomsRegistry
@@ -369,6 +370,15 @@ async def chat_send(sid, data):
     if not text:
         return
 
+    moderation = rooms.get_moderation(room_id)
+    if moderation and moderation.is_muted(sid):
+        await sio.emit("error", {"message": "You are muted in this room"}, room=sid)
+        return
+
+    if moderation and not moderation.are_external_links_allowed() and contains_external_link(text):
+        await sio.emit("error", {"message": "External links are not allowed in this room"}, room=sid)
+        return
+
     msg_type = data.get("type", "public")
     recipient_id = data.get("recipientId") if msg_type == "private" else None
 
@@ -580,6 +590,8 @@ async def room_join(sid, data):
             "roomId": room_id,
             "currentTile": {"x": joined.get("tile", {}).get("x", 0), "y": joined.get("tile", {}).get("y", 0)},
             "tiles": rooms.get_room_tiles(room_id),
+            "hostId": rooms.get_room_host_id(room_id),
+            "myRole": (rooms.get_moderation(room_id).get_role(sid) if rooms.get_moderation(room_id) else "participant"),
         },
         room=sid,
     )
@@ -1324,7 +1336,7 @@ async def room_character_ask(sid, data):
     return result
 
 
-
+@sio.on("room:object:duplicate")
 async def room_object_duplicate(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)
     if not room_id:
@@ -1556,6 +1568,211 @@ async def room_version_rollback(sid, data):
         room=sid,
     )
     return snapshot
+
+
+@sio.on("room:role:assign")
+async def room_role_assign(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    target_id = data.get("targetId")
+    role = data.get("role")
+    try:
+        moderation.assign_role(target_id, role, actor_id=sid)
+    except (PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    result = {"targetId": target_id, "role": moderation.get_role(target_id)}
+    await sio.emit("room:role:updated", result, room=room_channel(room_id))
+    return result
+
+
+@sio.on("room:moderation:mute")
+async def room_moderation_mute(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    target_id = (data or {}).get("targetId")
+    try:
+        moderation.mute(target_id, actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    result = {"targetId": target_id, "muted": True}
+    await sio.emit("room:moderation:muted", result, room=room_channel(room_id))
+    return result
+
+
+@sio.on("room:moderation:unmute")
+async def room_moderation_unmute(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    target_id = (data or {}).get("targetId")
+    try:
+        moderation.unmute(target_id, actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    result = {"targetId": target_id, "muted": False}
+    await sio.emit("room:moderation:muted", result, room=room_channel(room_id))
+    return result
+
+
+async def _remove_player_from_room(target_id: str, room_id: str, reason: str) -> None:
+    """Force a player out of `room_id` back to the lobby, notifying them."""
+    target_room = rooms.get_room(room_id)
+    target_player = target_room.get_player(target_id) if target_room else None
+    if not target_player:
+        return
+    avatar = target_player["avatar"]
+
+    if room_id != "lobby":
+        rooms.join_room(target_id, avatar, "lobby")
+        await sio.leave_room(target_id, room_channel(room_id))
+        await sio.enter_room(target_id, room_channel("lobby"))
+    else:
+        rooms.leave_current_room(target_id)
+
+    await sio.emit("room:moderation:removed", {"reason": reason, "roomId": room_id}, room=target_id)
+    await broadcast_room_state(room_id)
+
+
+@sio.on("room:moderation:kick")
+async def room_moderation_kick(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    target_id = (data or {}).get("targetId")
+    try:
+        moderation.kick(target_id, actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await _remove_player_from_room(target_id, room_id, "kicked")
+    return {"targetId": target_id, "kicked": True}
+
+
+@sio.on("room:moderation:ban")
+async def room_moderation_ban(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    target_id = (data or {}).get("targetId")
+    try:
+        moderation.ban(target_id, actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await _remove_player_from_room(target_id, room_id, "banned")
+    return {"targetId": target_id, "banned": True}
+
+
+@sio.on("room:moderation:unban")
+async def room_moderation_unban(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    target_id = (data or {}).get("targetId")
+    try:
+        moderation.unban(target_id, actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return {"targetId": target_id, "banned": False}
+
+
+@sio.on("room:moderation:report")
+async def room_moderation_report(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    report = moderation.report_content(
+        reporter_id=sid,
+        target_type=data.get("targetType", "unknown"),
+        target_id=data.get("targetId"),
+        reason=data.get("reason", ""),
+    )
+    return report
+
+
+@sio.on("room:moderation:reports:request")
+async def room_moderation_reports_request(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    try:
+        return moderation.list_reports(actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+
+@sio.on("room:moderation:audit_log:request")
+async def room_moderation_audit_log_request(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    try:
+        return moderation.list_audit_log(actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+
+@sio.on("room:moderation:external_links:set")
+async def room_moderation_external_links_set(sid, data):
+    room_id = rooms.get_player_room_id(sid)
+    moderation = rooms.get_moderation(room_id) if room_id else None
+    if not room_id or not moderation:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    allowed = bool((data or {}).get("allowed", True))
+    try:
+        moderation.set_external_links_allowed(allowed, actor_id=sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    result = {"allowed": moderation.are_external_links_allowed()}
+    await sio.emit("room:moderation:external_links", result, room=room_channel(room_id))
+    return result
 
 
 socket_app = socketio.ASGIApp(sio, app)

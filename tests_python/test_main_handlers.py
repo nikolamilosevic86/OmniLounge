@@ -522,7 +522,11 @@ class TestRoomBuilderHandlers:
 
     async def test_character_knowledge_base_and_generative_config_roundtrip(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await self._join(rooms)
+        # Generative AI settings are restricted to the room admin (Phase I),
+        # so this player must be the room host, not just a lobby member.
+        room = rooms.create_room(host_id="p1", name="Owl's Room")
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, room["id"])
 
         npc = await main_module.room_object_create("p1", {
             "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
@@ -610,3 +614,82 @@ class TestRoomBuilderHandlers:
         await main_module.room_builder_request("ghost", {})
         errors = [e for e in fake_sio.emitted if e[0] == "error"]
         assert errors
+
+
+# Captured at import time, before the autouse `isolate_registry` fixture
+# monkeypatches `main_module.sio` to a fake for the rest of the test suite.
+# `@sio.on(...)` decorators register on this real server object at import
+# time, so this is the only reference that reflects actual handler wiring.
+_REAL_SIO = main_module.sio
+
+# Every `room:*` / `player:*` event the client emits via `state.socket.emit(...)`
+# in client/js/main.js. Keep in sync with that file: a handler missing its
+# `@sio.on(...)` decorator (e.g. accidentally deleted during an edit) causes
+# the feature to silently do nothing on the client with no server-side error,
+# so this list is the regression guard for that failure mode.
+CLIENT_EMITTED_EVENTS = [
+    "player:action",
+    "player:direction",
+    "player:move",
+    "room:book:add",
+    "room:book:progress:save",
+    "room:book:remove",
+    "room:builder:request",
+    "room:character:ask",
+    "room:character:configure",
+    "room:character:generative:configure",
+    "room:character:knowledge_base:set",
+    "room:character:node:add",
+    "room:character:talk",
+    "room:create",
+    "room:join",
+    "room:media:sync:end",
+    "room:media:sync:join",
+    "room:media:sync:leave",
+    "room:media:sync:start",
+    "room:media:track:add",
+    "room:media:track:remove",
+    "room:media:video:add",
+    "room:media:video:remove",
+    "room:moderation:audit_log:request",
+    "room:moderation:ban",
+    "room:moderation:external_links:set",
+    "room:moderation:kick",
+    "room:moderation:mute",
+    "room:moderation:report",
+    "room:moderation:reports:request",
+    "room:moderation:unban",
+    "room:moderation:unmute",
+    "room:object:create",
+    "room:object:delete",
+    "room:object:duplicate",
+    "room:object:interact",
+    "room:object:layer",
+    "room:object:lock",
+    "room:object:move",
+    "room:object:permission",
+    "room:object:resize",
+    "room:object:rotate",
+    "room:role:assign",
+    "room:tile:add",
+    "room:tile:clone",
+    "room:tile:configure",
+    "room:tile:delete",
+    "room:trigger:create",
+    "room:trigger:delete",
+    "room:version:publish",
+    "room:version:rollback",
+    "room:version:save",
+    "room:zone:create",
+    "room:zone:delete",
+]
+
+
+class TestSocketHandlerRegistration:
+    """Regression guard: every event the client emits must have a server-side
+    `@sio.on(...)` handler registered, or the feature silently no-ops."""
+
+    @pytest.mark.parametrize("event", CLIENT_EMITTED_EVENTS)
+    def test_client_emitted_event_has_registered_handler(self, event):
+        registered = _REAL_SIO.handlers.get("/", {})
+        assert event in registered, f"no @sio.on handler registered for {event!r}"

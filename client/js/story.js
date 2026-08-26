@@ -8,6 +8,10 @@ export function formatModeLabel(mode) {
   return mode === 'generative' ? 'Generative Mode' : 'Predefined Mode';
 }
 
+export function resolveCharacterMode(character) {
+  return character?.generativeEnabled ? 'generative' : 'predefined';
+}
+
 export function parseChoicesInput(input) {
   if (!input) return [];
   return input

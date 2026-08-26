@@ -11,7 +11,8 @@ import { normalizeRooms, buildRoomMetaLine, canJoinRoom, normalizeRoomFilters } 
 import { buildMiniMapCells, normalizeTileList } from './world-map.js';
 import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary } from './reader.js';
 import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem } from './media.js';
-import { formatModeLabel, parseChoicesInput } from './story.js';
+import { formatModeLabel, parseChoicesInput, resolveCharacterMode } from './story.js';
+import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
 
 const BUBBLE_DURATION = 6000;
 
@@ -66,6 +67,10 @@ const state = {
   builderStoryNodes: {},  // objectId → nodes[]
   dialogueModalObjectId: null,
   dialogueCurrentNode: null,
+  roomHostId: null,
+  myRoomRole: 'participant',
+  playerRoles: new Map(),  // playerId → role (populated via room:role:updated)
+  mutedPlayers: new Set(), // playerId set (populated via room:moderation:muted)
   socket: null,
   keys: { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false },
   gameLoopId: null,
@@ -127,6 +132,12 @@ const triggerListEl = document.getElementById('trigger-list');
 const versionSaveBtn = document.getElementById('version-save-btn');
 const versionPublishBtn = document.getElementById('version-publish-btn');
 const versionListEl = document.getElementById('version-list');
+const moderationSection = document.getElementById('moderation-section');
+const externalLinksField = document.getElementById('external-links-field');
+const externalLinksInput = document.getElementById('external-links-input');
+const moderationPlayerListEl = document.getElementById('moderation-player-list');
+const auditLogBtn = document.getElementById('audit-log-btn');
+const auditLogListEl = document.getElementById('audit-log-list');
 const bookShelfSelect = document.getElementById('book-shelf-select');
 const bookTitleInput = document.getElementById('book-title-input');
 const bookAuthorInput = document.getElementById('book-author-input');
@@ -315,6 +326,15 @@ function initGame() {
   document.getElementById('mode-private').addEventListener('click', () => setChatMode('private'));
   chatForm.addEventListener('submit', (e) => { e.preventDefault(); sendMessage(); });
 
+  chatMessages.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('button.chat-report-btn');
+    if (!btn) return;
+    const messageId = btn.getAttribute('data-message-id');
+    if (!messageId) return;
+    const reason = window.prompt('Report this message. Reason (optional):', '') || '';
+    state.socket?.emit('room:moderation:report', { targetType: 'chat_message', targetId: messageId, reason });
+  });
+
   // Show talking animation while typing in chat box
   chatInput.addEventListener('input', () => {
     if (state.playerId && chatInput.value.trim()) {
@@ -442,6 +462,48 @@ function initGame() {
     const latest = state.builderVersions[0];
     if (!latest) return;
     state.socket?.emit('room:version:publish', { versionNumber: latest.versionNumber });
+  });
+
+  externalLinksInput?.addEventListener('change', () => {
+    state.socket?.emit('room:moderation:external_links:set', { allowed: !!externalLinksInput.checked });
+  });
+
+  moderationPlayerListEl?.addEventListener('change', (evt) => {
+    const select = evt.target.closest('select.mod-role-select');
+    if (!select) return;
+    const targetId = select.getAttribute('data-player-id');
+    if (!targetId) return;
+    state.socket?.emit('room:role:assign', { targetId, role: select.value });
+  });
+
+  moderationPlayerListEl?.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('button[data-player-id]');
+    if (!btn) return;
+    const targetId = btn.getAttribute('data-player-id');
+    if (!targetId) return;
+    if (btn.classList.contains('mod-mute-btn')) {
+      const event = state.mutedPlayers.has(targetId) ? 'room:moderation:unmute' : 'room:moderation:mute';
+      state.socket?.emit(event, { targetId });
+    } else if (btn.classList.contains('mod-kick-btn')) {
+      state.socket?.emit('room:moderation:kick', { targetId });
+    } else if (btn.classList.contains('mod-ban-btn')) {
+      state.socket?.emit('room:moderation:ban', { targetId });
+    }
+  });
+
+  auditLogBtn?.addEventListener('click', () => {
+    if (auditLogListEl && !auditLogListEl.classList.contains('hidden')) {
+      auditLogListEl.classList.add('hidden');
+      return;
+    }
+    state.socket?.emit('room:moderation:audit_log:request', {}, (log) => {
+      if (!auditLogListEl) return;
+      const entries = Array.isArray(log) ? log : [];
+      auditLogListEl.innerHTML = entries.length
+        ? entries.map((entry) => `<li>${escapeHtml(entry.actorId)} → ${escapeHtml(entry.action)}${entry.targetId ? ` (${escapeHtml(entry.targetId)})` : ''}</li>`).join('')
+        : '<li>No audit log entries yet.</li>';
+      auditLogListEl.classList.remove('hidden');
+    });
   });
 
   objectListEl?.addEventListener('click', (evt) => {
@@ -784,7 +846,10 @@ function initGame() {
     state.socket?.emit('room:character:ask', { objectId, userMessage }, (result) => {
       if (!result) return;
       if (dialogueAnswer) dialogueAnswer.textContent = result.answer;
-      if (dialogueModeIndicator) dialogueModeIndicator.textContent = formatModeLabel(result.mode);
+      if (dialogueModeIndicator) {
+        dialogueModeIndicator.textContent = formatModeLabel(result.mode);
+        dialogueModeIndicator.classList.toggle('generative', result.mode === 'generative');
+      }
     });
     if (dialogueAskInput) dialogueAskInput.value = '';
   });
@@ -929,13 +994,40 @@ function connectSocket() {
     state.currentRoomId = payload.roomId || 'lobby';
     state.currentTile = payload.currentTile || { x: 0, y: 0 };
     state.roomTiles = normalizeTileList(payload.tiles || [{ x: 0, y: 0 }]);
+    state.roomHostId = payload.hostId || null;
+    state.myRoomRole = payload.myRole || 'participant';
+    state.playerRoles = new Map();
+    state.mutedPlayers = new Set();
     clearSceneStateForRoomSwitch();
     addSystemMessage(`Joined room: ${state.currentRoomId}`);
     roomChooser.classList.add('hidden');
     renderMiniMap();
     updateCurrentTileLabel();
     refreshCanvasBuilderObjects();
+    renderModerationPanel();
     requestRoomList();
+  });
+
+  state.socket.on('room:role:updated', (payload) => {
+    if (!payload?.targetId) return;
+    state.playerRoles.set(payload.targetId, payload.role);
+    if (payload.targetId === state.playerId) state.myRoomRole = payload.role;
+    renderModerationPanel();
+  });
+
+  state.socket.on('room:moderation:muted', (payload) => {
+    if (!payload?.targetId) return;
+    if (payload.muted) state.mutedPlayers.add(payload.targetId);
+    else state.mutedPlayers.delete(payload.targetId);
+    renderModerationPanel();
+  });
+
+  state.socket.on('room:moderation:removed', (payload) => {
+    addSystemMessage(payload?.reason === 'banned' ? 'You were banned from that room.' : 'You were removed from that room.');
+  });
+
+  state.socket.on('room:moderation:external_links', (payload) => {
+    if (externalLinksInput) externalLinksInput.checked = payload?.allowed !== false;
   });
 
   state.socket.on('room:tiles', (payload) => {
@@ -1019,6 +1111,7 @@ function connectSocket() {
     renderPlayers();
     updateOnlineCount();
     updateRecipientList();
+    renderModerationPanel();
   });
 
   state.socket.on('player:entered', (data) => {
@@ -1350,9 +1443,12 @@ function appendChatMessage(msg) {
   el.className = 'chat-message' + (msg.type === 'private' ? ' private' : '');
   const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const tag = msg.type === 'private' ? '<span class="msg-tag">whisper</span>' : '';
+  const reportBtn = msg.senderId !== state.playerId
+    ? `<button type="button" class="chat-report-btn" data-message-id="${escapeHtml(msg.id || '')}" title="Report message">⚑</button>`
+    : '';
   el.innerHTML = `<span class="msg-time">${time}</span>` +
     `<span class="msg-sender">${escapeHtml(msg.senderName)}</span>` +
-    `<span class="msg-text">${escapeHtml(msg.text)}</span>${tag}`;
+    `<span class="msg-text">${escapeHtml(msg.text)}</span>${tag}${reportBtn}`;
   chatMessages.appendChild(el);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -1409,6 +1505,7 @@ function updateCurrentTileLabel() {
   renderVideoTvSelect();
   renderTrackPlayerSelect();
   renderCharacterNpcSelect();
+  renderModerationPanel();
 }
 
 function updateBuildModeUi() {
@@ -1780,6 +1877,40 @@ function updateMediaSyncUi(session) {
 
 // ─── Phase H: AI story characters ──────────────────────────────────────────
 
+function renderModerationPanel() {
+  if (!moderationSection) return;
+  const canMod = canModerate(state.myRoomRole);
+  moderationSection.classList.toggle('hidden', !canMod);
+  if (!canMod) return;
+
+  const canAssign = canAssignRoles(state.myRoomRole);
+  if (externalLinksField) externalLinksField.classList.toggle('hidden', !canAssign);
+
+  if (!moderationPlayerListEl) return;
+  const rows = [];
+  for (const [id, player] of state.players) {
+    if (id === state.playerId) continue;
+    const role = id === state.roomHostId ? 'owner' : (state.playerRoles.get(id) || 'participant');
+    const muted = state.mutedPlayers.has(id);
+    const username = escapeHtml(player.avatar?.username || id);
+    const roleControls = canAssign && role !== 'owner'
+      ? `<select class="mod-role-select" data-player-id="${id}">
+          ${ASSIGNABLE_ROLES.map((r) => `<option value="${r}" ${r === role ? 'selected' : ''}>${formatRoleLabel(r)}</option>`).join('')}
+        </select>`
+      : `<span class="builder-object-chip">${formatRoleLabel(role)}</span>`;
+    const actionButtons = role === 'owner' ? '' : `
+        <button type="button" class="builder-primary-btn mod-mute-btn" data-player-id="${id}">${muted ? 'Unmute' : 'Mute'}</button>
+        <button type="button" class="builder-primary-btn mod-kick-btn" data-player-id="${id}">Kick</button>
+        <button type="button" class="builder-primary-btn mod-ban-btn" data-player-id="${id}">Ban</button>`;
+    rows.push(`
+      <li class="builder-object-row">
+        <div class="builder-object-row-meta"><strong>${username}</strong>${roleControls}</div>
+        <div class="builder-object-row-meta">${actionButtons}</div>
+      </li>`);
+  }
+  moderationPlayerListEl.innerHTML = rows.join('') || '<li>No other players in this room.</li>';
+}
+
 function renderCharacterNpcSelect() {
   if (!characterNpcSelect) return;
   const currentKey = tileKey(state.currentTile);
@@ -1842,8 +1973,13 @@ function closeDialogueModal() {
 
 function renderDialogueNode(node, mode) {
   state.dialogueCurrentNode = node || null;
-  if (dialogueModeIndicator) dialogueModeIndicator.textContent = formatModeLabel(mode);
-  if (dialogueCharacterLine) dialogueCharacterLine.textContent = node?.characterLine || '';
+  if (dialogueModeIndicator) {
+    dialogueModeIndicator.textContent = formatModeLabel(mode);
+    dialogueModeIndicator.classList.toggle('generative', mode === 'generative');
+  }
+  if (dialogueCharacterLine) {
+    dialogueCharacterLine.textContent = node?.characterLine || 'Ask me a question and I\'ll do my best to help!';
+  }
   if (!dialogueChoiceList) return;
   const choices = node?.choices || [];
   dialogueChoiceList.innerHTML = choices.length
@@ -1906,7 +2042,7 @@ function handleObjectInteractionResult(result) {
     return;
   }
   if (result.interactionType === 'ask_hint') {
-    openDialogueModal(result.objectId, result.payload.character, null, null);
+    openDialogueModal(result.objectId, result.payload.character, null, resolveCharacterMode(result.payload.character));
     return;
   }
   addSystemMessage(`${result.label || 'Interaction'} triggered.`);

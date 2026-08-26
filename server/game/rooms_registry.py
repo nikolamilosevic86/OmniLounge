@@ -1,6 +1,7 @@
 import time
 from typing import Any
 
+from server.game.moderation import ModerationState
 from server.game.room import Room
 from server.game.room_builder import RoomBuilderState
 from server.game.tile_navigation import (
@@ -20,6 +21,7 @@ class RoomsRegistry:
         self.room_tiles: dict[str, set[tuple[int, int]]] = {}
         self.player_tile: dict[str, tuple[int, int]] = {}
         self.room_builders: dict[str, RoomBuilderState] = {}
+        self.room_moderation: dict[str, ModerationState] = {}
         self._seq = 0
         self._create_lobby()
 
@@ -37,6 +39,7 @@ class RoomsRegistry:
         }
         self.room_tiles[room_id] = {(0, 0)}
         self.room_builders[room_id] = RoomBuilderState()
+        self.room_moderation[room_id] = ModerationState(owner_id="system")
 
     def _next_room_id(self) -> str:
         self._seq += 1
@@ -66,6 +69,7 @@ class RoomsRegistry:
         }
         self.room_tiles[room_id] = {(0, 0)}
         self.room_builders[room_id] = RoomBuilderState()
+        self.room_moderation[room_id] = ModerationState(owner_id=host_id)
         return self.get_room_summary(room_id)
 
     def get_room(self, room_id: str) -> Room | None:
@@ -73,6 +77,9 @@ class RoomsRegistry:
 
     def get_builder(self, room_id: str) -> RoomBuilderState | None:
         return self.room_builders.get(room_id)
+
+    def get_moderation(self, room_id: str) -> ModerationState | None:
+        return self.room_moderation.get(room_id)
 
     def get_room_host_id(self, room_id: str) -> str | None:
         meta = self.room_meta.get(room_id)
@@ -151,6 +158,10 @@ class RoomsRegistry:
         current_room_id = self.player_room.get(player_id)
         if current_room_id == room_id:
             return None
+
+        moderation = self.room_moderation.get(room_id)
+        if moderation and moderation.is_banned(player_id):
+            return "banned"
 
         if room.get_player_count() >= int(meta.get("maxUsers", 30)):
             return "full"

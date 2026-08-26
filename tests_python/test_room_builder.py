@@ -729,7 +729,8 @@ class TestAiCharacterIntegration:
     def test_configure_generative_mode_enables_only_when_url_and_key_present(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
         character = self.builder.configure_character_generative_mode(
-            "npc-1", api_base_url="https://api.example.com", api_key="secret", requester_id="alice",
+            "npc-1", api_base_url="https://api.example.com", api_key="secret",
+            requester_id="host-1", is_room_host=True,
         )
         assert character["generativeEnabled"] is True
         assert "apiKey" not in character
@@ -740,6 +741,25 @@ class TestAiCharacterIntegration:
             self.builder.configure_character_generative_mode(
                 "npc-1", api_base_url="https://api.example.com", api_key="secret", requester_id="bob",
             )
+
+    def test_configure_generative_mode_is_restricted_to_room_host_even_for_object_creator(self):
+        # Phase I: AI API settings management is restricted to the room admin
+        # (host), not just whoever has object-level edit permission (e.g. the
+        # character's creator, if they aren't the room host).
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        with pytest.raises(PermissionError):
+            self.builder.configure_character_generative_mode(
+                "npc-1", api_base_url="https://api.example.com", api_key="secret",
+                requester_id="alice", is_room_host=False,
+            )
+
+    def test_configure_generative_mode_succeeds_for_room_host(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        character = self.builder.configure_character_generative_mode(
+            "npc-1", api_base_url="https://api.example.com", api_key="secret",
+            requester_id="host-1", is_room_host=True,
+        )
+        assert character["generativeEnabled"] is True
 
     def test_add_story_node_requires_edit_permission(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")
@@ -794,11 +814,25 @@ class TestAiCharacterIntegration:
     def test_ask_character_uses_caller_when_generative_enabled(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
         self.builder.configure_character_generative_mode(
-            "npc-1", api_base_url="https://api.example.com", api_key="secret", requester_id="alice",
+            "npc-1", api_base_url="https://api.example.com", api_key="secret",
+            requester_id="host-1", is_room_host=True,
         )
         result = self.builder.ask_character(
             "npc-1", requester_id="p1", user_message="hint?", caller=lambda *a: "A generated hint.",
         )
         assert result["answer"] == "A generated hint."
         assert result["mode"] == "generative"
+
+    def test_interact_talk_raises_key_error_when_character_not_configured(self):
+        # Regression guard: a learner clicking "Talk" on an ai_character object
+        # that a builder placed but never configured must fail loudly with a
+        # KeyError (caught and surfaced as a friendly `error` event by the
+        # room:object:interact socket handler), not silently succeed or crash
+        # with an unrelated exception type.
+        with pytest.raises(KeyError):
+            self.builder.interact_with_object("npc-1", "talk", requester_id="p1", now_ms=1000)
+
+    def test_ask_character_raises_key_error_when_character_not_configured(self):
+        with pytest.raises(KeyError):
+            self.builder.ask_character("npc-1", requester_id="p1", user_message="hint?", caller=lambda *a: "x")
 

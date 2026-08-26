@@ -577,8 +577,12 @@ class RoomBuilderState:
         self, object_id: str, api_base_url: str | None = None, api_key: str | None = None,
         requester_id: str | None = None, is_room_host: bool = False,
     ) -> dict[str, Any]:
-        record = self._require_ai_character(object_id)
-        self._require_edit_permission(record, requester_id, is_room_host)
+        self._require_ai_character(object_id)
+        # Phase I: AI API settings are restricted to the room admin (host),
+        # not the general object-level edit permission (which would also
+        # allow the character's creator even if they aren't the room admin).
+        if not is_room_host:
+            raise PermissionError("only the room admin can manage AI API settings")
         return self._story.configure_generative_mode(object_id, object_id, api_base_url=api_base_url, api_key=api_key)
 
     def add_story_node(

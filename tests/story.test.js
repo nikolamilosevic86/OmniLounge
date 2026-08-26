@@ -4,6 +4,7 @@ import {
   isValidCharacterRole,
   formatModeLabel,
   parseChoicesInput,
+  resolveCharacterMode,
 } from '../src/story.js';
 
 describe('CHARACTER_ROLES', () => {
@@ -56,5 +57,20 @@ describe('parseChoicesInput', () => {
   it('returns an empty array for empty or null input', () => {
     expect(parseChoicesInput('')).toEqual([]);
     expect(parseChoicesInput(null)).toEqual([]);
+  });
+});
+
+describe('resolveCharacterMode', () => {
+  it('returns generative when the character has generative mode enabled', () => {
+    expect(resolveCharacterMode({ generativeEnabled: true })).toBe('generative');
+  });
+
+  it('returns predefined when the character has generative mode disabled', () => {
+    expect(resolveCharacterMode({ generativeEnabled: false })).toBe('predefined');
+  });
+
+  it('returns predefined for a null or undefined character', () => {
+    expect(resolveCharacterMode(null)).toBe('predefined');
+    expect(resolveCharacterMode(undefined)).toBe('predefined');
   });
 });

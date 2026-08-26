@@ -585,12 +585,12 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 - [x] Add tests for story progression, fallback behavior, and permissions.
 
 ### Phase I: Roles, Permissions, and Moderation
-- [ ] Implement room-admin role assignment to room creator.
-- [ ] Implement co-editor, moderator, participant role capabilities.
-- [ ] Restrict AI API settings management to room admin.
-- [ ] Implement moderation tools: mute, kick, ban, and content reporting.
-- [ ] Add policy controls for external content restrictions.
-- [ ] Add audit logs for critical admin and moderation actions.
+- [x] Implement room-admin role assignment to room creator.
+- [x] Implement co-editor, moderator, participant role capabilities.
+- [x] Restrict AI API settings management to room admin.
+- [x] Implement moderation tools: mute, kick, ban, and content reporting.
+- [x] Add policy controls for external content restrictions.
+- [x] Add audit logs for critical admin and moderation actions.
 
 ### Phase J: Non-Functional Hardening
 - [ ] Add performance budgets for tile/object counts and render cost.
