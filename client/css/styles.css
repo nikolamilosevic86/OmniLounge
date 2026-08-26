@@ -1830,7 +1830,8 @@ a:focus-visible,
 
 #moderation-section.hidden,
 #external-links-field.hidden,
-#audit-log-list.hidden {
+#audit-log-list.hidden,
+#reports-list.hidden {
   display: none;
 }
 

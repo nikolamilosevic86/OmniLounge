@@ -35,9 +35,9 @@ ai_bot  = AIBot()
 _game_loop_task: asyncio.Task | None = None
 
 
-def player_payload(player: dict) -> dict:
+def player_payload(player: dict, moderation=None) -> dict:
     now_ms = time.time() * 1000
-    return {
+    payload = {
         "id":           player["id"],
         "avatar":       player["avatar"],
         "position":     player["position"],
@@ -48,6 +48,10 @@ def player_payload(player: dict) -> dict:
         "stunnedUntil": player.get("stunnedUntil", 0),
         "tile":         player.get("tile", {"x": 0, "y": 0}),
     }
+    if moderation:
+        payload["role"] = moderation.get_role(player["id"])
+        payload["muted"] = moderation.is_muted(player["id"])
+    return payload
 
 
 def room_channel(room_id: str) -> str:
@@ -58,7 +62,8 @@ def all_players_payload(room_id: str) -> list[dict]:
     room = rooms.get_room(room_id)
     if not room:
         return []
-    return [player_payload(p) for p in room.get_all_players()]
+    moderation = rooms.get_moderation(room_id)
+    return [player_payload(p, moderation) for p in room.get_all_players()]
 
 
 async def broadcast_room_state(room_id: str) -> None:
@@ -563,6 +568,9 @@ async def room_join(sid, data):
     if join_error == "forbidden":
         await sio.emit("error", {"message": "Invite code is required for this room"}, room=sid)
         return
+    if join_error == "banned":
+        await sio.emit("error", {"message": "You are banned from this room"}, room=sid)
+        return
 
     joined = rooms.join_room(sid, avatar, room_id, invite_code=invite_code)
     if not joined:
@@ -577,7 +585,7 @@ async def room_join(sid, data):
     if room:
         await sio.emit(
             "room:state",
-            {"players": [player_payload(p) for p in room.get_all_players()]},
+            {"players": all_players_payload(room_id)},
             room=sid,
         )
         db_messages = await db.get_recent_messages(room_id, 50)
@@ -1640,14 +1648,33 @@ async def _remove_player_from_room(target_id: str, room_id: str, reason: str) ->
         return
     avatar = target_player["avatar"]
 
+    new_room_id = "lobby"
     if room_id != "lobby":
-        rooms.join_room(target_id, avatar, "lobby")
+        rooms.join_room(target_id, avatar, new_room_id)
         await sio.leave_room(target_id, room_channel(room_id))
-        await sio.enter_room(target_id, room_channel("lobby"))
+        await sio.enter_room(target_id, room_channel(new_room_id))
     else:
         rooms.leave_current_room(target_id)
 
-    await sio.emit("room:moderation:removed", {"reason": reason, "roomId": room_id}, room=target_id)
+    new_room_moderation = rooms.get_moderation(new_room_id)
+    await sio.emit(
+        "room:moderation:removed",
+        {
+            "reason": reason,
+            "roomId": room_id,
+            "newRoomId": new_room_id,
+            "currentTile": {"x": 0, "y": 0},
+            "tiles": rooms.get_room_tiles(new_room_id),
+            "hostId": rooms.get_room_host_id(new_room_id),
+            "myRole": (new_room_moderation.get_role(target_id) if new_room_moderation else "participant"),
+        },
+        room=target_id,
+    )
+    if new_room_id != room_id:
+        db_messages = await db.get_recent_messages(new_room_id, 50)
+        visible = filter_messages_for_user(db_messages, target_id)
+        await sio.emit("chat:history", visible, room=target_id)
+        await broadcast_room_state(new_room_id)
     await broadcast_room_state(room_id)
 
 

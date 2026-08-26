@@ -138,6 +138,8 @@ const externalLinksInput = document.getElementById('external-links-input');
 const moderationPlayerListEl = document.getElementById('moderation-player-list');
 const auditLogBtn = document.getElementById('audit-log-btn');
 const auditLogListEl = document.getElementById('audit-log-list');
+const reportsBtn = document.getElementById('reports-btn');
+const reportsListEl = document.getElementById('reports-list');
 const bookShelfSelect = document.getElementById('book-shelf-select');
 const bookTitleInput = document.getElementById('book-title-input');
 const bookAuthorInput = document.getElementById('book-author-input');
@@ -503,6 +505,21 @@ function initGame() {
         ? entries.map((entry) => `<li>${escapeHtml(entry.actorId)} → ${escapeHtml(entry.action)}${entry.targetId ? ` (${escapeHtml(entry.targetId)})` : ''}</li>`).join('')
         : '<li>No audit log entries yet.</li>';
       auditLogListEl.classList.remove('hidden');
+    });
+  });
+
+  reportsBtn?.addEventListener('click', () => {
+    if (reportsListEl && !reportsListEl.classList.contains('hidden')) {
+      reportsListEl.classList.add('hidden');
+      return;
+    }
+    state.socket?.emit('room:moderation:reports:request', {}, (reports) => {
+      if (!reportsListEl) return;
+      const entries = Array.isArray(reports) ? reports : [];
+      reportsListEl.innerHTML = entries.length
+        ? entries.map((r) => `<li>${escapeHtml(r.reporterId)} reported ${escapeHtml(r.targetType)} ${escapeHtml(r.targetId || '')}${r.reason ? `: ${escapeHtml(r.reason)}` : ''}</li>`).join('')
+        : '<li>No reports yet.</li>';
+      reportsListEl.classList.remove('hidden');
     });
   });
 
@@ -990,7 +1007,7 @@ function connectSocket() {
     requestRoomList();
   });
 
-  state.socket.on('room:joined', (payload) => {
+  function applyJoinedRoomState(payload) {
     state.currentRoomId = payload.roomId || 'lobby';
     state.currentTile = payload.currentTile || { x: 0, y: 0 };
     state.roomTiles = normalizeTileList(payload.tiles || [{ x: 0, y: 0 }]);
@@ -999,12 +1016,16 @@ function connectSocket() {
     state.playerRoles = new Map();
     state.mutedPlayers = new Set();
     clearSceneStateForRoomSwitch();
-    addSystemMessage(`Joined room: ${state.currentRoomId}`);
     roomChooser.classList.add('hidden');
     renderMiniMap();
     updateCurrentTileLabel();
     refreshCanvasBuilderObjects();
     renderModerationPanel();
+  }
+
+  state.socket.on('room:joined', (payload) => {
+    applyJoinedRoomState(payload);
+    addSystemMessage(`Joined room: ${state.currentRoomId}`);
     requestRoomList();
   });
 
@@ -1023,7 +1044,9 @@ function connectSocket() {
   });
 
   state.socket.on('room:moderation:removed', (payload) => {
+    applyJoinedRoomState({ ...payload, roomId: payload?.newRoomId });
     addSystemMessage(payload?.reason === 'banned' ? 'You were banned from that room.' : 'You were removed from that room.');
+    requestRoomList();
   });
 
   state.socket.on('room:moderation:external_links', (payload) => {
@@ -1100,6 +1123,9 @@ function connectSocket() {
       state.playerStamina.set(p.id,  p.stamina       ?? 100);
       state.playerBlocking.set(p.id, p.blocking      ?? false);
       if (p.stunnedUntil > 0) state.playerStunned.set(p.id, p.stunnedUntil);
+      if (p.role) state.playerRoles.set(p.id, p.role);
+      if (p.muted) state.mutedPlayers.add(p.id);
+      else state.mutedPlayers.delete(p.id);
     });
     const me = state.players.get(state.playerId);
     if (me?.tile) {

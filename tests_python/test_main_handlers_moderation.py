@@ -79,6 +79,25 @@ class TestRoleAssignmentHandler:
         assert error_events
         assert rooms.get_moderation(room["id"]).get_role("carol") == "participant"
 
+    async def test_room_state_payload_reflects_current_roles_and_muted_status(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        await _join_room(rooms, "bob", room["id"])
+        await _join_room(rooms, "carol", room["id"])
+        rooms.get_moderation(room["id"]).assign_role("bob", ROLE_MODERATOR, actor_id="host1")
+        rooms.get_moderation(room["id"]).mute("carol", actor_id="host1")
+
+        await main_module.broadcast_room_state(room["id"])
+
+        state_events = [e for e in fake_sio.emitted if e[0] == "room:state" and e[2] == f"room:{room['id']}"]
+        assert state_events
+        players = {p["id"]: p for p in state_events[-1][1]["players"]}
+        assert players["host1"]["role"] == "owner"
+        assert players["bob"]["role"] == "moderator"
+        assert players["carol"]["role"] == "participant"
+        assert players["carol"]["muted"] is True
+        assert players["bob"]["muted"] is False
+
 
 class TestMuteHandlers:
     async def test_moderator_can_mute_a_user_and_chat_is_blocked(self, isolate_registry):
@@ -129,6 +148,32 @@ class TestKickAndBanHandlers:
 
         assert rooms.get_player_room_id("carol") != room["id"]
 
+    async def test_kicked_player_receives_updated_room_info_for_lobby(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        await _join_room(rooms, "mod1", room["id"])
+        await _join_room(rooms, "carol", room["id"])
+        rooms.get_moderation(room["id"]).assign_role("mod1", ROLE_MODERATOR, actor_id="host1")
+
+        await main_module.room_moderation_kick("mod1", {"targetId": "carol"})
+
+        removed_events = [e for e in fake_sio.emitted if e[0] == "room:moderation:removed" and e[2] == "carol"]
+        assert removed_events
+        payload = removed_events[-1][1]
+        assert payload["reason"] == "kicked"
+        assert payload["newRoomId"] == "lobby"
+        assert payload["hostId"] == rooms.get_room_host_id("lobby")
+        assert payload["myRole"] == "participant"
+        assert "tiles" in payload
+        assert "currentTile" in payload
+
+        lobby_state_events = [e for e in fake_sio.emitted if e[0] == "room:state" and e[2] == "room:lobby"]
+        assert lobby_state_events
+        assert any(p["id"] == "carol" for p in lobby_state_events[-1][1]["players"])
+
+        chat_history_events = [e for e in fake_sio.emitted if e[0] == "chat:history" and e[2] == "carol"]
+        assert chat_history_events
+
     async def test_moderator_can_ban_a_user_preventing_rejoin(self, isolate_registry):
         rooms, fake_sio = isolate_registry
         room = await _make_room_with_host(rooms)
@@ -151,6 +196,22 @@ class TestKickAndBanHandlers:
 
         assert rooms.get_player_room_id("carol") == room["id"]
         assert rooms.get_room_join_error("carol", room["id"]) is None
+
+    async def test_banned_player_cannot_rejoin_room_via_room_join_handler(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = await _make_room_with_host(rooms)
+        await _join_room(rooms, "mod1", room["id"])
+        await _join_room(rooms, "carol", room["id"])
+        rooms.get_moderation(room["id"]).assign_role("mod1", ROLE_MODERATOR, actor_id="host1")
+        await main_module.room_moderation_ban("mod1", {"targetId": "carol"})
+
+        fake_sio.emitted.clear()
+        await main_module.room_join("carol", {"roomId": room["id"]})
+
+        assert rooms.get_player_room_id("carol") != room["id"]
+        error_events = [e for e in fake_sio.emitted if e[0] == "error" and e[2] == "carol"]
+        assert error_events
+        assert "banned" in error_events[-1][1]["message"].lower()
 
 
 class TestContentReportHandler:
