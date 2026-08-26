@@ -493,6 +493,8 @@ async def combat_attack(sid, data):
     target_id   = data.get("targetId")
     if attack_type not in ATTACK_TYPES:
         return
+    if not isinstance(target_id, str):
+        return
 
     target = room.get_player(target_id)
     if not target:
