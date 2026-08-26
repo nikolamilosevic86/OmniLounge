@@ -101,6 +101,16 @@ def _valid_position(pos: Any) -> bool:
     return isinstance(x, (int, float)) and isinstance(y, (int, float)) and not isinstance(x, bool) and not isinstance(y, bool)
 
 
+def _valid_tile_coord(x: Any, y: Any) -> bool:
+    """True if `x`/`y` are ints — tile coordinates are used as dict keys
+    (`(x, y)` tuples) by RoomBuilderState, so a non-hashable client value
+    (e.g. a JSON list/object) would raise an uncaught `TypeError: unhashable
+    type` on the resulting dict lookup rather than a clean 'unknown tile'
+    error. Tiles are always integer-indexed (see RoomObjectPlacementModel's
+    tile_x/tile_y), so floats are rejected too."""
+    return isinstance(x, int) and isinstance(y, int) and not isinstance(x, bool) and not isinstance(y, bool)
+
+
 def all_players_payload(room_id: str) -> list[dict]:
     room = rooms.get_room(room_id)
     if not room:
@@ -804,7 +814,13 @@ async def room_tile_delete(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
-    coord = ((data or {}).get("x", 0), (data or {}).get("y", 0))
+    data = data or {}
+    x, y = data.get("x", 0), data.get("y", 0)
+    if not _valid_tile_coord(x, y):
+        await sio.emit("error", {"message": "Invalid tile coordinates"}, room=sid)
+        return
+
+    coord = (x, y)
     if not rooms.delete_tile(room_id, coord):
         await sio.emit("error", {"message": "Cannot delete this tile"}, room=sid)
         return
@@ -821,7 +837,12 @@ async def room_tile_configure(sid, data):
         return
 
     data = data or {}
-    coord = (data.get("x", 0), data.get("y", 0))
+    x, y = data.get("x", 0), data.get("y", 0)
+    if not _valid_tile_coord(x, y):
+        await sio.emit("error", {"message": "Invalid tile coordinates"}, room=sid)
+        return
+
+    coord = (x, y)
     ok = rooms.configure_tile(
         room_id,
         coord,
