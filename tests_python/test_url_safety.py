@@ -36,3 +36,17 @@ class TestIsSafeExternalUrl:
     ])
     def test_rejects_non_http_schemes_and_malformed_input(self, url):
         assert is_safe_external_url(url) is False
+
+    @pytest.mark.parametrize("url", [
+        "http:///v1",
+        "http://",
+        "http:///path?query=1",
+    ])
+    def test_rejects_urls_with_no_hostname(self, url):
+        assert is_safe_external_url(url) is False
+
+    def test_rejects_malformed_ipv6_bracket_literal(self):
+        # An unterminated/invalid IPv6 bracket makes urlsplit itself raise
+        # ValueError -- this must be treated as unsafe, not crash the caller.
+        assert is_safe_external_url("http://[::1") is False
+

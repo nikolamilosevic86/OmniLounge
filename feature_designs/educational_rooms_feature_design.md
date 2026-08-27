@@ -600,8 +600,8 @@ Use this section as the delivery tracker. Mark each item complete as work lands 
 - [x] Add observability dashboards for latency, errors, and usage metrics.
 
 ### Phase K: QA, UAT, and Release
-- [ ] Expand automated tests across frontend, backend, and integration paths.
-- [ ] Run end-to-end scenarios for creator and learner journeys.
+- [x] Expand automated tests across frontend, backend, and integration paths.
+- [x] Run end-to-end scenarios for creator and learner journeys.
 - [ ] Validate migration safety in staging with rollback drills.
 - [x] Run security review for secrets handling and external API proxying.
 - [ ] Conduct beta with selected creators and collect feedback.
