@@ -277,6 +277,59 @@ class TestKnowledgeBaseDocumentUpdate:
         assert any(e[0] == "error" for e in fake_sio.emitted)
 
 
+class TestKnowledgeBaseDocumentReorder:
+    async def test_moves_document_up(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "A", "docType": "text", "content": "a",
+        })
+        added_b = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "B", "docType": "text", "content": "b",
+        })
+        doc_b_id = added_b["knowledgeBase"]["documents"][1]["docId"]
+
+        character = await main_module.room_character_knowledge_base_document_reorder("p1", {
+            "objectId": object_id, "docId": doc_b_id, "direction": "up",
+        })
+
+        assert [d["title"] for d in character["knowledgeBase"]["documents"]] == ["B", "A"]
+
+    async def test_rejects_invalid_direction(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        added = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "A", "docType": "text", "content": "a",
+        })
+        doc_id = added["knowledgeBase"]["documents"][0]["docId"]
+
+        result = await main_module.room_character_knowledge_base_document_reorder("p1", {
+            "objectId": object_id, "docId": doc_id, "direction": "sideways",
+        })
+
+        assert result is None
+        assert any(e[0] == "error" for e in fake_sio.emitted)
+
+    async def test_denied_for_non_owner_non_host(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "A", "docType": "text", "content": "a",
+        })
+        added_b = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "B", "docType": "text", "content": "b",
+        })
+        doc_b_id = added_b["knowledgeBase"]["documents"][1]["docId"]
+        rooms.join_room("p2", create_default_avatar("Bob"), "lobby")
+
+        result = await main_module.room_character_knowledge_base_document_reorder("p2", {
+            "objectId": object_id, "docId": doc_b_id, "direction": "up",
+        })
+
+        assert result is None
+        assert any(e[0] == "error" for e in fake_sio.emitted)
+
+
 class TestGenerativeAskUsesKnowledgeDocuments:
     async def test_ask_generative_forwards_combined_knowledge_context(self, isolate_registry, monkeypatch):
         rooms, fake_sio = isolate_registry
@@ -362,6 +415,17 @@ class TestKnowledgeStoreEndToEndJourney:
         assert len(character["knowledgeBase"]["documents"]) == 2
         text_doc_id = character["knowledgeBase"]["documents"][0]["docId"]
         link_doc_id = character["knowledgeBase"]["documents"][1]["docId"]
+
+        # 2b. Reorder: move the link doc up, then back down -- confirm the
+        # reorder handler works and restores the original order used below.
+        character = await main_module.room_character_knowledge_base_document_reorder("p1", {
+            "objectId": object_id, "docId": link_doc_id, "direction": "up",
+        })
+        assert [d["docId"] for d in character["knowledgeBase"]["documents"]] == [link_doc_id, text_doc_id]
+        character = await main_module.room_character_knowledge_base_document_reorder("p1", {
+            "objectId": object_id, "docId": link_doc_id, "direction": "down",
+        })
+        assert [d["docId"] for d in character["knowledgeBase"]["documents"]] == [text_doc_id, link_doc_id]
 
         # 3. Enable generative mode and ask a question -- confirm the
         # combined knowledge context (title + text doc + link) reaches the

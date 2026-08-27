@@ -1417,6 +1417,26 @@ async def room_character_knowledge_base_document_update(sid, data):
     return character
 
 
+@sio.on("room:character:knowledge_base:document:reorder")
+async def room_character_knowledge_base_document_reorder(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        character = builder.move_character_knowledge_document(
+            data["objectId"], data["docId"], data["direction"],
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError, ValidationError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return character
+
+
 @sio.on("room:character:generative:configure")
 async def room_character_generative_configure(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)

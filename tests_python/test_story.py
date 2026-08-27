@@ -210,6 +210,46 @@ class TestKnowledgeBase:
         with pytest.raises(KeyError):
             self.engine.update_knowledge_document("npc-1", "unknown", "doc-1", "A", "text", content="a")
 
+    def test_move_knowledge_document_up_swaps_with_previous(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "B", "text", content="b")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-3", "C", "text", content="c")
+        char = self.engine.move_knowledge_document("npc-1", "char-1", "doc-2", "up", now_ms=7.0)
+        assert [d["docId"] for d in char["knowledgeBase"]["documents"]] == ["doc-2", "doc-1", "doc-3"]
+        assert char["knowledgeBase"]["updatedAt"] == 7.0
+
+    def test_move_knowledge_document_down_swaps_with_next(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "B", "text", content="b")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-3", "C", "text", content="c")
+        char = self.engine.move_knowledge_document("npc-1", "char-1", "doc-2", "down")
+        assert [d["docId"] for d in char["knowledgeBase"]["documents"]] == ["doc-1", "doc-3", "doc-2"]
+
+    def test_move_knowledge_document_up_at_top_is_a_noop(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "B", "text", content="b")
+        char = self.engine.move_knowledge_document("npc-1", "char-1", "doc-1", "up")
+        assert [d["docId"] for d in char["knowledgeBase"]["documents"]] == ["doc-1", "doc-2"]
+
+    def test_move_knowledge_document_down_at_bottom_is_a_noop(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "B", "text", content="b")
+        char = self.engine.move_knowledge_document("npc-1", "char-1", "doc-2", "down")
+        assert [d["docId"] for d in char["knowledgeBase"]["documents"]] == ["doc-1", "doc-2"]
+
+    def test_move_knowledge_document_rejects_invalid_direction(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        with pytest.raises(ValueError):
+            self.engine.move_knowledge_document("npc-1", "char-1", "doc-1", "sideways")
+
+    def test_move_knowledge_document_raises_for_unknown_doc(self):
+        with pytest.raises(KeyError):
+            self.engine.move_knowledge_document("npc-1", "char-1", "unknown-doc", "up")
+
+    def test_move_knowledge_document_raises_for_unknown_character(self):
+        with pytest.raises(KeyError):
+            self.engine.move_knowledge_document("npc-1", "unknown", "doc-1", "up")
+
 
 class TestGenerativeConfig:
     def setup_method(self):

@@ -4,6 +4,7 @@ import {
   shouldShowBubble,
   getVisibleMessages,
   filterMessagesForUser,
+  canSendChatMessage,
 } from '../src/chat.js';
 
 describe('Chat', () => {
@@ -109,6 +110,22 @@ describe('Chat', () => {
 
       const filtered = filterMessagesForUser(messages, 'u3');
       expect(filtered).toHaveLength(0);
+    });
+  });
+
+  describe('canSendChatMessage', () => {
+    it('allows sending when the user is not muted', () => {
+      const muted = new Set(['u2']);
+      expect(canSendChatMessage(muted, 'u1')).toBe(true);
+    });
+
+    it('blocks sending when the user is muted', () => {
+      const muted = new Set(['u1']);
+      expect(canSendChatMessage(muted, 'u1')).toBe(false);
+    });
+
+    it('allows sending when the muted set is empty', () => {
+      expect(canSendChatMessage(new Set(), 'u1')).toBe(true);
     });
   });
 });

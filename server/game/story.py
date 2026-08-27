@@ -214,6 +214,22 @@ class StoryEngine:
         record = self._require_character(object_id, character_id)
         return [dict(d) for d in record["knowledgeBase"]["documents"]]
 
+    def move_knowledge_document(
+        self, object_id: str, character_id: str, doc_id: str, direction: str, now_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        if direction not in ("up", "down"):
+            raise ValueError("direction must be 'up' or 'down'")
+        record = self._require_character(object_id, character_id)
+        documents = record["knowledgeBase"]["documents"]
+        index = next((i for i, d in enumerate(documents) if d["docId"] == doc_id), None)
+        if index is None:
+            raise KeyError(f"unknown knowledge document: {doc_id}")
+        target = index - 1 if direction == "up" else index + 1
+        if 0 <= target < len(documents):
+            documents[index], documents[target] = documents[target], documents[index]
+            record["knowledgeBase"]["updatedAt"] = now_ms
+        return self._public_character(record)
+
     @staticmethod
     def _build_knowledge_context(record: dict[str, Any]) -> str | None:
         """Flatten a character's knowledge store into a single bounded text

@@ -645,6 +645,13 @@ class RoomBuilderState:
             object_id, object_id, doc_id, title, doc_type, content=content, url=url,
         )
 
+    def move_character_knowledge_document(
+        self, object_id: str, doc_id: str, direction: str, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._story.move_knowledge_document(object_id, object_id, doc_id, direction)
+
     def configure_character_generative_mode(
         self, object_id: str, api_base_url: str | None = None, api_key: str | None = None,
         requester_id: str | None = None, is_room_host: bool = False,

@@ -817,6 +817,20 @@ class TestAiCharacterIntegration:
         assert character["knowledgeBase"]["documents"][0]["title"] == "Habitat 2"
         assert character["knowledgeBase"]["documents"][0]["content"] == "Updated."
 
+    def test_move_character_knowledge_document_requires_edit_permission(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        self.builder.add_character_knowledge_document("npc-1", "doc-1", "A", "text", content="a", requester_id="alice")
+        self.builder.add_character_knowledge_document("npc-1", "doc-2", "B", "text", content="b", requester_id="alice")
+        with pytest.raises(PermissionError):
+            self.builder.move_character_knowledge_document("npc-1", "doc-2", "up", requester_id="bob")
+
+    def test_move_character_knowledge_document_reorders(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        self.builder.add_character_knowledge_document("npc-1", "doc-1", "A", "text", content="a", requester_id="alice")
+        self.builder.add_character_knowledge_document("npc-1", "doc-2", "B", "text", content="b", requester_id="alice")
+        character = self.builder.move_character_knowledge_document("npc-1", "doc-2", "up", requester_id="alice")
+        assert [d["docId"] for d in character["knowledgeBase"]["documents"]] == ["doc-2", "doc-1"]
+
     def test_configure_generative_mode_enables_only_when_url_and_key_present(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
         character = self.builder.configure_character_generative_mode(

@@ -15,6 +15,7 @@ import {
   formatModeLabel, parseChoicesInput, resolveCharacterMode,
   validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
 } from './story.js';
+import { canSendChatMessage } from './chat.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey } from './focus-trap.js';
 
@@ -410,7 +411,11 @@ function initGame() {
     requestRoomList();
   });
 
-  roomFilterTopic?.addEventListener('input', () => requestRoomList());
+  let roomFilterTopicDebounceTimer = null;
+  roomFilterTopic?.addEventListener('input', () => {
+    clearTimeout(roomFilterTopicDebounceTimer);
+    roomFilterTopicDebounceTimer = setTimeout(() => requestRoomList(), 300);
+  });
   roomFilterAccess?.addEventListener('change', () => requestRoomList());
   roomFilterSort?.addEventListener('change', () => requestRoomList());
 
@@ -899,6 +904,17 @@ function initGame() {
   knowledgeDocumentList?.addEventListener('click', (event) => {
     const objectId = characterNpcSelect?.value;
     if (!objectId) return;
+    const moveBtn = event.target.closest('[data-move-doc-id]');
+    if (moveBtn) {
+      const docId = moveBtn.dataset.moveDocId;
+      const direction = moveBtn.dataset.moveDirection;
+      state.socket?.emit('room:character:knowledge_base:document:reorder', { objectId, docId, direction }, (character) => {
+        if (!character) return;
+        state.builderCharacters[objectId] = character;
+        renderCharacterConfigFields();
+      });
+      return;
+    }
     const editBtn = event.target.closest('[data-edit-doc-id]');
     if (editBtn) {
       const docId = editBtn.dataset.editDocId;
@@ -918,6 +934,7 @@ function initGame() {
       renderCharacterConfigFields();
     });
   });
+
 
 
   characterGenerativeBtn?.addEventListener('click', () => {
@@ -972,8 +989,12 @@ function initGame() {
     const objectId = state.dialogueModalObjectId;
     const userMessage = dialogueAskInput?.value?.trim();
     if (!objectId || !userMessage) return;
-    state.socket?.emit('room:character:ask', { objectId, userMessage }, (result) => {
-      if (!result) return;
+    if (dialogueAnswer) dialogueAnswer.textContent = 'Thinking...';
+    state.socket?.timeout(15000).emit('room:character:ask', { objectId, userMessage }, (timeoutErr, result) => {
+      if (timeoutErr || !result) {
+        if (dialogueAnswer) dialogueAnswer.textContent = 'No response from the character. Please try again.';
+        return;
+      }
       if (dialogueAnswer) dialogueAnswer.textContent = result.answer;
       if (dialogueModeIndicator) {
         dialogueModeIndicator.textContent = formatModeLabel(result.mode);
@@ -982,6 +1003,7 @@ function initGame() {
     });
     if (dialogueAskInput) dialogueAskInput.value = '';
   });
+
 
   dialogueRestartBtn?.addEventListener('click', () => {
     const objectId = state.dialogueModalObjectId;
@@ -1128,6 +1150,7 @@ function connectSocket() {
     state.myRoomRole = payload.myRole || 'participant';
     state.playerRoles = new Map();
     state.mutedPlayers = new Set();
+    updateMutedChatUi();
     // Build mode is scoped to the room the user was building in; leaving it
     // "on" after switching rooms falsely implies building is still active.
     state.buildMode = false;
@@ -1157,6 +1180,7 @@ function connectSocket() {
     if (!payload?.targetId) return;
     if (payload.muted) state.mutedPlayers.add(payload.targetId);
     else state.mutedPlayers.delete(payload.targetId);
+    if (payload.targetId === state.playerId) updateMutedChatUi();
     renderModerationPanel();
   });
 
@@ -1249,6 +1273,7 @@ function connectSocket() {
       if (p.muted) state.mutedPlayers.add(p.id);
       else state.mutedPlayers.delete(p.id);
     });
+    updateMutedChatUi();
     const me = state.players.get(state.playerId);
     if (me?.tile) {
       state.currentTile = me.tile;
@@ -1574,6 +1599,10 @@ function renderPlayers() {
 function sendMessage() {
   const text = chatInput.value.trim();
   if (!text) return;
+  if (!canSendChatMessage(state.mutedPlayers, state.playerId)) {
+    addSystemMessage('You are muted in this room and cannot send messages.');
+    return;
+  }
 
   const payload = { text, type: state.chatMode };
   if (state.chatMode === 'private') {
@@ -1585,6 +1614,15 @@ function sendMessage() {
   state.socket.emit('chat:send', payload);
   chatInput.value = '';
 }
+
+function updateMutedChatUi() {
+  const muted = !canSendChatMessage(state.mutedPlayers, state.playerId);
+  if (chatInput) {
+    chatInput.disabled = muted;
+    chatInput.placeholder = muted ? 'You are muted in this room...' : 'Say something...';
+  }
+}
+
 
 function appendChatMessage(msg) {
   const el = document.createElement('div');
@@ -2170,7 +2208,7 @@ function renderKnowledgeDocumentList(character) {
   if (!knowledgeDocumentList) return;
   const documents = character?.knowledgeBase?.documents || [];
   knowledgeDocumentList.innerHTML = documents.length
-    ? documents.map((doc) => `
+    ? documents.map((doc, index) => `
         <li class="kb-carbon__list-item">
           <div class="kb-carbon__list-item-meta">
             <span class="kb-carbon__tag kb-carbon__tag--${escapeHtml(doc.docType)}">${escapeHtml(doc.docType)}</span>
@@ -2178,12 +2216,15 @@ function renderKnowledgeDocumentList(character) {
           </div>
           <div class="kb-carbon__list-item-preview">${escapeHtml(summarizeKnowledgeDocument(doc))}</div>
           <div class="kb-carbon__list-item-actions">
+            <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-move-doc-id="${escapeHtml(doc.docId)}" data-move-direction="up" ${index === 0 ? 'disabled' : ''}>Up</button>
+            <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-move-doc-id="${escapeHtml(doc.docId)}" data-move-direction="down" ${index === documents.length - 1 ? 'disabled' : ''}>Down</button>
             <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-edit-doc-id="${escapeHtml(doc.docId)}">Edit</button>
             <button type="button" class="kb-carbon__button kb-carbon__button--danger" data-doc-id="${escapeHtml(doc.docId)}">Remove</button>
           </div>
         </li>`).join('')
     : '<li class="kb-carbon__empty-hint">No documents yet.</li>';
 }
+
 
 
 function renderBuilderStoryNodeList() {

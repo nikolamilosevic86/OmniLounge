@@ -2254,6 +2254,12 @@ a:focus-visible,
   color: #ffffff;
 }
 
+.kb-carbon__button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .kb-carbon__button-row {
   display: flex;
   gap: 0.5rem;
