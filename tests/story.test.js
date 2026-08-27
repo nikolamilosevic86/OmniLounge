@@ -5,6 +5,10 @@ import {
   formatModeLabel,
   parseChoicesInput,
   resolveCharacterMode,
+  KNOWLEDGE_DOC_TYPES,
+  isValidKnowledgeDocType,
+  validateKnowledgeDocumentInput,
+  summarizeKnowledgeDocument,
 } from '../src/story.js';
 
 describe('CHARACTER_ROLES', () => {
@@ -76,5 +80,97 @@ describe('resolveCharacterMode', () => {
   it('returns predefined for a null or undefined character', () => {
     expect(resolveCharacterMode(null)).toBe('predefined');
     expect(resolveCharacterMode(undefined)).toBe('predefined');
+  });
+});
+
+describe('KNOWLEDGE_DOC_TYPES', () => {
+  it('includes the three supported document types', () => {
+    expect(KNOWLEDGE_DOC_TYPES).toEqual(['text', 'markdown', 'link']);
+  });
+});
+
+describe('isValidKnowledgeDocType', () => {
+  it('returns true for a known type', () => {
+    expect(isValidKnowledgeDocType('text')).toBe(true);
+    expect(isValidKnowledgeDocType('markdown')).toBe(true);
+    expect(isValidKnowledgeDocType('link')).toBe(true);
+  });
+
+  it('returns false for an unknown type', () => {
+    expect(isValidKnowledgeDocType('video')).toBe(false);
+    expect(isValidKnowledgeDocType(undefined)).toBe(false);
+  });
+});
+
+describe('validateKnowledgeDocumentInput', () => {
+  it('accepts a valid text document', () => {
+    expect(validateKnowledgeDocumentInput({ title: 'Habitat', docType: 'text', content: 'Owls are nocturnal.' }))
+      .toEqual({ valid: true, error: null });
+  });
+
+  it('accepts a valid markdown document', () => {
+    expect(validateKnowledgeDocumentInput({ title: 'Notes', docType: 'markdown', content: '# Owls' }))
+      .toEqual({ valid: true, error: null });
+  });
+
+  it('accepts a valid link document', () => {
+    expect(validateKnowledgeDocumentInput({ title: 'More info', docType: 'link', url: 'https://example.com/owls' }))
+      .toEqual({ valid: true, error: null });
+  });
+
+  it('rejects a missing or blank title', () => {
+    expect(validateKnowledgeDocumentInput({ title: '', docType: 'text', content: 'x' }).valid).toBe(false);
+    expect(validateKnowledgeDocumentInput({ title: '   ', docType: 'text', content: 'x' }).valid).toBe(false);
+  });
+
+  it('rejects a title over 120 characters', () => {
+    const result = validateKnowledgeDocumentInput({ title: 'a'.repeat(121), docType: 'text', content: 'x' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects an unknown document type', () => {
+    const result = validateKnowledgeDocumentInput({ title: 'Bad', docType: 'video', content: 'x' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a text document with empty content', () => {
+    const result = validateKnowledgeDocumentInput({ title: 'Empty', docType: 'text', content: '  ' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects text content over 4000 characters', () => {
+    const result = validateKnowledgeDocumentInput({ title: 'Long', docType: 'text', content: 'a'.repeat(4001) });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a link document with a missing url', () => {
+    const result = validateKnowledgeDocumentInput({ title: 'Link', docType: 'link', url: '' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a link document with a non-http(s) url', () => {
+    const result = validateKnowledgeDocumentInput({ title: 'Link', docType: 'link', url: 'javascript:alert(1)' });
+    expect(result.valid).toBe(false);
+  });
+});
+
+describe('summarizeKnowledgeDocument', () => {
+  it('returns the url for a link document', () => {
+    expect(summarizeKnowledgeDocument({ docType: 'link', url: 'https://example.com' })).toBe('https://example.com');
+  });
+
+  it('returns the content for a text document', () => {
+    expect(summarizeKnowledgeDocument({ docType: 'text', content: 'Owls are nocturnal.' }))
+      .toBe('Owls are nocturnal.');
+  });
+
+  it('truncates content longer than 80 characters', () => {
+    const content = 'a'.repeat(100);
+    const result = summarizeKnowledgeDocument({ docType: 'text', content });
+    expect(result).toBe(`${'a'.repeat(80)}…`);
+  });
+
+  it('returns an empty string for a null document', () => {
+    expect(summarizeKnowledgeDocument(null)).toBe('');
   });
 });

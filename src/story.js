@@ -25,3 +25,48 @@ export function parseChoicesInput(input) {
       return { text, nextNodeId: nextNodeId || null };
     });
 }
+
+export const KNOWLEDGE_DOC_TYPES = ['text', 'markdown', 'link'];
+export const MAX_KNOWLEDGE_DOC_TITLE_LENGTH = 120;
+export const MAX_KNOWLEDGE_DOC_CONTENT_LENGTH = 4000;
+
+export function isValidKnowledgeDocType(docType) {
+  return KNOWLEDGE_DOC_TYPES.includes(docType);
+}
+
+// Client-side pre-check only, mirroring the server's validation rules for
+// immediate user feedback. The server (server/game/story.py) remains the
+// authoritative validator -- in particular link URLs are only checked here
+// for a http(s) scheme, while the server also runs the SSRF-safe
+// `is_safe_external_url` check against loopback/private/reserved addresses.
+export function validateKnowledgeDocumentInput({ title, docType, content, url } = {}) {
+  const trimmedTitle = (title || '').trim();
+  if (!trimmedTitle) return { valid: false, error: 'Enter a title for this document.' };
+  if (trimmedTitle.length > MAX_KNOWLEDGE_DOC_TITLE_LENGTH) {
+    return { valid: false, error: `Title must be ${MAX_KNOWLEDGE_DOC_TITLE_LENGTH} characters or fewer.` };
+  }
+  if (!isValidKnowledgeDocType(docType)) {
+    return { valid: false, error: 'Choose a document type.' };
+  }
+  if (docType === 'link') {
+    const trimmedUrl = (url || '').trim();
+    if (!trimmedUrl) return { valid: false, error: 'Enter a URL for this link.' };
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      return { valid: false, error: 'Link URLs must start with http:// or https://.' };
+    }
+    return { valid: true, error: null };
+  }
+  const trimmedContent = (content || '').trim();
+  if (!trimmedContent) return { valid: false, error: 'Enter document content.' };
+  if (trimmedContent.length > MAX_KNOWLEDGE_DOC_CONTENT_LENGTH) {
+    return { valid: false, error: `Content must be ${MAX_KNOWLEDGE_DOC_CONTENT_LENGTH} characters or fewer.` };
+  }
+  return { valid: true, error: null };
+}
+
+export function summarizeKnowledgeDocument(doc) {
+  if (!doc) return '';
+  if (doc.docType === 'link') return doc.url || '';
+  const content = doc.content || '';
+  return content.length > 80 ? `${content.slice(0, 80)}…` : content;
+}

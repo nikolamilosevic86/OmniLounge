@@ -7,7 +7,7 @@
   <title>OmniLaunge</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
@@ -336,11 +336,39 @@
             </label>
             <button type="button" id="character-configure-btn" class="builder-primary-btn">Save Character</button>
 
-            <label class="builder-field">
-              <span>Knowledge Base</span>
-              <textarea id="character-knowledge-base-input" rows="3" placeholder="Facts this character can fall back on..."></textarea>
-            </label>
-            <button type="button" id="character-knowledge-base-btn" class="builder-primary-btn">Save Knowledge Base</button>
+            <div class="kb-carbon" id="knowledge-store-panel">
+              <h5 class="kb-carbon__heading">Knowledge Store</h5>
+              <label class="kb-carbon__field">
+                <span class="kb-carbon__label">Knowledge base title</span>
+                <input type="text" id="character-knowledge-base-title-input" class="kb-carbon__input" maxlength="120" placeholder="e.g. Owl Facts" />
+              </label>
+              <button type="button" id="character-knowledge-base-title-btn" class="kb-carbon__button kb-carbon__button--primary">Save Title</button>
+
+              <ul id="knowledge-document-list" class="kb-carbon__list"></ul>
+
+              <label class="kb-carbon__field">
+                <span class="kb-carbon__label">Document title</span>
+                <input type="text" id="knowledge-document-title-input" class="kb-carbon__input" maxlength="120" placeholder="Document title" />
+              </label>
+              <label class="kb-carbon__field">
+                <span class="kb-carbon__label">Type</span>
+                <select id="knowledge-document-type-select" class="kb-carbon__select">
+                  <option value="text">Text</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="link">Link</option>
+                </select>
+              </label>
+              <label class="kb-carbon__field" id="knowledge-document-content-field">
+                <span class="kb-carbon__label">Content</span>
+                <textarea id="knowledge-document-content-input" class="kb-carbon__textarea" rows="3" placeholder="Document content..."></textarea>
+              </label>
+              <label class="kb-carbon__field hidden" id="knowledge-document-url-field">
+                <span class="kb-carbon__label">URL</span>
+                <input type="text" id="knowledge-document-url-input" class="kb-carbon__input" placeholder="https://example.com" />
+              </label>
+              <p class="kb-carbon__error hidden" id="knowledge-document-error"></p>
+              <button type="button" id="knowledge-document-add-btn" class="kb-carbon__button kb-carbon__button--primary">Add Document</button>
+            </div>
 
             <label class="builder-field">
               <span>Generative API Base URL</span>

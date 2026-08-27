@@ -1336,8 +1336,8 @@ async def room_character_configure(sid, data):
     return character
 
 
-@sio.on("room:character:knowledge_base:set")
-async def room_character_knowledge_base_set(sid, data):
+@sio.on("room:character:knowledge_base:title:set")
+async def room_character_knowledge_base_title_set(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)
     if not room_id:
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
@@ -1345,8 +1345,49 @@ async def room_character_knowledge_base_set(sid, data):
 
     data = data or {}
     try:
-        character = builder.set_character_knowledge_base(
-            data["objectId"], data["content"], requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        character = builder.set_character_knowledge_base_title(
+            data["objectId"], data.get("title"), requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return character
+
+
+@sio.on("room:character:knowledge_base:document:add")
+async def room_character_knowledge_base_document_add(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    doc_id = data.get("docId") or f"doc-{uuid.uuid4().hex[:8]}"
+    try:
+        character = builder.add_character_knowledge_document(
+            data["objectId"], doc_id, data["title"], data["docType"],
+            content=data.get("content"), url=data.get("url"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError, ValidationError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return character
+
+
+@sio.on("room:character:knowledge_base:document:remove")
+async def room_character_knowledge_base_document_remove(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        character = builder.remove_character_knowledge_document(
+            data["objectId"], data["docId"], requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
     except (KeyError, PermissionError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)

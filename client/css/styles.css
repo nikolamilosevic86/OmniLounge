@@ -2118,3 +2118,179 @@ a:focus-visible,
 #dialogue-answer {
   min-height: 1.2em;
 }
+
+/* ── Knowledge Store panel ──────────────────────────────────────────────
+   The rest of this app uses the Material 3 `--md-*` tokens above. This
+   panel is deliberately scoped to hand-rolled IBM Carbon Design System
+   tokens instead (Carbon's gray-100 surface, IBM Plex Sans, Carbon's
+   4px/8px spacing scale, square corners, and the `#0f62fe` "Blue 60"
+   interactive color) because this is a vanilla-JS/Vite project with no
+   React and no `@carbon/react` dependency -- pulling in the real Carbon
+   component library would require adopting React, a disproportionate
+   architectural change for one panel. Carbon's *visual language* is
+   reproduced here in plain CSS, scoped under `.kb-carbon` so it does not
+   affect the Material 3 styling used everywhere else in the app. */
+.kb-carbon {
+  --kb-font: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --kb-blue-60: #0f62fe;
+  --kb-blue-70: #0043ce;
+  --kb-red-60: #da1e28;
+  --kb-red-70: #a2191f;
+  --kb-gray-10: #f4f4f4;
+  --kb-gray-20: #e0e0e0;
+  --kb-gray-60: #6f6f6f;
+  --kb-gray-70: #525252;
+  --kb-gray-90: #262626;
+  --kb-gray-100: #161616;
+  font-family: var(--kb-font);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--kb-gray-100);
+  border: 1px solid var(--kb-gray-70);
+  padding: 1rem;
+}
+
+.kb-carbon__heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kb-gray-20);
+  margin: 0 0 0.25rem;
+}
+
+.kb-carbon__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--kb-gray-20);
+}
+
+.kb-carbon__field.hidden {
+  display: none;
+}
+
+.kb-carbon__label {
+  font-size: 0.7rem;
+  color: var(--kb-gray-20);
+}
+
+.kb-carbon__input,
+.kb-carbon__select,
+.kb-carbon__textarea {
+  font-family: var(--kb-font);
+  font-size: 0.85rem;
+  color: var(--kb-gray-10);
+  background: var(--kb-gray-90);
+  border: none;
+  border-bottom: 1px solid var(--kb-gray-60);
+  border-radius: 0;
+  padding: 0.55rem 0.75rem;
+}
+
+.kb-carbon__input:focus-visible,
+.kb-carbon__select:focus-visible,
+.kb-carbon__textarea:focus-visible {
+  outline: 2px solid var(--kb-blue-60);
+  outline-offset: -2px;
+}
+
+.kb-carbon__button {
+  font-family: var(--kb-font);
+  font-size: 0.85rem;
+  font-weight: 400;
+  border: none;
+  border-radius: 0;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  transition: background-color 70ms cubic-bezier(0.2, 0, 0.38, 0.9);
+}
+
+.kb-carbon__button--primary {
+  background: var(--kb-blue-60);
+  color: #ffffff;
+}
+
+.kb-carbon__button--primary:hover {
+  background: var(--kb-blue-70);
+}
+
+.kb-carbon__button--danger {
+  background: transparent;
+  color: var(--kb-red-60);
+  border: 1px solid var(--kb-red-60);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+  align-self: flex-start;
+}
+
+.kb-carbon__button--danger:hover {
+  background: var(--kb-red-60);
+  color: #ffffff;
+}
+
+.kb-carbon__error {
+  font-size: 0.75rem;
+  color: var(--kb-red-60);
+}
+
+.kb-carbon__error.hidden {
+  display: none;
+}
+
+.kb-carbon__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.kb-carbon__list-item {
+  background: var(--kb-gray-90);
+  border-left: 3px solid var(--kb-blue-60);
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.kb-carbon__list-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--kb-gray-10);
+}
+
+.kb-carbon__list-item-preview {
+  font-size: 0.75rem;
+  color: var(--kb-gray-20);
+  overflow-wrap: anywhere;
+}
+
+.kb-carbon__tag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  background: var(--kb-gray-20);
+  color: var(--kb-gray-100);
+}
+
+.kb-carbon__tag--link {
+  background: var(--kb-blue-60);
+  color: #ffffff;
+}
+
+.kb-carbon__empty-hint {
+  font-size: 0.75rem;
+  color: var(--kb-gray-60);
+  padding: 0.4rem 0;
+}

@@ -64,17 +64,107 @@ class TestListAndRemoveCharacter:
 
 
 class TestKnowledgeBase:
+    """Knowledge stores hold multiple documents (text/markdown/link) per
+    character, per feature design section 22.3, rather than a single free
+    text blob."""
+
     def setup_method(self):
         self.engine = StoryEngine()
         self.engine.add_character("npc-1", "char-1", name="Owl", role="guide", start_node_id="node-1")
 
-    def test_set_knowledge_base_updates_character(self):
-        char = self.engine.set_knowledge_base("npc-1", "char-1", "Owls are nocturnal birds of prey.")
-        assert char["knowledgeBase"] == "Owls are nocturnal birds of prey."
+    def test_new_character_has_empty_knowledge_base(self):
+        char = self.engine.get_character("npc-1", "char-1")
+        assert char["knowledgeBase"] == {"title": None, "documents": [], "updatedAt": None}
 
-    def test_set_knowledge_base_raises_for_unknown_character(self):
+    def test_set_knowledge_base_title_updates_title_and_timestamp(self):
+        char = self.engine.set_knowledge_base_title("npc-1", "char-1", "Owl Facts", now_ms=100.0)
+        assert char["knowledgeBase"]["title"] == "Owl Facts"
+        assert char["knowledgeBase"]["updatedAt"] == 100.0
+
+    def test_set_knowledge_base_title_accepts_none_to_clear(self):
+        self.engine.set_knowledge_base_title("npc-1", "char-1", "Owl Facts")
+        char = self.engine.set_knowledge_base_title("npc-1", "char-1", None)
+        assert char["knowledgeBase"]["title"] is None
+
+    def test_set_knowledge_base_title_rejects_overlong_title(self):
+        with pytest.raises(ValueError):
+            self.engine.set_knowledge_base_title("npc-1", "char-1", "x" * 121)
+
+    def test_set_knowledge_base_title_raises_for_unknown_character(self):
         with pytest.raises(KeyError):
-            self.engine.set_knowledge_base("npc-1", "unknown", "content")
+            self.engine.set_knowledge_base_title("npc-1", "unknown", "title")
+
+    def test_add_knowledge_document_text_type(self):
+        char = self.engine.add_knowledge_document(
+            "npc-1", "char-1", "doc-1", "Habitat", "text", content="Owls live in forests.", now_ms=50.0,
+        )
+        docs = char["knowledgeBase"]["documents"]
+        assert docs == [{"docId": "doc-1", "title": "Habitat", "docType": "text",
+                          "content": "Owls live in forests.", "url": None}]
+        assert char["knowledgeBase"]["updatedAt"] == 50.0
+
+    def test_add_knowledge_document_markdown_type(self):
+        char = self.engine.add_knowledge_document(
+            "npc-1", "char-1", "doc-1", "Diet", "markdown", content="# Diet\n- Mice\n- Voles",
+        )
+        assert char["knowledgeBase"]["documents"][0]["docType"] == "markdown"
+
+    def test_add_knowledge_document_link_type_requires_safe_url(self):
+        char = self.engine.add_knowledge_document(
+            "npc-1", "char-1", "doc-1", "Read more", "link", url="https://example.com/owls",
+        )
+        doc = char["knowledgeBase"]["documents"][0]
+        assert doc == {"docId": "doc-1", "title": "Read more", "docType": "link", "content": None,
+                        "url": "https://example.com/owls"}
+
+    def test_add_knowledge_document_link_rejects_unsafe_url(self):
+        with pytest.raises(ValueError):
+            self.engine.add_knowledge_document(
+                "npc-1", "char-1", "doc-1", "Internal", "link", url="http://127.0.0.1/secret",
+            )
+
+    def test_add_knowledge_document_rejects_invalid_doc_type(self):
+        with pytest.raises(ValueError):
+            self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "Bad", "video", content="x")
+
+    def test_add_knowledge_document_text_requires_nonempty_content(self):
+        with pytest.raises(ValueError):
+            self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "Empty", "text", content="   ")
+
+    def test_add_knowledge_document_link_requires_url(self):
+        with pytest.raises(ValueError):
+            self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "No URL", "link")
+
+    def test_add_knowledge_document_rejects_duplicate_doc_id(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        with pytest.raises(ValueError):
+            self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "B", "text", content="b")
+
+    def test_add_knowledge_document_enforces_max_documents_cap(self):
+        for i in range(20):
+            self.engine.add_knowledge_document("npc-1", "char-1", f"doc-{i}", f"T{i}", "text", content="x")
+        with pytest.raises(ValueError):
+            self.engine.add_knowledge_document("npc-1", "char-1", "doc-20", "T20", "text", content="x")
+
+    def test_add_knowledge_document_raises_for_unknown_character(self):
+        with pytest.raises(KeyError):
+            self.engine.add_knowledge_document("npc-1", "unknown", "doc-1", "T", "text", content="x")
+
+    def test_remove_knowledge_document_removes_it(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        char = self.engine.remove_knowledge_document("npc-1", "char-1", "doc-1", now_ms=99.0)
+        assert char["knowledgeBase"]["documents"] == []
+        assert char["knowledgeBase"]["updatedAt"] == 99.0
+
+    def test_remove_knowledge_document_raises_for_unknown_doc(self):
+        with pytest.raises(KeyError):
+            self.engine.remove_knowledge_document("npc-1", "char-1", "unknown-doc")
+
+    def test_list_knowledge_documents_returns_all(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "B", "text", content="b")
+        docs = self.engine.list_knowledge_documents("npc-1", "char-1")
+        assert [d["docId"] for d in docs] == ["doc-1", "doc-2"]
 
 
 class TestGenerativeConfig:
@@ -218,11 +308,27 @@ class TestGenerativeAnswer:
         result = self.engine.ask_generative("npc-1", "char-1", "What is 2+2?", caller=lambda *a: "4")
         assert result["mode"] == "predefined"
 
-    def test_ask_generative_fallback_uses_knowledge_base_when_present(self):
-        self.engine.set_knowledge_base("npc-1", "char-1", "Owls are nocturnal.")
+    def test_ask_generative_fallback_uses_knowledge_context_when_present(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "Habitat", "text", content="Owls are nocturnal.")
         result = self.engine.ask_generative("npc-1", "char-1", "Tell me about owls", caller=lambda *a: "ignored")
-        assert result["answer"] == "Owls are nocturnal."
+        assert "Owls are nocturnal." in result["answer"]
         assert result["mode"] == "predefined"
+
+    def test_ask_generative_passes_combined_knowledge_context_to_caller(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        self.engine.set_knowledge_base_title("npc-1", "char-1", "Owl Facts")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "Habitat", "text", content="Owls live in forests.")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "More", "link", url="https://example.com/owls")
+        captured = {}
+
+        def fake_caller(api_base_url, api_key, knowledge_base, user_message):
+            captured["knowledge_base"] = knowledge_base
+            return "A generated answer."
+
+        self.engine.ask_generative("npc-1", "char-1", "Tell me about owls", caller=fake_caller)
+        assert "Owl Facts" in captured["knowledge_base"]
+        assert "Owls live in forests." in captured["knowledge_base"]
+        assert "https://example.com/owls" in captured["knowledge_base"]
 
     def test_ask_generative_calls_caller_and_returns_its_answer_when_enabled(self):
         self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")

@@ -11,7 +11,10 @@ import { normalizeRooms, buildRoomMetaLine, canJoinRoom, normalizeRoomFilters } 
 import { buildMiniMapCells, normalizeTileList } from './world-map.js';
 import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary } from './reader.js';
 import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem } from './media.js';
-import { formatModeLabel, parseChoicesInput, resolveCharacterMode } from './story.js';
+import {
+  formatModeLabel, parseChoicesInput, resolveCharacterMode,
+  validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
+} from './story.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey } from './focus-trap.js';
 
@@ -217,8 +220,17 @@ const characterRoleSelect = document.getElementById('character-role-select');
 const characterStartNodeInput = document.getElementById('character-start-node-input');
 const characterPortraitInput = document.getElementById('character-portrait-input');
 const characterConfigureBtn = document.getElementById('character-configure-btn');
-const characterKnowledgeBaseInput = document.getElementById('character-knowledge-base-input');
-const characterKnowledgeBaseBtn = document.getElementById('character-knowledge-base-btn');
+const characterKnowledgeBaseTitleInput = document.getElementById('character-knowledge-base-title-input');
+const characterKnowledgeBaseTitleBtn = document.getElementById('character-knowledge-base-title-btn');
+const knowledgeDocumentList = document.getElementById('knowledge-document-list');
+const knowledgeDocumentTitleInput = document.getElementById('knowledge-document-title-input');
+const knowledgeDocumentTypeSelect = document.getElementById('knowledge-document-type-select');
+const knowledgeDocumentContentField = document.getElementById('knowledge-document-content-field');
+const knowledgeDocumentContentInput = document.getElementById('knowledge-document-content-input');
+const knowledgeDocumentUrlField = document.getElementById('knowledge-document-url-field');
+const knowledgeDocumentUrlInput = document.getElementById('knowledge-document-url-input');
+const knowledgeDocumentError = document.getElementById('knowledge-document-error');
+const knowledgeDocumentAddBtn = document.getElementById('knowledge-document-add-btn');
 const characterApiUrlInput = document.getElementById('character-api-url-input');
 const characterApiKeyInput = document.getElementById('character-api-key-input');
 const characterGenerativeBtn = document.getElementById('character-generative-btn');
@@ -826,13 +838,63 @@ function initGame() {
     });
   });
 
-  characterKnowledgeBaseBtn?.addEventListener('click', () => {
+  characterKnowledgeBaseTitleBtn?.addEventListener('click', () => {
     const objectId = characterNpcSelect?.value;
-    const content = characterKnowledgeBaseInput?.value ?? '';
     if (!objectId) return;
-    state.socket?.emit('room:character:knowledge_base:set', { objectId, content }, (character) => {
+    const title = characterKnowledgeBaseTitleInput?.value?.trim() || null;
+    state.socket?.emit('room:character:knowledge_base:title:set', { objectId, title }, (character) => {
       if (!character) return;
       state.builderCharacters[objectId] = character;
+      renderCharacterConfigFields();
+    });
+  });
+
+  knowledgeDocumentTypeSelect?.addEventListener('change', () => {
+    updateKnowledgeDocumentFormFields();
+  });
+
+  knowledgeDocumentAddBtn?.addEventListener('click', () => {
+    const objectId = characterNpcSelect?.value;
+    if (!objectId) return;
+    const title = knowledgeDocumentTitleInput?.value ?? '';
+    const docType = knowledgeDocumentTypeSelect?.value ?? 'text';
+    const content = knowledgeDocumentContentInput?.value ?? '';
+    const url = knowledgeDocumentUrlInput?.value ?? '';
+    const validation = validateKnowledgeDocumentInput({ title, docType, content, url });
+    if (!validation.valid) {
+      if (knowledgeDocumentError) {
+        knowledgeDocumentError.textContent = validation.error;
+        knowledgeDocumentError.classList.remove('hidden');
+      }
+      return;
+    }
+    knowledgeDocumentError?.classList.add('hidden');
+    state.socket?.emit('room:character:knowledge_base:document:add', {
+      objectId,
+      title: title.trim(),
+      docType,
+      content: docType === 'link' ? undefined : content.trim(),
+      url: docType === 'link' ? url.trim() : undefined,
+    }, (character) => {
+      if (!character) return;
+      state.builderCharacters[objectId] = character;
+      if (knowledgeDocumentTitleInput) knowledgeDocumentTitleInput.value = '';
+      if (knowledgeDocumentContentInput) knowledgeDocumentContentInput.value = '';
+      if (knowledgeDocumentUrlInput) knowledgeDocumentUrlInput.value = '';
+      renderCharacterConfigFields();
+    });
+  });
+
+  knowledgeDocumentList?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-doc-id]');
+    if (!btn) return;
+    const objectId = characterNpcSelect?.value;
+    const docId = btn.dataset.docId;
+    if (!objectId || !docId) return;
+    state.socket?.emit('room:character:knowledge_base:document:remove', { objectId, docId }, (character) => {
+      if (!character) return;
+      state.builderCharacters[objectId] = character;
+      renderCharacterConfigFields();
     });
   });
 
@@ -2043,8 +2105,32 @@ function renderCharacterConfigFields() {
   if (characterRoleSelect) characterRoleSelect.value = character?.role || 'guide';
   if (characterStartNodeInput) characterStartNodeInput.value = character?.startNodeId || '';
   if (characterPortraitInput) characterPortraitInput.value = character?.portraitUrl || '';
-  if (characterKnowledgeBaseInput) characterKnowledgeBaseInput.value = character?.knowledgeBase || '';
+  if (characterKnowledgeBaseTitleInput) characterKnowledgeBaseTitleInput.value = character?.knowledgeBase?.title || '';
+  renderKnowledgeDocumentList(character);
+  updateKnowledgeDocumentFormFields();
   if (characterApiUrlInput) characterApiUrlInput.value = character?.apiBaseUrl || '';
+}
+
+function updateKnowledgeDocumentFormFields() {
+  const isLink = (knowledgeDocumentTypeSelect?.value ?? 'text') === 'link';
+  knowledgeDocumentContentField?.classList.toggle('hidden', isLink);
+  knowledgeDocumentUrlField?.classList.toggle('hidden', !isLink);
+}
+
+function renderKnowledgeDocumentList(character) {
+  if (!knowledgeDocumentList) return;
+  const documents = character?.knowledgeBase?.documents || [];
+  knowledgeDocumentList.innerHTML = documents.length
+    ? documents.map((doc) => `
+        <li class="kb-carbon__list-item">
+          <div class="kb-carbon__list-item-meta">
+            <span class="kb-carbon__tag kb-carbon__tag--${escapeHtml(doc.docType)}">${escapeHtml(doc.docType)}</span>
+            <strong>${escapeHtml(doc.title)}</strong>
+          </div>
+          <div class="kb-carbon__list-item-preview">${escapeHtml(summarizeKnowledgeDocument(doc))}</div>
+          <button type="button" class="kb-carbon__button kb-carbon__button--danger" data-doc-id="${escapeHtml(doc.docId)}">Remove</button>
+        </li>`).join('')
+    : '<li class="kb-carbon__empty-hint">No documents yet.</li>';
 }
 
 function renderBuilderStoryNodeList() {

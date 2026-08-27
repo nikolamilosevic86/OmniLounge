@@ -549,10 +549,15 @@ class TestRoomBuilderHandlers:
         await main_module.room_character_configure("p1", {
             "objectId": npc["objectId"], "name": "Owl", "role": "guide", "startNodeId": "node-1",
         })
-        character = await main_module.room_character_knowledge_base_set("p1", {
-            "objectId": npc["objectId"], "content": "Owls are nocturnal.",
+        character = await main_module.room_character_knowledge_base_title_set("p1", {
+            "objectId": npc["objectId"], "title": "Owl Facts",
         })
-        assert character["knowledgeBase"] == "Owls are nocturnal."
+        assert character["knowledgeBase"]["title"] == "Owl Facts"
+
+        character = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": npc["objectId"], "title": "Habitat", "docType": "text", "content": "Owls are nocturnal.",
+        })
+        assert character["knowledgeBase"]["documents"][0]["content"] == "Owls are nocturnal."
 
         character = await main_module.room_character_generative_configure("p1", {
             "objectId": npc["objectId"], "apiBaseUrl": "https://api.example.com", "apiKey": "secret",
@@ -673,7 +678,9 @@ CLIENT_EMITTED_EVENTS = [
     "room:character:ask",
     "room:character:configure",
     "room:character:generative:configure",
-    "room:character:knowledge_base:set",
+    "room:character:knowledge_base:document:add",
+    "room:character:knowledge_base:document:remove",
+    "room:character:knowledge_base:title:set",
     "room:character:node:add",
     "room:character:talk",
     "room:create",

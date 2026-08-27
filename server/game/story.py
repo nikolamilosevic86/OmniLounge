@@ -11,7 +11,7 @@ the character never "goes silent" from a learner's perspective.
 
 from typing import Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from server.game.rate_limiter import SlidingWindowRateLimiter
 from server.game.url_safety import is_safe_external_url
@@ -20,6 +20,16 @@ ALLOWED_ROLES = {"guide", "quiz_master", "narrator", "historical_persona", "ment
 
 _FALLBACK_ANSWER = "I'm not sure about that yet, but let's continue our story."
 _RATE_LIMITED_ANSWER = "You're asking questions a bit too fast — please wait a moment and try again."
+
+# Section 22.3: a character's knowledge base is a small document store (not
+# a single free-text blob), so a story author can organize multiple
+# text/markdown snippets and reference links. Capped to keep the combined
+# prompt sent to a room-admin-configured external API bounded in size/cost.
+KNOWLEDGE_DOC_TYPES = {"text", "markdown", "link"}
+MAX_KNOWLEDGE_DOCUMENTS = 20
+MAX_KNOWLEDGE_DOC_CONTENT_LENGTH = 4000
+MAX_KNOWLEDGE_BASE_TITLE_LENGTH = 120
+MAX_KNOWLEDGE_CONTEXT_LENGTH = 6000
 
 # Phase J abuse protection: cap generative (paid/third-party) requests per
 # user per character to a small burst per minute. Predefined-mode talk/hint
@@ -33,6 +43,22 @@ class StoryChoiceModel(BaseModel):
 
     text: str = Field(min_length=1, max_length=200)
     next_node_id: str | None = Field(default=None, alias="nextNodeId")
+
+
+class KnowledgeDocumentModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    title: str = Field(min_length=1, max_length=120)
+    doc_type: str = Field(alias="docType")
+    content: str | None = Field(default=None, max_length=MAX_KNOWLEDGE_DOC_CONTENT_LENGTH)
+    url: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("doc_type")
+    @classmethod
+    def _validate_doc_type(cls, value: str) -> str:
+        if value not in KNOWLEDGE_DOC_TYPES:
+            raise ValueError(f"docType must be one of {sorted(KNOWLEDGE_DOC_TYPES)}, got {value!r}")
+        return value
 
 
 class StoryNodeModel(BaseModel):
@@ -74,7 +100,7 @@ class StoryEngine:
             "role": role,
             "portraitUrl": portrait_url,
             "startNodeId": start_node_id,
-            "knowledgeBase": None,
+            "knowledgeBase": {"title": None, "documents": [], "updatedAt": None},
             "generativeEnabled": False,
             "apiBaseUrl": None,
             "apiKey": None,
@@ -114,10 +140,78 @@ class StoryEngine:
 
     # ─── Knowledge base and generative-mode configuration ──────────────
 
-    def set_knowledge_base(self, object_id: str, character_id: str, content: str) -> dict[str, Any]:
+    def set_knowledge_base_title(
+        self, object_id: str, character_id: str, title: str | None, now_ms: float = 0.0,
+    ) -> dict[str, Any]:
         record = self._require_character(object_id, character_id)
-        record["knowledgeBase"] = content
+        if title is not None:
+            title = title.strip() or None
+        if title and len(title) > MAX_KNOWLEDGE_BASE_TITLE_LENGTH:
+            raise ValueError(f"title must be {MAX_KNOWLEDGE_BASE_TITLE_LENGTH} characters or fewer")
+        record["knowledgeBase"]["title"] = title
+        record["knowledgeBase"]["updatedAt"] = now_ms
         return self._public_character(record)
+
+    def add_knowledge_document(
+        self, object_id: str, character_id: str, doc_id: str, title: str, doc_type: str,
+        content: str | None = None, url: str | None = None, now_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        record = self._require_character(object_id, character_id)
+        documents = record["knowledgeBase"]["documents"]
+        if len(documents) >= MAX_KNOWLEDGE_DOCUMENTS:
+            raise ValueError(f"knowledge base cannot exceed {MAX_KNOWLEDGE_DOCUMENTS} documents")
+        if any(d["docId"] == doc_id for d in documents):
+            raise ValueError(f"document id already exists: {doc_id}")
+        validated = KnowledgeDocumentModel(title=title, docType=doc_type, content=content, url=url)
+        if validated.doc_type == "link":
+            if not validated.url or not is_safe_external_url(validated.url):
+                raise ValueError("link documents require a safe http(s) url")
+        elif not validated.content or not validated.content.strip():
+            raise ValueError(f"{validated.doc_type} documents require non-empty content")
+        doc = {
+            "docId": doc_id, "title": validated.title, "docType": validated.doc_type,
+            "content": validated.content, "url": validated.url,
+        }
+        documents.append(doc)
+        record["knowledgeBase"]["updatedAt"] = now_ms
+        return self._public_character(record)
+
+    def remove_knowledge_document(
+        self, object_id: str, character_id: str, doc_id: str, now_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        record = self._require_character(object_id, character_id)
+        documents = record["knowledgeBase"]["documents"]
+        remaining = [d for d in documents if d["docId"] != doc_id]
+        if len(remaining) == len(documents):
+            raise KeyError(f"unknown knowledge document: {doc_id}")
+        record["knowledgeBase"]["documents"] = remaining
+        record["knowledgeBase"]["updatedAt"] = now_ms
+        return self._public_character(record)
+
+    def list_knowledge_documents(self, object_id: str, character_id: str) -> list[dict[str, Any]]:
+        record = self._require_character(object_id, character_id)
+        return [dict(d) for d in record["knowledgeBase"]["documents"]]
+
+    @staticmethod
+    def _build_knowledge_context(record: dict[str, Any]) -> str | None:
+        """Flatten a character's knowledge store into a single bounded text
+        block suitable for use as an LLM system-prompt snippet or as the
+        predefined-mode fallback answer. Link documents are included as a
+        reference (title + URL) rather than fetched, since fetching
+        arbitrary story-author-supplied URLs server-side would reopen the
+        SSRF surface `is_safe_external_url` guards against elsewhere."""
+        kb = record["knowledgeBase"]
+        parts = []
+        if kb["title"]:
+            parts.append(f"Knowledge base: {kb['title']}")
+        for doc in kb["documents"]:
+            if doc["docType"] == "link":
+                parts.append(f'Reference "{doc["title"]}": {doc["url"]}')
+            else:
+                parts.append(f"{doc['title']}: {doc['content']}")
+        if not parts:
+            return None
+        return "\n\n".join(parts)[:MAX_KNOWLEDGE_CONTEXT_LENGTH]
 
     def configure_generative_mode(
         self, object_id: str, character_id: str, api_base_url: str | None = None, api_key: str | None = None,
@@ -205,19 +299,20 @@ class StoryEngine:
         user_id: str | None = None, now_ms: float = 0.0,
     ) -> dict[str, Any]:
         record = self._require_character(object_id, character_id)
+        knowledge_context = self._build_knowledge_context(record)
         if not record["generativeEnabled"]:
-            return {"answer": self._fallback_answer(record), "mode": "predefined"}
+            return {"answer": self._fallback_answer(knowledge_context), "mode": "predefined"}
         if user_id is not None:
             rate_key = f"{object_id}:{character_id}:{user_id}"
             if not self._generative_rate_limiter.allow(rate_key, now_ms):
                 return {"answer": _RATE_LIMITED_ANSWER, "mode": "rate_limited"}
         user_message = (user_message or "")[:200]
         try:
-            answer = caller(record["apiBaseUrl"], record["apiKey"], record["knowledgeBase"], user_message)
+            answer = caller(record["apiBaseUrl"], record["apiKey"], knowledge_context, user_message)
         except Exception:
-            return {"answer": self._fallback_answer(record), "mode": "predefined"}
+            return {"answer": self._fallback_answer(knowledge_context), "mode": "predefined"}
         return {"answer": answer, "mode": "generative"}
 
     @staticmethod
-    def _fallback_answer(record: dict[str, Any]) -> str:
-        return record["knowledgeBase"] or _FALLBACK_ANSWER
+    def _fallback_answer(knowledge_context: str | None) -> str:
+        return knowledge_context or _FALLBACK_ANSWER

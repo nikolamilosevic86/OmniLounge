@@ -611,12 +611,29 @@ class RoomBuilderState:
         self._require_ai_character(object_id)
         return self._story.get_character(object_id, object_id)
 
-    def set_character_knowledge_base(
-        self, object_id: str, content: str, requester_id: str | None = None, is_room_host: bool = False,
+    def set_character_knowledge_base_title(
+        self, object_id: str, title: str | None, requester_id: str | None = None, is_room_host: bool = False,
     ) -> dict[str, Any]:
         record = self._require_ai_character(object_id)
         self._require_edit_permission(record, requester_id, is_room_host)
-        return self._story.set_knowledge_base(object_id, object_id, content)
+        return self._story.set_knowledge_base_title(object_id, object_id, title)
+
+    def add_character_knowledge_document(
+        self, object_id: str, doc_id: str, title: str, doc_type: str, content: str | None = None,
+        url: str | None = None, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._story.add_knowledge_document(
+            object_id, object_id, doc_id, title, doc_type, content=content, url=url,
+        )
+
+    def remove_character_knowledge_document(
+        self, object_id: str, doc_id: str, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._story.remove_knowledge_document(object_id, object_id, doc_id)
 
     def configure_character_generative_mode(
         self, object_id: str, api_base_url: str | None = None, api_key: str | None = None,
