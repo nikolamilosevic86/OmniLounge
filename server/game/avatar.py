@@ -34,19 +34,41 @@ def validate_avatar(avatar: dict[str, Any]) -> bool:
     username = avatar.get("username", "")
     if not username or not str(username).strip():
         return False
-    if avatar.get("skinColor") not in AVATAR_OPTIONS["skinColors"]:
+    return validate_character_appearance(avatar)
+
+
+def create_default_character_appearance() -> dict[str, Any]:
+    """Same shape as create_avatar(), minus the username field -- used for
+    AI-character appearance, which is customizable independently of (and
+    has no need for) a login-style username."""
+    return {
+        "skinColor": AVATAR_OPTIONS["skinColors"][0],
+        "gender": AVATAR_OPTIONS["gender"][0],
+        "hair": AVATAR_OPTIONS["hair"][0],
+        "beard": "none",
+        "glasses": "none",
+        "clothes": AVATAR_OPTIONS["clothes"][0],
+        "accessory": "none",
+    }
+
+
+def validate_character_appearance(appearance: dict[str, Any]) -> bool:
+    """Validates the appearance fields shared by player avatars and AI
+    characters (skin color, body type/gender, hair, etc). Unlike
+    validate_avatar(), this does not require/check a username."""
+    if appearance.get("skinColor") not in AVATAR_OPTIONS["skinColors"]:
         return False
-    if avatar.get("gender") not in AVATAR_OPTIONS["gender"]:
+    if appearance.get("gender") not in AVATAR_OPTIONS["gender"]:
         return False
-    if avatar.get("hair") not in AVATAR_OPTIONS["hair"]:
+    if appearance.get("hair") not in AVATAR_OPTIONS["hair"]:
         return False
-    if avatar.get("beard") not in AVATAR_OPTIONS["beards"]:
+    if appearance.get("beard") not in AVATAR_OPTIONS["beards"]:
         return False
-    if avatar.get("glasses") not in AVATAR_OPTIONS["glasses"]:
+    if appearance.get("glasses") not in AVATAR_OPTIONS["glasses"]:
         return False
-    if avatar.get("clothes") not in AVATAR_OPTIONS["clothes"]:
+    if appearance.get("clothes") not in AVATAR_OPTIONS["clothes"]:
         return False
-    if avatar.get("accessory") not in AVATAR_OPTIONS["accessories"]:
+    if appearance.get("accessory") not in AVATAR_OPTIONS["accessories"]:
         return False
     return True
 

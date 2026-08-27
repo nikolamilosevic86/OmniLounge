@@ -14,6 +14,8 @@ The tick loop processes player updates in a fixed cadence. It regenerates stamin
 
 Tick movement and state broadcasts are now room-aware across all active rooms, rather than being limited to the lobby simulation payload. This closes a reliability gap where non-lobby players could perform actions but not receive movement state progression.
 
+All per-player realtime events emitted outside the tick loop are also room-scoped. The player:move and player:direction handlers emit player:moving and player:direction_update with room=room_channel(room_id), matching the scoping already used by broadcast_room_state. An earlier version of these two handlers omitted the room argument, which caused them to broadcast to every connected socket across every room instead of only players sharing the mover's room — a cross-room presence/position disclosure bug. This has been fixed and is now covered by the socket-event-contract audit described in [06-data-events-and-storage.md](06-data-events-and-storage.md).
+
 Tile transitions are now resolved during movement ticks using edge detection and room tile graph checks. When a neighboring tile exists, the server transitions the player tile coordinate and repositions the avatar to the opposite-edge entry point. A room:tile:add event is also available for build-mode tile expansion.
 
 ```mermaid

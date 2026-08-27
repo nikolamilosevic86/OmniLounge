@@ -132,6 +132,27 @@ async def broadcast_bubbles(room_id: str) -> None:
         await sio.emit("chat:bubbles", bubbles, room=player["id"])
 
 
+def _tile_collision_obstacles(room_id: str, tile: Any) -> list[dict[str, float]]:
+    """Builder-placed objects on a player's current tile must block movement
+    just like the lobby's hardcoded furniture -- otherwise a room-builder
+    user can place a table/sofa/etc. that players simply walk straight
+    through. Returns a list of `{x, y, w, h}` AABBs for `move_by_direction`/
+    `move_toward` to treat as extra obstacles."""
+    builder = rooms.get_builder(room_id)
+    if builder is None:
+        return []
+    if isinstance(tile, dict):
+        tile_coord = (tile.get("x", 0), tile.get("y", 0))
+    else:
+        tile_coord = (0, 0)
+    if not (isinstance(tile_coord[0], int) and isinstance(tile_coord[1], int)):
+        return []
+    return [
+        {"x": obj["x"], "y": obj["y"], "w": obj["width"], "h": obj["height"]}
+        for obj in builder.list_objects(tile=tile_coord)
+    ]
+
+
 def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float) -> bool:
     """Apply direction or click-target movement (and tile transitions) for a
     single player. Returns True if the player's position/tile changed this tick.
@@ -139,9 +160,11 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
     This must run for every player in the room, including the AI bot: only
     stamina regeneration is bot-exempt, not movement processing.
     """
+    extra_obstacles = _tile_collision_obstacles(room_id, player.get("tile"))
+
     direction = player.get("direction", {"x": 0, "y": 0})
     if direction["x"] != 0 or direction["y"] != 0:
-        new_pos = move_by_direction(player["position"], direction, MOVE_SPEED)
+        new_pos = move_by_direction(player["position"], direction, MOVE_SPEED, extra_obstacles=extra_obstacles)
         transition = rooms.transition_player_tile_if_needed(player["id"], room_id, new_pos)
         if transition:
             player["tile"] = transition["tile"]
@@ -152,7 +175,7 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
 
     target = player.get("targetPosition")
     if target:
-        new_pos = move_toward(player["position"], target, MOVE_SPEED)
+        new_pos = move_toward(player["position"], target, MOVE_SPEED, extra_obstacles=extra_obstacles)
         transition = rooms.transition_player_tile_if_needed(player["id"], room_id, new_pos)
         if transition:
             player["tile"] = transition["tile"]
@@ -373,6 +396,7 @@ async def player_move(sid, data):
         await sio.emit(
             "player:moving",
             {"id": sid, "targetPosition": player["targetPosition"]},
+            room=room_channel(room_id),
         )
 
 
@@ -432,6 +456,7 @@ async def player_direction(sid, data):
         await sio.emit(
             "player:direction_update",
             {"id": sid, "direction": player["direction"]},
+            room=room_channel(room_id),
         )
 
 
@@ -604,6 +629,7 @@ async def room_create(sid, data):
     max_users = max(1, min(max_users, 200))
 
     invite_code = str(data.get("inviteCode") or "").strip()[:30] or None
+    room_style = data.get("roomStyle")
     room = rooms.create_room(
         host_id=sid,
         name=room_name,
@@ -611,6 +637,7 @@ async def room_create(sid, data):
         access=access,
         max_users=max_users,
         invite_code=invite_code,
+        room_style=room_style,
     )
     await sio.emit(
         "room:created",
@@ -688,6 +715,7 @@ async def room_join(sid, data):
             "tiles": rooms.get_room_tiles(room_id),
             "hostId": rooms.get_room_host_id(room_id),
             "myRole": (rooms.get_moderation(room_id).get_role(sid) if rooms.get_moderation(room_id) else "participant"),
+            "roomStyle": rooms.get_room_style(room_id),
         },
         room=sid,
     )
@@ -1336,6 +1364,30 @@ async def room_character_configure(sid, data):
     return character
 
 
+@sio.on("room:character:appearance")
+async def room_character_appearance(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    appearance = data.get("appearance")
+    if not isinstance(appearance, dict):
+        await sio.emit("error", {"message": "Invalid appearance payload"}, room=sid)
+        return
+    try:
+        character = builder.configure_character_appearance(
+            data["objectId"], appearance, requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return character
+
+
 @sio.on("room:character:knowledge_base:title:set")
 async def room_character_knowledge_base_title_set(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)
@@ -1861,6 +1913,7 @@ async def _remove_player_from_room(target_id: str, room_id: str, reason: str) ->
             "tiles": rooms.get_room_tiles(new_room_id),
             "hostId": rooms.get_room_host_id(new_room_id),
             "myRole": (new_room_moderation.get_role(target_id) if new_room_moderation else "participant"),
+            "roomStyle": rooms.get_room_style(new_room_id),
         },
         room=target_id,
     )

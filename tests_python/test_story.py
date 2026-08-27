@@ -63,6 +63,43 @@ class TestListAndRemoveCharacter:
         assert self.engine.remove_character("npc-1", "unknown") is False
 
 
+class TestCharacterAppearance:
+    """AI characters should render in the same avatar shape as players and
+    be customizable (skin color, body type/gender, hair, etc), reusing the
+    player avatar's option set."""
+
+    def setup_method(self):
+        self.engine = StoryEngine()
+        self.engine.add_character("npc-1", "char-1", name="Owl", role="guide", start_node_id="node-1")
+
+    def test_new_character_has_default_appearance(self):
+        char = self.engine.get_character("npc-1", "char-1")
+        assert char["appearance"]["gender"] == "neutral"
+        assert char["appearance"]["beard"] == "none"
+
+    def test_set_character_appearance_updates_fields(self):
+        updated = self.engine.set_character_appearance(
+            "npc-1", "char-1", {"skinColor": "#8D5524", "hair": "curly", "gender": "masculine"},
+        )
+        assert updated["appearance"]["skinColor"] == "#8D5524"
+        assert updated["appearance"]["hair"] == "curly"
+        assert updated["appearance"]["gender"] == "masculine"
+
+    def test_set_character_appearance_partial_update_preserves_other_fields(self):
+        self.engine.set_character_appearance("npc-1", "char-1", {"hair": "curly"})
+        updated = self.engine.set_character_appearance("npc-1", "char-1", {"clothes": "suit"})
+        assert updated["appearance"]["hair"] == "curly"
+        assert updated["appearance"]["clothes"] == "suit"
+
+    def test_set_character_appearance_rejects_invalid_value(self):
+        with pytest.raises(ValueError):
+            self.engine.set_character_appearance("npc-1", "char-1", {"hair": "not-a-real-style"})
+
+    def test_set_character_appearance_unknown_character_raises(self):
+        with pytest.raises(KeyError):
+            self.engine.set_character_appearance("npc-1", "unknown", {"hair": "curly"})
+
+
 class TestKnowledgeBase:
     """Knowledge stores hold multiple documents (text/markdown/link) per
     character, per feature design section 22.3, rather than a single free

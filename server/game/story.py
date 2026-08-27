@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from server.game.avatar import create_default_character_appearance, validate_character_appearance
 from server.game.rate_limiter import SlidingWindowRateLimiter
 from server.game.url_safety import is_safe_external_url
 
@@ -100,12 +101,31 @@ class StoryEngine:
             "role": role,
             "portraitUrl": portrait_url,
             "startNodeId": start_node_id,
+            "appearance": create_default_character_appearance(),
             "knowledgeBase": {"title": None, "documents": [], "updatedAt": None},
             "generativeEnabled": False,
             "apiBaseUrl": None,
             "apiKey": None,
         }
         characters[character_id] = record
+        return self._public_character(record)
+
+    def set_character_appearance(
+        self, object_id: str, character_id: str, appearance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Partially updates an AI character's appearance (skin color, body
+        type/gender, hair, clothes, accessory, ...), reusing the same option
+        set/shape as player avatars so AI characters can be rendered with
+        the same avatar renderer. Unknown keys are ignored; the merged
+        result must still be a fully valid appearance."""
+        record = self._require_character(object_id, character_id)
+        merged = {**record["appearance"], **{
+            key: value for key, value in appearance.items()
+            if key in record["appearance"] and value is not None
+        }}
+        if not validate_character_appearance(merged):
+            raise ValueError("invalid character appearance")
+        record["appearance"] = merged
         return self._public_character(record)
 
     def list_characters(self, object_id: str) -> list[dict[str, Any]]:

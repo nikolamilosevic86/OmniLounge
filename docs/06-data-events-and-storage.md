@@ -46,9 +46,28 @@ The event surface is intentionally small but expressive. Join events establish i
 
 The event surface now includes room discovery and room switching primitives. Clients can request room lists with filters (topic/access/sort), create new rooms with metadata, and join selected rooms, after which room-specific state and message history are returned. Join requests are validated server-side for not-found, full-room, and invite-code conditions.
 
-State progression events are now emitted per room channel, so movement, combat state updates, presence updates, and public chat are scoped to the currently joined room context.
+State progression events are now emitted per room channel, so movement, combat state updates, presence updates, and public chat are scoped to the currently joined room context. Every server-initiated emit that targets a specific room passes room=room_channel(room_id) (the Socket.IO room name for that room's channel); this is the single scoping convention the whole event surface relies on, and any new emit that skips it is a data-isolation bug rather than a stylistic choice.
 
 Room tile graph updates are emitted through room:tiles events so clients can update mini-map state and build-mode views in real time.
+
+```mermaid
+flowchart TB
+  subgraph RoomA["Room A channel"]
+    A1[Player A1]
+    A2[Player A2]
+  end
+  subgraph RoomB["Room B channel"]
+    B1[Player B1]
+  end
+
+  Move["player:move from A1"] --> Handler[player_move handler]
+  Handler --> Emit["sio.emit(player:moving, room=room_channel(A))"]
+  Emit --> A1
+  Emit --> A2
+  Emit -.blocked, different channel.-> B1
+```
+
+A full audit of the event surface (68 server @sio.on handlers, 21 emitted event types, 25 client socket.on listeners, 61 client socket.emit calls in client/js/main.js) found every client emit matched to a server handler and vice versa, with no naming drift — except the player:moving/player:direction_update scoping gap above, which has been fixed.
 
 ```mermaid
 flowchart LR

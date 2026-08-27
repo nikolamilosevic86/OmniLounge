@@ -78,13 +78,14 @@
         <div class="room-chooser-card">
           <div class="room-chooser-header">
             <h3>Choose a Room</h3>
-            <button id="room-chooser-close" class="room-chooser-close" type="button">Continue in Lobby</button>
+            <button id="room-chooser-close" class="room-chooser-close" type="button">Close</button>
           </div>
           <p class="room-chooser-subtitle">Create a new room or join an existing one on the server.</p>
 
           <div class="room-create-row">
             <input id="room-create-name" type="text" maxlength="50" placeholder="New room name (for example: History Lab)" />
             <input id="room-create-tags" type="text" maxlength="80" placeholder="Tags (comma-separated)" />
+            <select id="room-create-style" title="Starting room style"></select>
             <button id="room-create-btn" type="button">Create Room</button>
             <button id="room-refresh-btn" type="button" class="room-refresh-btn">Refresh</button>
           </div>
@@ -118,6 +119,12 @@
             <div class="hud-pill online-pill">
               <span class="pulse-dot"></span>
               <span id="online-count">0 online</span>
+            </div>
+            <div class="hud-pill room-switch-pill">
+              <button id="room-switch-btn" type="button" title="Browse or create rooms">
+                <span class="material-symbols-outlined" aria-hidden="true">meeting_room</span>
+                <span>Change Room</span>
+              </button>
             </div>
             <div class="hud-pill tile-pill">
               <span id="current-tile-label">Tile (0, 0)</span>
@@ -187,7 +194,7 @@
                 <option value="ai_character">AI Character</option>
               </select>
             </label>
-            <label class="builder-field">
+            <label class="builder-field" id="object-size-field">
               <span>Size</span>
               <select id="object-size-select">
                 <option value="">Default</option>
@@ -196,6 +203,7 @@
                 <option value="L">Large</option>
               </select>
             </label>
+            <p class="builder-hint hidden" id="object-size-ai-hint">AI Characters are always rendered at avatar size.</p>
             <label class="builder-field">
               <span>Color</span>
               <select id="object-color-select">
@@ -230,6 +238,72 @@
           </section>
 
           <section class="builder-section">
+            <h4>Zones</h4>
+            <label class="builder-field">
+              <span>Type</span>
+              <select id="zone-type-select">
+                <option value="collision">Collision</option>
+                <option value="interaction">Interaction</option>
+              </select>
+            </label>
+            <div class="builder-object-row-fields">
+              <label>Min X<input type="number" id="zone-min-x" value="0" /></label>
+              <label>Min Y<input type="number" id="zone-min-y" value="0" /></label>
+              <label>Max X<input type="number" id="zone-max-x" value="100" /></label>
+              <label>Max Y<input type="number" id="zone-max-y" value="100" /></label>
+            </div>
+            <button type="button" id="zone-add-btn" class="builder-primary-btn">Add Zone Here</button>
+            <ul id="zone-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Triggers</h4>
+            <label class="builder-field">
+              <span>Zone</span>
+              <select id="trigger-zone-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Event type</span>
+              <input type="text" id="trigger-event-input" maxlength="60" placeholder="e.g. show_lesson_card" />
+            </label>
+            <label class="builder-field builder-checkbox-field">
+              <input type="checkbox" id="trigger-repeatable-input" />
+              <span>Repeatable</span>
+            </label>
+            <button type="button" id="trigger-add-btn" class="builder-primary-btn">Add Trigger</button>
+            <ul id="trigger-list" class="builder-object-list"></ul>
+          </section>
+
+          <section class="builder-section" id="moderation-section">
+            <h4>Room Admin</h4>
+            <label class="builder-field builder-checkbox-field" id="external-links-field">
+              <input type="checkbox" id="external-links-input" checked />
+              <span>Allow external links</span>
+            </label>
+            <ul id="moderation-player-list" class="builder-object-list"></ul>
+            <button type="button" id="reports-btn" class="builder-primary-btn">View Reports</button>
+            <ul id="reports-list" class="builder-object-list hidden"></ul>
+            <button type="button" id="audit-log-btn" class="builder-primary-btn">View Audit Log</button>
+            <ul id="audit-log-list" class="builder-object-list hidden"></ul>
+          </section>
+
+          <section class="builder-section">
+            <h4>Versions</h4>
+            <div class="build-controls-grid">
+              <button type="button" id="version-save-btn">Save Draft</button>
+              <button type="button" id="version-publish-btn">Publish Latest</button>
+            </div>
+            <ul id="version-list" class="builder-version-list"></ul>
+          </section>
+        </aside>
+
+        <aside id="configure-controls" class="builder-panel hidden" aria-label="Configure object">
+          <div class="builder-panel-header">
+            <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+            <h3>Configure Object</h3>
+          </div>
+
+          <section class="builder-section" id="configure-bookshelf-section">
             <h4>Bookshelf Books</h4>
             <label class="builder-field">
               <span>Shelf</span>
@@ -262,7 +336,7 @@
             <ul id="book-list" class="builder-object-list"></ul>
           </section>
 
-          <section class="builder-section">
+          <section class="builder-section" id="configure-tv-section">
             <h4>TV Videos</h4>
             <label class="builder-field">
               <span>TV</span>
@@ -284,7 +358,7 @@
             <ul id="video-list" class="builder-object-list"></ul>
           </section>
 
-          <section class="builder-section">
+          <section class="builder-section" id="configure-music-section">
             <h4>Music Tracks</h4>
             <label class="builder-field">
               <span>Music player</span>
@@ -306,7 +380,7 @@
             <ul id="track-list" class="builder-object-list"></ul>
           </section>
 
-          <section class="builder-section">
+          <section class="builder-section" id="configure-character-section">
             <h4>AI Character</h4>
             <label class="builder-field">
               <span>Character</span>
@@ -335,6 +409,37 @@
               <input type="text" id="character-portrait-input" placeholder="Portrait URL (optional)" />
             </label>
             <button type="button" id="character-configure-btn" class="builder-primary-btn">Save Character</button>
+
+            <h5 class="builder-subheading">Appearance</h5>
+            <label class="builder-field">
+              <span>Skin Color</span>
+              <select id="character-skin-color-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Body Type</span>
+              <select id="character-gender-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Hair</span>
+              <select id="character-hair-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Beard</span>
+              <select id="character-beard-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Glasses</span>
+              <select id="character-glasses-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Clothes</span>
+              <select id="character-clothes-select"></select>
+            </label>
+            <label class="builder-field">
+              <span>Accessory</span>
+              <select id="character-accessory-select"></select>
+            </label>
+            <button type="button" id="character-appearance-btn" class="builder-primary-btn">Save Appearance</button>
 
             <div class="kb-carbon" id="knowledge-store-panel">
               <h5 class="kb-carbon__heading">Knowledge Store</h5>
@@ -400,65 +505,6 @@
             <button type="button" id="story-node-add-btn" class="builder-primary-btn">Add Story Node</button>
             <ul id="story-node-list" class="builder-object-list"></ul>
           </section>
-
-          <section class="builder-section">
-            <h4>Zones</h4>
-            <label class="builder-field">
-              <span>Type</span>
-              <select id="zone-type-select">
-                <option value="collision">Collision</option>
-                <option value="interaction">Interaction</option>
-              </select>
-            </label>
-            <div class="builder-object-row-fields">
-              <label>Min X<input type="number" id="zone-min-x" value="0" /></label>
-              <label>Min Y<input type="number" id="zone-min-y" value="0" /></label>
-              <label>Max X<input type="number" id="zone-max-x" value="100" /></label>
-              <label>Max Y<input type="number" id="zone-max-y" value="100" /></label>
-            </div>
-            <button type="button" id="zone-add-btn" class="builder-primary-btn">Add Zone Here</button>
-            <ul id="zone-list" class="builder-object-list"></ul>
-          </section>
-
-          <section class="builder-section">
-            <h4>Triggers</h4>
-            <label class="builder-field">
-              <span>Zone</span>
-              <select id="trigger-zone-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Event type</span>
-              <input type="text" id="trigger-event-input" maxlength="60" placeholder="e.g. show_lesson_card" />
-            </label>
-            <label class="builder-field builder-checkbox-field">
-              <input type="checkbox" id="trigger-repeatable-input" />
-              <span>Repeatable</span>
-            </label>
-            <button type="button" id="trigger-add-btn" class="builder-primary-btn">Add Trigger</button>
-            <ul id="trigger-list" class="builder-object-list"></ul>
-          </section>
-
-          <section class="builder-section" id="moderation-section">
-            <h4>Room Admin</h4>
-            <label class="builder-field builder-checkbox-field" id="external-links-field">
-              <input type="checkbox" id="external-links-input" checked />
-              <span>Allow external links</span>
-            </label>
-            <ul id="moderation-player-list" class="builder-object-list"></ul>
-            <button type="button" id="reports-btn" class="builder-primary-btn">View Reports</button>
-            <ul id="reports-list" class="builder-object-list hidden"></ul>
-            <button type="button" id="audit-log-btn" class="builder-primary-btn">View Audit Log</button>
-            <ul id="audit-log-list" class="builder-object-list hidden"></ul>
-          </section>
-
-          <section class="builder-section">
-            <h4>Versions</h4>
-            <div class="build-controls-grid">
-              <button type="button" id="version-save-btn">Save Draft</button>
-              <button type="button" id="version-publish-btn">Publish Latest</button>
-            </div>
-            <ul id="version-list" class="builder-version-list"></ul>
-          </section>
         </aside>
 
         <aside class="chat-panel">
@@ -500,7 +546,9 @@
       <div class="reader-modal-card">
         <div class="reader-modal-header">
           <h3 id="reader-modal-title">Bookshelf</h3>
-          <button id="reader-modal-close" class="reader-modal-close" type="button" aria-label="Close">✕</button>
+          <button id="reader-modal-close" class="reader-modal-close" type="button" aria-label="Close">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
         </div>
 
         <div id="reader-book-list-view" class="reader-book-list-view">
@@ -523,7 +571,9 @@
       <div class="reader-modal-card">
         <div class="reader-modal-header">
           <h3 id="media-modal-title">Media</h3>
-          <button id="media-modal-close" class="reader-modal-close" type="button" aria-label="Close">✕</button>
+          <button id="media-modal-close" class="reader-modal-close" type="button" aria-label="Close">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
         </div>
 
         <div id="media-playlist-view" class="reader-book-list-view">
@@ -547,7 +597,9 @@
       <div class="reader-modal-card">
         <div class="reader-modal-header">
           <h3 id="dialogue-modal-title">Character</h3>
-          <button id="dialogue-modal-close" class="reader-modal-close" type="button" aria-label="Close">✕</button>
+          <button id="dialogue-modal-close" class="reader-modal-close" type="button" aria-label="Close">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
         </div>
         <div class="reader-book-view">
           <p id="dialogue-mode-indicator" class="reader-book-meta"></p>

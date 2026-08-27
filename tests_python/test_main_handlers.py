@@ -90,6 +90,79 @@ class TestApplyPlayerMovement:
         assert moved is True
         assert player["position"]["x"] > 400.0
 
+    async def test_player_cannot_walk_through_builder_placed_object(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+        lobby = rooms.get_room("lobby")
+        player = lobby.get_player("p1")
+        # Obstacle-free region away from the hardcoded lobby OBSTACLES (y >= 330).
+        player["position"] = {"x": 60.0, "y": 120.0}
+        player["direction"] = {"x": 1, "y": 0}
+
+        await main_module.room_object_create("p1", {
+            "objectId": "table-1", "objectType": "table",
+            "x": 100, "y": 100, "width": 40, "height": 40,
+        })
+
+        from server.game.movement import collides_with_obstacle
+
+        table_bounds = [{"x": 100, "y": 100, "w": 40, "h": 40}]
+        for _ in range(10):
+            main_module.apply_player_movement(lobby, "lobby", player, now_ms=0)
+            assert not collides_with_obstacle(
+                player["position"]["x"], player["position"]["y"], extra_obstacles=table_bounds,
+            )
+
+    async def test_player_on_different_tile_is_unaffected_by_builder_object(self, isolate_registry):
+        """A builder object placed on a neighboring tile must not block
+        movement for a player standing on a different tile -- obstacles are
+        scoped per-tile, not room-wide."""
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+        lobby = rooms.get_room("lobby")
+        builder = rooms.get_builder("lobby")
+        builder.add_tile((0, 0), "right")
+        builder.create_object("table-1", "table", (1, 0), x=100, y=100, width=40, height=40)
+
+        player = lobby.get_player("p1")
+        player["position"] = {"x": 60.0, "y": 120.0}
+        player["direction"] = {"x": 1, "y": 0}
+        # player["tile"] stays at (0, 0) from join_room
+
+        moved = main_module.apply_player_movement(lobby, "lobby", player, now_ms=0)
+
+        assert moved is True
+        assert player["position"]["x"] > 60.0
+
+    async def test_player_can_walk_onto_newly_added_neighbor_tile(self, isolate_registry):
+        """Regression test: EDGE_EPSILON used to be smaller than the position
+        clamp margin enforced by Room.update_player_position, so a player's
+        x/y could never reach the edge-transition threshold -- they'd get
+        stuck exactly at the clamped room boundary and could never cross
+        into a newly builder-added neighbor tile, even though the tile
+        existed and was reachable."""
+        rooms, _ = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+        lobby = rooms.get_room("lobby")
+
+        base_tile = rooms.get_player_tile("p1") or (0, 0)
+        created = rooms.add_neighbor_tile("lobby", base_tile, "right")
+        assert created == {"x": 1, "y": 0}
+
+        player = lobby.get_player("p1")
+        player["position"] = {"x": 770.0, "y": 300.0}
+        player["direction"] = {"x": 1, "y": 0}
+
+        for _ in range(10):
+            main_module.apply_player_movement(lobby, "lobby", player, now_ms=0)
+            if player["tile"] != {"x": 0, "y": 0}:
+                break
+
+        assert player["tile"] == {"x": 1, "y": 0}
+
 
 class TestRoomBuilderHandlers:
     async def _join(self, rooms, player_id="p1"):
@@ -512,6 +585,78 @@ class TestRoomBuilderHandlers:
         })
         errors = [e for e in fake_sio.emitted if e[0] == "error"]
         assert errors
+
+    async def test_character_appearance_configure_updates_and_is_embedded_on_object(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        npc = await main_module.room_object_create("p1", {
+            "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
+        })
+        await main_module.room_character_configure("p1", {
+            "objectId": npc["objectId"], "name": "Professor Owl", "role": "guide", "startNodeId": "node-1",
+        })
+
+        character = await main_module.room_character_appearance("p1", {
+            "objectId": npc["objectId"],
+            "appearance": {"skinColor": "#8D5524", "gender": "feminine", "hair": "mohawk", "clothes": "suit"},
+        })
+        assert character["appearance"]["skinColor"] == "#8D5524"
+        assert character["appearance"]["gender"] == "feminine"
+        assert character["appearance"]["hair"] == "mohawk"
+        assert character["appearance"]["clothes"] == "suit"
+        # untouched fields keep their defaults, not overwritten with None
+        assert character["appearance"]["beard"] == "none"
+
+        builder = rooms.get_builder("lobby")
+        obj = builder.get_object(npc["objectId"])
+        assert obj["character"]["appearance"]["hair"] == "mohawk"
+        assert obj["character"]["name"] == "Professor Owl"
+
+    async def test_character_appearance_rejects_invalid_value(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        npc = await main_module.room_object_create("p1", {
+            "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
+        })
+        await main_module.room_character_configure("p1", {
+            "objectId": npc["objectId"], "name": "Owl", "role": "guide", "startNodeId": "node-1",
+        })
+
+        await main_module.room_character_appearance("p1", {
+            "objectId": npc["objectId"], "appearance": {"skinColor": "not-a-real-color"},
+        })
+        errors = [e for e in fake_sio.emitted if e[0] == "error"]
+        assert errors
+
+    async def test_character_appearance_denied_for_non_owner_non_host(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms, "p1")
+        await self._join(rooms, "p2")
+
+        npc = await main_module.room_object_create("p1", {
+            "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
+        })
+        await main_module.room_character_configure("p1", {
+            "objectId": npc["objectId"], "name": "Owl", "role": "guide", "startNodeId": "node-1",
+        })
+
+        await main_module.room_character_appearance("p2", {
+            "objectId": npc["objectId"], "appearance": {"hair": "curly"},
+        })
+        errors = [e for e in fake_sio.emitted if e[0] == "error"]
+        assert errors
+
+    async def test_object_list_embeds_none_character_before_configure(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        npc = await main_module.room_object_create("p1", {
+            "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
+        })
+        builder = rooms.get_builder("lobby")
+        assert builder.get_object(npc["objectId"])["character"] is None
 
     async def test_character_talk_advances_story_with_choice_index(self, isolate_registry):
         rooms, fake_sio = isolate_registry

@@ -15,10 +15,24 @@ that later phases (F/G) wire up to real reading/watch/listen content.
 from typing import Any
 
 SIZE_PRESETS: dict[str, tuple[float, float]] = {
-    "S": (32.0, 32.0),
-    "M": (48.0, 48.0),
-    "L": (72.0, 72.0),
+    # Scaled so builder-placed furniture reads as proportionate to the
+    # player avatar's on-screen footprint (72x108px, see
+    # client/css/styles.css `.room-player .avatar-svg`) instead of looking
+    # like tiny squares next to a full-size avatar: M matches the avatar's
+    # width, and L comfortably exceeds it for "big" furniture (sofas/bars).
+    "S": (48.0, 48.0),
+    "M": (72.0, 72.0),
+    "L": (108.0, 108.0),
 }
+
+# AI characters are rendered client-side as a DOM avatar overlay (same shape
+# as a player, see client/js/main.js's renderAiCharacters()) at a fixed size
+# no matter which size preset is requested, so their collision/interaction
+# footprint must match that fixed avatar footprint rather than the generic
+# square S/M/L presets above -- otherwise a player could stand on/inside the
+# visible character without colliding, and its clickable area wouldn't line
+# up with what's drawn on screen.
+AI_CHARACTER_FOOTPRINT: tuple[float, float] = (72.0, 108.0)
 
 COLOR_PRESETS: tuple[str, ...] = (
     "natural-wood",
@@ -112,6 +126,8 @@ def resolve_size_preset(object_type: str, preset: str) -> tuple[float, float]:
     get_catalog_entry(object_type)  # validates object_type
     if preset not in SIZE_PRESETS:
         raise ValueError(f"unknown size preset: {preset}")
+    if object_type == "ai_character":
+        return AI_CHARACTER_FOOTPRINT
     return SIZE_PRESETS[preset]
 
 

@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { AVATAR_OPTIONS, renderAvatarSVG } from './avatar-renderer.js';
-import { drawRoom, canvasToRoomCoords, setBuilderObjects } from './room-renderer.js';
+import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle } from './room-renderer.js';
+import { ROOM_STYLES, DEFAULT_ROOM_STYLE } from './room-styles.js';
 import { advanceWalkPhase } from './animation.js';
 import { getObjectAtPoint } from './room-objects.js';
 import { getBuilderObjectAtPoint, buildInteractionActions, objectTypeIcon } from './builder-objects.js';
@@ -78,6 +79,7 @@ const state = {
   roomList: [],
   roomFilters: { topic: '', access: 'all', sort: 'newest' },
   currentRoomId: 'lobby',
+  currentRoomStyle: DEFAULT_ROOM_STYLE,
   currentTile: { x: 0, y: 0 },
   roomTiles: [{ x: 0, y: 0 }],
   buildMode: false,
@@ -126,9 +128,17 @@ const recipientDropdown = document.getElementById('recipient-dropdown');
 const onlineCount = document.getElementById('online-count');
 const roomChooser = document.getElementById('room-chooser');
 const roomChooserClose = document.getElementById('room-chooser-close');
+const roomSwitchBtn = document.getElementById('room-switch-btn');
 const roomListEl = document.getElementById('room-list');
 const roomCreateName = document.getElementById('room-create-name');
 const roomCreateTags = document.getElementById('room-create-tags');
+const roomCreateStyle = document.getElementById('room-create-style');
+if (roomCreateStyle) {
+  roomCreateStyle.innerHTML = ROOM_STYLES.map(
+    (style) => `<option value="${style.id}" title="${style.description}">${style.label}</option>`
+  ).join('');
+  roomCreateStyle.value = DEFAULT_ROOM_STYLE;
+}
 const roomCreateBtn = document.getElementById('room-create-btn');
 const roomRefreshBtn = document.getElementById('room-refresh-btn');
 const roomFilterTopic = document.getElementById('room-filter-topic');
@@ -139,6 +149,11 @@ const currentTileLabel = document.getElementById('current-tile-label');
 const miniMapEl = document.getElementById('mini-map');
 const buildModeToggle = document.getElementById('build-mode-toggle');
 const buildControls = document.getElementById('build-controls');
+const configureControls = document.getElementById('configure-controls');
+const configureBookshelfSection = document.getElementById('configure-bookshelf-section');
+const configureTvSection = document.getElementById('configure-tv-section');
+const configureMusicSection = document.getElementById('configure-music-section');
+const configureCharacterSection = document.getElementById('configure-character-section');
 const tileCloneBtn = document.getElementById('tile-clone-btn');
 const tileDeleteBtn = document.getElementById('tile-delete-btn');
 const tileLabelInput = document.getElementById('tile-label-input');
@@ -146,6 +161,8 @@ const tilePurposeSelect = document.getElementById('tile-purpose-select');
 const tileConfigureBtn = document.getElementById('tile-configure-btn');
 const objectTypeSelect = document.getElementById('object-type-select');
 const objectSizeSelect = document.getElementById('object-size-select');
+const objectSizeField = document.getElementById('object-size-field');
+const objectSizeAiHint = document.getElementById('object-size-ai-hint');
 const objectColorSelect = document.getElementById('object-color-select');
 const objectMaterialSelect = document.getElementById('object-material-select');
 const objectEditAnyoneInput = document.getElementById('object-edit-anyone-input');
@@ -223,6 +240,14 @@ const characterRoleSelect = document.getElementById('character-role-select');
 const characterStartNodeInput = document.getElementById('character-start-node-input');
 const characterPortraitInput = document.getElementById('character-portrait-input');
 const characterConfigureBtn = document.getElementById('character-configure-btn');
+const characterSkinColorSelect = document.getElementById('character-skin-color-select');
+const characterGenderSelect = document.getElementById('character-gender-select');
+const characterHairSelect = document.getElementById('character-hair-select');
+const characterBeardSelect = document.getElementById('character-beard-select');
+const characterGlassesSelect = document.getElementById('character-glasses-select');
+const characterClothesSelect = document.getElementById('character-clothes-select');
+const characterAccessorySelect = document.getElementById('character-accessory-select');
+const characterAppearanceBtn = document.getElementById('character-appearance-btn');
 const characterKnowledgeBaseTitleInput = document.getElementById('character-knowledge-base-title-input');
 const characterKnowledgeBaseTitleBtn = document.getElementById('character-knowledge-base-title-btn');
 const knowledgeDocumentList = document.getElementById('knowledge-document-list');
@@ -264,6 +289,7 @@ function initCreator() {
   buildOptionButtons('glasses-options', AVATAR_OPTIONS.glasses, 'glasses');
   buildOptionButtons('clothes-options', AVATAR_OPTIONS.clothes, 'clothes');
   buildOptionButtons('accessory-options', AVATAR_OPTIONS.accessories, 'accessory');
+  populateCharacterAppearanceSelects();
 
   usernameInput.addEventListener('input', () => {
     state.avatar.username = usernameInput.value.trim();
@@ -274,17 +300,39 @@ function initCreator() {
   updateAvatarPreview();
 }
 
+function populateSelectOptions(selectEl, options) {
+  if (!selectEl) return;
+  selectEl.innerHTML = options.map((opt) => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('');
+}
+
+function populateCharacterAppearanceSelects() {
+  populateSelectOptions(characterSkinColorSelect, AVATAR_OPTIONS.skinColors);
+  populateSelectOptions(characterGenderSelect, AVATAR_OPTIONS.gender);
+  populateSelectOptions(characterHairSelect, AVATAR_OPTIONS.hair);
+  populateSelectOptions(characterBeardSelect, AVATAR_OPTIONS.beards);
+  populateSelectOptions(characterGlassesSelect, AVATAR_OPTIONS.glasses);
+  populateSelectOptions(characterClothesSelect, AVATAR_OPTIONS.clothes);
+  populateSelectOptions(characterAccessorySelect, AVATAR_OPTIONS.accessories);
+}
+
 function buildColorSwatches() {
   const container = document.getElementById('skin-colors');
   AVATAR_OPTIONS.skinColors.forEach(color => {
     const swatch = document.createElement('button');
+    swatch.type = 'button';
     swatch.className = 'color-swatch' + (color === state.avatar.skinColor ? ' selected' : '');
     swatch.style.backgroundColor = color;
     swatch.title = color;
+    swatch.setAttribute('aria-label', `Skin color ${color}`);
+    swatch.setAttribute('aria-pressed', String(color === state.avatar.skinColor));
     swatch.addEventListener('click', () => {
       state.avatar.skinColor = color;
-      container.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      container.querySelectorAll('.color-swatch').forEach(s => {
+        s.classList.remove('selected');
+        s.setAttribute('aria-pressed', 'false');
+      });
       swatch.classList.add('selected');
+      swatch.setAttribute('aria-pressed', 'true');
       updateAvatarPreview();
     });
     container.appendChild(swatch);
@@ -295,12 +343,18 @@ function buildOptionButtons(containerId, options, field) {
   const container = document.getElementById(containerId);
   options.forEach(option => {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'option-btn' + (option === state.avatar[field] ? ' selected' : '');
     btn.textContent = option;
+    btn.setAttribute('aria-pressed', String(option === state.avatar[field]));
     btn.addEventListener('click', () => {
       state.avatar[field] = option;
-      container.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+      container.querySelectorAll('.option-btn').forEach(b => {
+        b.classList.remove('selected');
+        b.setAttribute('aria-pressed', 'false');
+      });
       btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
       updateAvatarPreview();
     });
     container.appendChild(btn);
@@ -320,7 +374,7 @@ function enterRoom() {
 }
 
 function initGame() {
-  drawRoom(roomCanvas);
+  drawRoom(roomCanvas, { isLobby: state.currentRoomId === 'lobby', roomStyle: state.currentRoomStyle });
   updateBuildModeUi();
   renderMiniMap();
   updateCurrentTileLabel();
@@ -328,8 +382,19 @@ function initGame() {
   roomCanvas.addEventListener('click', (e) => {
     const coords = canvasToRoomCoords(roomCanvas, e.clientX, e.clientY);
 
+    // In build mode, clicking a configurable object (bookshelf/tv/music
+    // player/AI character) opens it in the Configure Object panel instead
+    // of moving the player or opening the normal interaction menu.
+    if (state.buildMode) {
+      const configTarget = getBuilderObjectAtPoint(currentTileBuilderObjects(), coords.x, coords.y);
+      if (configTarget && selectBuilderObjectForConfiguration(configTarget)) {
+        return;
+      }
+    }
+
     // If clicking on a hardcoded interactive lobby object, show its radial menu
-    const obj = getObjectAtPoint(coords.x, coords.y);
+    // (custom/user-built rooms start empty and have no fixed lobby furniture)
+    const obj = state.currentRoomId === 'lobby' ? getObjectAtPoint(coords.x, coords.y) : null;
     if (obj) {
       showRadialMenu(playersLayer, coords.x, coords.y, obj, (action) => {
         state.socket?.emit('player:action', {
@@ -394,6 +459,11 @@ function initGame() {
     roomChooser.classList.add('hidden');
   });
 
+  roomSwitchBtn?.addEventListener('click', () => {
+    requestRoomList();
+    roomChooser.classList.remove('hidden');
+  });
+
   roomCreateBtn.addEventListener('click', () => {
     const name = roomCreateName.value.trim();
     if (!name) return;
@@ -406,6 +476,7 @@ function initGame() {
       topicTags,
       access: 'public',
       maxUsers: 30,
+      roomStyle: roomCreateStyle?.value || DEFAULT_ROOM_STYLE,
     });
   });
 
@@ -469,6 +540,9 @@ function initGame() {
       editPermission: objectEditAnyoneInput?.checked ? 'anyone' : 'owner_only',
     });
   });
+
+  objectTypeSelect?.addEventListener('change', updateObjectSizeFieldVisibility);
+  updateObjectSizeFieldVisibility();
 
   zoneAddBtn?.addEventListener('click', () => {
     state.socket?.emit('room:zone:create', {
@@ -848,6 +922,28 @@ function initGame() {
     });
   });
 
+  characterAppearanceBtn?.addEventListener('click', () => {
+    const objectId = characterNpcSelect?.value;
+    if (!objectId) {
+      addSystemMessage('Select an AI character first.');
+      return;
+    }
+    const appearance = {
+      skinColor: characterSkinColorSelect?.value,
+      gender: characterGenderSelect?.value,
+      hair: characterHairSelect?.value,
+      beard: characterBeardSelect?.value,
+      glasses: characterGlassesSelect?.value,
+      clothes: characterClothesSelect?.value,
+      accessory: characterAccessorySelect?.value,
+    };
+    state.socket?.emit('room:character:appearance', { objectId, appearance }, (character) => {
+      if (!character) return;
+      state.builderCharacters[objectId] = character;
+      renderAiCharacters();
+    });
+  });
+
   characterKnowledgeBaseTitleBtn?.addEventListener('click', () => {
     const objectId = characterNpcSelect?.value;
     if (!objectId) return;
@@ -1127,6 +1223,7 @@ function connectSocket() {
     state.players.set(data.id, { id: data.id, avatar: data.avatar, position: data.position });
     state.playerStamina.set(data.id, data.stamina ?? 100);
     state.currentRoomId = 'lobby';
+    setRoomIsLobby(true);
     state.currentTile = data.tile || { x: 0, y: 0 };
     renderMiniMap();
     updateCurrentTileLabel();
@@ -1157,6 +1254,9 @@ function connectSocket() {
 
   function applyJoinedRoomState(payload) {
     state.currentRoomId = payload.roomId || 'lobby';
+    state.currentRoomStyle = payload.roomStyle || DEFAULT_ROOM_STYLE;
+    setRoomIsLobby(state.currentRoomId === 'lobby');
+    setRoomStyle(state.currentRoomStyle);
     state.currentTile = payload.currentTile || { x: 0, y: 0 };
     state.roomTiles = normalizeTileList(payload.tiles || [{ x: 0, y: 0 }]);
     state.roomHostId = payload.hostId || null;
@@ -1221,10 +1321,16 @@ function connectSocket() {
       zones: payload.zones || [],
       triggers: payload.triggers || [],
     };
+    for (const obj of state.builderState.objects) {
+      if (obj.objectType === 'ai_character' && obj.character) {
+        state.builderCharacters[obj.objectId] = obj.character;
+      }
+    }
     renderBuilderObjectList();
     renderBuilderZoneList();
     renderBuilderTriggerList();
     refreshCanvasBuilderObjects();
+    renderCharacterConfigFields();
   });
 
   state.socket.on('room:builder:versions', (payload) => {
@@ -1469,7 +1575,11 @@ function renderPlayers() {
     el.className = 'room-player' + (player.id === state.playerId ? ' is-self' : '');
     el.style.left = `${player.position.x}px`;
     el.style.top  = `${player.position.y}px`;
-    el.style.zIndex = i + 1;
+    // z-index uses the actual y-coordinate (not just a rank among players)
+    // so players correctly interleave in depth with AI-character avatar
+    // overlays (see renderAiCharacters()), which share this same layer and
+    // z-index scale.
+    el.style.zIndex = Math.round(player.position.y);
 
     // ── bubble: only touch the DOM when content changes ─────────────────────
     const bubble = state.activeBubbles.get(player.id);
@@ -1705,6 +1815,9 @@ function updateCurrentTileLabel() {
   renderTrackPlayerSelect();
   renderCharacterNpcSelect();
   renderModerationPanel();
+  // The previously-configured object may not exist on the new tile, so
+  // collapse the configure panel back to its hidden/empty state.
+  resetConfigureControlsSelection();
 }
 
 function updateBuildModeUi() {
@@ -1713,6 +1826,55 @@ function updateBuildModeUi() {
   buildModeToggle.setAttribute('aria-pressed', String(state.buildMode));
   buildModeToggle.textContent = `Build Mode: ${state.buildMode ? 'On' : 'Off'}`;
   buildControls.classList.toggle('hidden', !state.buildMode);
+  resetConfigureControlsSelection();
+}
+
+// The configure-object panel is only meaningful once you've clicked a
+// configurable object (bookshelf/tv/music player/AI character) while in
+// build mode -- see selectBuilderObjectForConfiguration(). Until then, and
+// whenever the tile/build-mode context changes, keep it fully hidden.
+function resetConfigureControlsSelection() {
+  configureBookshelfSection?.classList.add('hidden');
+  configureTvSection?.classList.add('hidden');
+  configureMusicSection?.classList.add('hidden');
+  configureCharacterSection?.classList.add('hidden');
+  configureControls?.classList.add('hidden');
+}
+
+// Reveals #configure-controls scoped to a single clicked builder object,
+// reusing each object type's existing <select> + "change" handler so the
+// object's fields/lists load exactly as if it had been picked from the
+// dropdown manually. Returns true if the object type is configurable.
+function selectBuilderObjectForConfiguration(obj) {
+  const configByType = {
+    bookshelf: { select: bookShelfSelect, section: configureBookshelfSection, refresh: renderBookShelfSelect },
+    tv: { select: videoTvSelect, section: configureTvSection, refresh: renderVideoTvSelect },
+    music_player: { select: trackPlayerSelect, section: configureMusicSection, refresh: renderTrackPlayerSelect },
+    ai_character: { select: characterNpcSelect, section: configureCharacterSection, refresh: renderCharacterNpcSelect },
+  };
+  const config = configByType[obj.objectType];
+  if (!config || !config.select) return false;
+
+  config.refresh();
+  config.select.value = obj.objectId;
+  config.select.dispatchEvent(new Event('change'));
+
+  for (const entry of Object.values(configByType)) {
+    entry.section?.classList.toggle('hidden', entry.section !== config.section);
+  }
+  configureControls?.classList.remove('hidden');
+  config.section?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  return true;
+}
+
+
+// AI characters always render at a fixed avatar size (see renderAiCharacters()),
+// so the Size preset has no visual effect for that object type — hide it to
+// avoid implying it will resize the character.
+function updateObjectSizeFieldVisibility() {
+  const isAiCharacter = objectTypeSelect?.value === 'ai_character';
+  objectSizeField?.classList.toggle('hidden', isAiCharacter);
+  objectSizeAiHint?.classList.toggle('hidden', !isAiCharacter);
 }
 
 function tileKey(tile) {
@@ -1727,6 +1889,65 @@ function currentTileBuilderObjects() {
 
 function refreshCanvasBuilderObjects() {
   setBuilderObjects(currentTileBuilderObjects());
+  renderAiCharacters();
+}
+
+function defaultCharacterAppearance() {
+  return {
+    skinColor: AVATAR_OPTIONS.skinColors[0],
+    gender: AVATAR_OPTIONS.gender[0],
+    hair: AVATAR_OPTIONS.hair[0],
+    beard: 'none',
+    glasses: 'none',
+    clothes: AVATAR_OPTIONS.clothes[0],
+    accessory: 'none',
+  };
+}
+
+// AI characters are rendered as DOM avatar overlays (reusing the same
+// renderAvatarSVG used for players) so they share the avatar's shape,
+// instead of a Canvas-drawn sprite.
+function renderAiCharacters() {
+  const objects = currentTileBuilderObjects().filter((obj) => obj.objectType === 'ai_character');
+  const activeIds = new Set(objects.map((obj) => obj.objectId));
+
+  for (const el of [...playersLayer.querySelectorAll('.room-npc')]) {
+    if (!activeIds.has(el.dataset.oid)) el.remove();
+  }
+
+  for (const obj of objects) {
+    const character = obj.character;
+    const appearance = character?.appearance || defaultCharacterAppearance();
+    const name = character?.name || 'AI Character';
+
+    let el = playersLayer.querySelector(`.room-npc[data-oid="${CSS.escape(obj.objectId)}"]`);
+    const isNew = !el;
+    if (isNew) {
+      el = document.createElement('div');
+      el.className = 'room-player room-npc';
+      el.dataset.oid = obj.objectId;
+      const nameEl = document.createElement('span');
+      nameEl.className = 'player-name';
+      el.appendChild(nameEl);
+      playersLayer.appendChild(el);
+    }
+
+    el.style.left = `${obj.x + obj.width / 2}px`;
+    el.style.top = `${obj.y + obj.height}px`;
+    // Match the y-coordinate based z-index used by renderPlayers() so NPCs
+    // correctly interleave in depth with players walking in front of/behind
+    // them, instead of always rendering above or below every player.
+    el.style.zIndex = Math.round(obj.y + obj.height);
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderAvatarSVG(appearance, 'normal');
+    const newSvgEl = tmp.firstElementChild;
+    const svgEl = el.querySelector('.avatar-svg');
+    if (svgEl) el.replaceChild(newSvgEl, svgEl);
+    else el.insertBefore(newSvgEl, el.firstChild);
+
+    el.querySelector('.player-name').textContent = name;
+  }
 }
 
 function renderBuilderObjectList() {
@@ -2178,6 +2399,14 @@ function renderCharacterConfigFields() {
   if (characterRoleSelect) characterRoleSelect.value = character?.role || 'guide';
   if (characterStartNodeInput) characterStartNodeInput.value = character?.startNodeId || '';
   if (characterPortraitInput) characterPortraitInput.value = character?.portraitUrl || '';
+  const appearance = character?.appearance || defaultCharacterAppearance();
+  if (characterSkinColorSelect) characterSkinColorSelect.value = appearance.skinColor;
+  if (characterGenderSelect) characterGenderSelect.value = appearance.gender;
+  if (characterHairSelect) characterHairSelect.value = appearance.hair;
+  if (characterBeardSelect) characterBeardSelect.value = appearance.beard;
+  if (characterGlassesSelect) characterGlassesSelect.value = appearance.glasses;
+  if (characterClothesSelect) characterClothesSelect.value = appearance.clothes;
+  if (characterAccessorySelect) characterAccessorySelect.value = appearance.accessory;
   if (characterKnowledgeBaseTitleInput) characterKnowledgeBaseTitleInput.value = character?.knowledgeBase?.title || '';
   exitKnowledgeDocumentEditMode();
   renderKnowledgeDocumentList(character);

@@ -1,4 +1,5 @@
 from server.game.avatar import create_default_avatar
+from server.game.room_styles import DEFAULT_ROOM_STYLE, ROOM_STYLE_IDS
 from server.game.rooms_registry import RoomsRegistry
 
 
@@ -27,6 +28,32 @@ class TestRoomsRegistry:
         assert room["access"] == "public"
         assert room["maxUsers"] == 25
         assert room["activeUsers"] == 0
+
+    def test_create_room_defaults_to_default_room_style(self):
+        registry = RoomsRegistry()
+        room = registry.create_room(host_id="host-1", name="History Lab")
+        assert room["roomStyle"] == DEFAULT_ROOM_STYLE
+
+    def test_create_room_accepts_a_valid_room_style(self):
+        registry = RoomsRegistry()
+        chosen = next(s for s in ROOM_STYLE_IDS if s != DEFAULT_ROOM_STYLE)
+        room = registry.create_room(host_id="host-1", name="History Lab", room_style=chosen)
+        assert room["roomStyle"] == chosen
+
+    def test_create_room_falls_back_to_default_for_invalid_room_style(self):
+        registry = RoomsRegistry()
+        room = registry.create_room(host_id="host-1", name="History Lab", room_style="haunted-mansion")
+        assert room["roomStyle"] == DEFAULT_ROOM_STYLE
+
+    def test_get_room_style_returns_the_stored_style(self):
+        registry = RoomsRegistry()
+        chosen = next(s for s in ROOM_STYLE_IDS if s != DEFAULT_ROOM_STYLE)
+        room = registry.create_room(host_id="host-1", name="History Lab", room_style=chosen)
+        assert registry.get_room_style(room["id"]) == chosen
+
+    def test_get_room_style_defaults_for_unknown_room(self):
+        registry = RoomsRegistry()
+        assert registry.get_room_style("unknown-room") == DEFAULT_ROOM_STYLE
 
     def test_get_room_host_id_returns_creator(self):
         registry = RoomsRegistry()

@@ -1,22 +1,55 @@
 import { resolveObjectColor, objectTypeIcon } from './builder-objects.js';
+import { resolveRoomStyle, DEFAULT_ROOM_STYLE } from './room-styles.js';
 
 const ROOM_WIDTH = 800;
 const ROOM_HEIGHT = 600;
 const WALL_HEIGHT = ROOM_HEIGHT * 0.42;
 
+// The Lobby keeps its own fixed, branded look regardless of the 5 selectable
+// custom-room styles (its colors match what this file always rendered).
+const LOBBY_STYLE = {
+  backdropTop: '#2a2438',
+  backdropBottom: '#1c1828',
+  wallTop: '#4a3f5c',
+  wallBottom: '#6e6082',
+  floorLight: '#c9a87c',
+  floorDark: '#b8956a',
+};
+
 let _animFrame = null;
 let _canvas = null;
 let _builderObjects = [];
+let _isLobby = true;
+let _roomStyleId = DEFAULT_ROOM_STYLE;
 
-export function drawRoom(canvas) {
+/** Draws the room. Pass `{ isLobby: false, roomStyle }` for custom/user-built rooms so they
+ * start as an empty shell (walls/floor only, colored per the chosen style) instead of the
+ * branded lobby furniture, ready to be furnished via the room builder. */
+export function drawRoom(canvas, { isLobby = true, roomStyle = DEFAULT_ROOM_STYLE } = {}) {
   _canvas = canvas;
+  _isLobby = isLobby;
+  _roomStyleId = roomStyle;
   if (_animFrame) cancelAnimationFrame(_animFrame);
   _animLoop();
+}
+
+/** Updates whether the current room should render the fixed lobby ambient furniture. */
+export function setRoomIsLobby(isLobby) {
+  _isLobby = Boolean(isLobby);
+}
+
+/** Updates the active custom-room style (ignored while `isLobby` is true). */
+export function setRoomStyle(roomStyle) {
+  _roomStyleId = roomStyle;
 }
 
 /** Sets the builder-placed objects (for the player's current tile) to render on the canvas. */
 export function setBuilderObjects(objects) {
   _builderObjects = Array.isArray(objects) ? objects : [];
+}
+
+function _activeStyle() {
+  return _isLobby ? LOBBY_STYLE : resolveRoomStyle(_roomStyleId);
 }
 
 function _animLoop() {
@@ -26,7 +59,7 @@ function _animLoop() {
   drawBackdrop(ctx);
   drawWall(ctx);
   drawFloor(ctx);
-  drawFurniture(ctx);
+  if (_isLobby) drawFurniture(ctx);
   drawBuilderObjects(ctx);
   drawAmbientLight(ctx);
   drawDiscoBall(ctx, ROOM_WIDTH / 2, WALL_HEIGHT * 0.22);
@@ -35,17 +68,19 @@ function _animLoop() {
 }
 
 function drawBackdrop(ctx) {
+  const style = _activeStyle();
   const grad = ctx.createLinearGradient(0, 0, 0, ROOM_HEIGHT);
-  grad.addColorStop(0, '#2a2438');
-  grad.addColorStop(1, '#1c1828');
+  grad.addColorStop(0, style.backdropTop);
+  grad.addColorStop(1, style.backdropBottom);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 }
 
 function drawWall(ctx) {
+  const style = _activeStyle();
   const grad = ctx.createLinearGradient(0, 0, 0, WALL_HEIGHT);
-  grad.addColorStop(0, '#4a3f5c');
-  grad.addColorStop(1, '#6e6082');
+  grad.addColorStop(0, style.wallTop);
+  grad.addColorStop(1, style.wallBottom);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, ROOM_WIDTH, WALL_HEIGHT);
 
@@ -119,12 +154,13 @@ function drawFloor(ctx) {
   const floorY = WALL_HEIGHT;
   const tileW = 50;
   const tileH = 25;
+  const style = _activeStyle();
 
   for (let row = 0; row < 12; row++) {
     for (let col = 0; col < 18; col++) {
       const x = col * tileW + (row % 2 ? tileW / 2 : 0);
       const y = floorY + row * tileH;
-      const shade = (row + col) % 2 === 0 ? '#c9a87c' : '#b8956a';
+      const shade = (row + col) % 2 === 0 ? style.floorLight : style.floorDark;
       ctx.fillStyle = shade;
       ctx.beginPath();
       ctx.moveTo(x, y);
@@ -137,6 +173,8 @@ function drawFloor(ctx) {
       ctx.stroke();
     }
   }
+
+  if (!_isLobby) return;
 
   const rugX = ROOM_WIDTH * 0.32;
   const rugY = ROOM_HEIGHT * 0.58;
@@ -381,13 +419,7 @@ function drawBuilderObjects(ctx) {
     ctx.translate(cx, cy);
     ctx.rotate(((obj.rotation || 0) * Math.PI) / 180);
 
-    ctx.fillStyle = resolveObjectColor(obj.color);
-    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(-obj.width / 2, -obj.height / 2, obj.width, obj.height, 6);
-    ctx.fill();
-    ctx.stroke();
+    drawFurnitureSprite(ctx, obj);
 
     if (obj.isLocked) {
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -396,11 +428,272 @@ function drawBuilderObjects(ctx) {
       ctx.fill();
     }
 
-    ctx.rotate(-((obj.rotation || 0) * Math.PI) / 180);
-    ctx.font = `${Math.min(obj.width, obj.height, 28)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(objectTypeIcon(obj.objectType), 0, 0);
     ctx.restore();
   }
+}
+
+/** Draws a builder object as a stylized furniture sprite matching its type, in a front-elevation style consistent with the room's decorative furniture. */
+function drawFurnitureSprite(ctx, obj) {
+  const w = obj.width;
+  const h = obj.height;
+  const color = resolveObjectColor(obj.color);
+  switch (obj.objectType) {
+    case 'table':
+      drawTableSprite(ctx, w, h, color);
+      break;
+    case 'chair':
+      drawChairSprite(ctx, w, h, color);
+      break;
+    case 'bar':
+      drawBarSprite(ctx, w, h, color);
+      break;
+    case 'sofa':
+      drawSofaSprite(ctx, w, h, color);
+      break;
+    case 'bookshelf':
+      drawBookshelfSprite(ctx, w, h, color);
+      break;
+    case 'tv':
+      drawTvSprite(ctx, w, h, color);
+      break;
+    case 'music_player':
+      drawMusicPlayerSprite(ctx, w, h, color);
+      break;
+    case 'ai_character':
+      // Rendered as a DOM avatar overlay (see renderAiCharacters() in
+      // main.js) so AI characters share the exact same shape/rendering as
+      // player avatars, instead of a hand-drawn canvas sprite.
+      break;
+    default:
+      drawGenericSprite(ctx, w, h, obj.objectType, color);
+      break;
+  }
+}
+
+function drawTableSprite(ctx, w, h, color) {
+  const legW = w * 0.09;
+  const legH = h * 0.4;
+  const topH = h * 0.22;
+  const topCenterY = -h / 2 + topH / 2 + 2;
+
+  ctx.fillStyle = shadeColor(color, -35);
+  ctx.fillRect(-w / 2 + legW * 0.6, h / 2 - legH, legW, legH);
+  ctx.fillRect(w / 2 - legW * 1.6, h / 2 - legH, legW, legH);
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, topCenterY - topH / 2, w, topH, Math.min(w, h) * 0.12);
+  ctx.fill();
+  ctx.fillStyle = shadeColor(color, 20);
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + 2, topCenterY - topH / 2 + 2, w - 4, topH * 0.4, 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath();
+  ctx.arc(0, topCenterY - topH / 2 - 2, Math.min(w, h) * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawChairSprite(ctx, w, h, color) {
+  const legW = w * 0.1;
+  const legH = h * 0.28;
+  const seatH = h * 0.22;
+  const seatCenterY = h / 2 - legH - seatH / 2;
+  const backW = w * 0.7;
+  const backH = h * 0.42;
+
+  ctx.fillStyle = shadeColor(color, -35);
+  ctx.fillRect(-w / 2 + legW * 0.5, h / 2 - legH, legW, legH);
+  ctx.fillRect(w / 2 - legW * 1.5, h / 2 - legH, legW, legH);
+
+  ctx.fillStyle = shadeColor(color, -10);
+  ctx.beginPath();
+  ctx.roundRect(-backW / 2, seatCenterY - seatH / 2 - backH, backW, backH, 4);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, seatCenterY - seatH / 2, w, seatH, 4);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + 3, seatCenterY - seatH / 2 + 2, w - 6, seatH * 0.4, 2);
+  ctx.fill();
+}
+
+function drawSofaSprite(ctx, w, h, color) {
+  const armW = w * 0.14;
+  const seatH = h * 0.5;
+  const seatCenterY = h / 2 - seatH;
+  const backH = h * 0.34;
+
+  ctx.fillStyle = shadeColor(color, -20);
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, seatCenterY - 4, armW, seatH + 4, 6);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(w / 2 - armW, seatCenterY - 4, armW, seatH + 4, 6);
+  ctx.fill();
+
+  ctx.fillStyle = shadeColor(color, 15);
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + armW * 0.4, seatCenterY - backH, w - armW * 0.8, backH + 6, 6);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + armW * 0.3, seatCenterY, w - armW * 0.6, seatH, 6);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, seatCenterY + 3);
+  ctx.lineTo(0, seatCenterY + seatH - 3);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + armW * 0.6, seatCenterY + 3, w - armW * 1.2, seatH * 0.35, 4);
+  ctx.fill();
+}
+
+function drawBarSprite(ctx, w, h, color) {
+  const counterCenterY = h / 2 - h * 0.3;
+
+  ctx.fillStyle = shadeColor(color, -40);
+  ctx.fillRect(-w / 2, -h / 2, w, h * 0.3);
+
+  const bottleColors = ['#e07a5f', '#81b29a', '#f2cc8f', '#3d405b'];
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = bottleColors[i % bottleColors.length];
+    const bx = -w / 2 + (i + 0.7) * (w / 4.6);
+    ctx.fillRect(bx, -h / 2 + 2, w * 0.06, h * 0.24);
+  }
+
+  ctx.fillStyle = shadeColor(color, -15);
+  ctx.fillRect(-w / 2, -h * 0.2, w, h * 0.42);
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 - 3, counterCenterY - 6, w + 6, 10, 3);
+  ctx.fill();
+  ctx.fillStyle = shadeColor(color, 20);
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 - 3, counterCenterY - 6, w + 6, 4, 2);
+  ctx.fill();
+
+  ctx.fillStyle = shadeColor(color, -45);
+  ctx.fillRect(-w / 2, h / 2 - 4, w, 4);
+}
+
+function drawBookshelfSprite(ctx, w, h, color) {
+  ctx.fillStyle = shadeColor(color, -25);
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, -h / 2, w, h, 3);
+  ctx.fill();
+
+  const innerX = -w / 2 + w * 0.08;
+  const innerW = w * 0.84;
+  const shelfCount = 3;
+  const shelfGap = h / shelfCount;
+  const bookColors = ['#e07a5f', '#81b29a', '#f2cc8f', '#3d405b', '#c084fc', '#67e8f9'];
+  let colorIdx = 0;
+
+  for (let s = 0; s < shelfCount; s++) {
+    const shelfY = -h / 2 + s * shelfGap;
+    const rowH = shelfGap - 4;
+
+    ctx.fillStyle = shadeColor(color, -45);
+    ctx.fillRect(innerX, shelfY + 2, innerW, rowH);
+
+    const bookCount = 4 + (s % 2);
+    const eachW = (innerW - 4) / bookCount;
+    for (let b = 0; b < bookCount; b++) {
+      const bh = rowH * (0.7 + (0.25 * ((b + s) % 3)) / 2);
+      ctx.fillStyle = bookColors[colorIdx % bookColors.length];
+      colorIdx++;
+      ctx.fillRect(innerX + 2 + b * eachW, shelfY + 2 + (rowH - bh), eachW - 2, bh);
+    }
+
+    ctx.fillStyle = shadeColor(color, 10);
+    ctx.fillRect(-w / 2, shelfY + shelfGap - 3, w, 3);
+  }
+}
+
+function drawTvSprite(ctx, w, h, color) {
+  const screenH = h * 0.62;
+  const bezelPad = Math.min(w, h) * 0.06;
+
+  ctx.fillStyle = shadeColor(color, -30);
+  ctx.fillRect(-w * 0.12, h / 2 - h * 0.14, w * 0.24, h * 0.14);
+  ctx.beginPath();
+  ctx.roundRect(-w * 0.3, h / 2 - 5, w * 0.6, 5, 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, -h / 2, w, screenH, 4);
+  ctx.fill();
+
+  const grad = ctx.createLinearGradient(0, -h / 2, 0, -h / 2 + screenH);
+  grad.addColorStop(0, shadeColor(color, 40));
+  grad.addColorStop(1, shadeColor(color, -10));
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + bezelPad, -h / 2 + bezelPad, w - bezelPad * 2, screenH - bezelPad * 2, 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.08, -h / 2 + screenH / 2 - h * 0.08);
+  ctx.lineTo(-w * 0.08, -h / 2 + screenH / 2 + h * 0.08);
+  ctx.lineTo(w * 0.1, -h / 2 + screenH / 2);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawMusicPlayerSprite(ctx, w, h, color) {
+  ctx.fillStyle = shadeColor(color, -20);
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, -h * 0.3, w, h * 0.6, 3);
+  ctx.fill();
+
+  const r = Math.min(w, h) * 0.22;
+  ctx.fillStyle = '#1f2937';
+  ctx.beginPath();
+  ctx.arc(-w * 0.22, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(w * 0.22, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(-w * 0.22, 0, r * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(w * 0.22, 0, r * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = shadeColor(color, -40);
+  ctx.fillRect(-w / 2 + 2, h * 0.28, w * 0.08, h * 0.14);
+  ctx.fillRect(w / 2 - w * 0.08 - 2, h * 0.28, w * 0.08, h * 0.14);
+}
+
+function drawGenericSprite(ctx, w, h, objectType, color) {
+  ctx.fillStyle = color;
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, -h / 2, w, h, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `${Math.min(w, h, 28)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(objectTypeIcon(objectType), 0, 0);
 }

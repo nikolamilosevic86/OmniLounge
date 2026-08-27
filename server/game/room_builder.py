@@ -248,30 +248,34 @@ class RoomBuilderState:
             return []
         return get_interaction_menu(record["objectType"])
 
+    def _decorate_object(self, record: dict[str, Any]) -> dict[str, Any]:
+        decorated = {**record, "interactions": self._interactions_for(record)}
+        if record["objectType"] == "ai_character":
+            # Embed the character's name/appearance directly on the object so
+            # every client in the room (not just whoever is editing it) can
+            # render the AI character in the avatar's shape, with its
+            # configured look, without a separate round-trip.
+            decorated["character"] = self._story.get_character(record["objectId"], record["objectId"])
+        return decorated
+
     def get_object(self, object_id: str) -> dict[str, Any] | None:
         record = self._objects.get(object_id)
         if record is None:
             return None
-        return {**record, "interactions": self._interactions_for(record)}
+        return self._decorate_object(record)
 
     def list_objects(self, tile: tuple[int, int] | None = None) -> list[dict[str, Any]]:
         objects = self._objects.values()
         if tile is not None:
             objects = [o for o in objects if o["tile"] == tile]
-        return [
-            {**o, "interactions": self._interactions_for(o)}
-            for o in sorted(objects, key=lambda o: o["zIndex"])
-        ]
+        return [self._decorate_object(o) for o in sorted(objects, key=lambda o: o["zIndex"])]
 
     def list_objects_for_tiles(self, tiles: set[tuple[int, int]]) -> list[dict[str, Any]]:
         """Like `list_objects`, but scoped to any tile in `tiles`. Used to
         lazily load only the objects near a client instead of the whole
         room, which matters once a room has many tiles/objects."""
         objects = [o for o in self._objects.values() if o["tile"] in tiles]
-        return [
-            {**o, "interactions": self._interactions_for(o)}
-            for o in sorted(objects, key=lambda o: o["zIndex"])
-        ]
+        return [self._decorate_object(o) for o in sorted(objects, key=lambda o: o["zIndex"])]
 
     def _require_object(self, object_id: str) -> dict[str, Any]:
         record = self._objects.get(object_id)
@@ -606,6 +610,14 @@ class RoomBuilderState:
         return self._story.add_character(
             object_id, object_id, name=name, role=role, start_node_id=start_node_id, portrait_url=portrait_url,
         )
+
+    def configure_character_appearance(
+        self, object_id: str, appearance: dict[str, Any],
+        requester_id: str | None = None, is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._story.set_character_appearance(object_id, object_id, appearance)
 
     def get_character_config(self, object_id: str) -> dict[str, Any] | None:
         self._require_ai_character(object_id)

@@ -5,7 +5,15 @@ from server.game.movement import ROOM_BOUNDS, clamp_position
 Direction = Literal["left", "right", "top", "bottom"]
 
 TILE_LIMIT = 2
-EDGE_EPSILON = 14.0
+# Must be >= the clamp margin applied by `clamp_position`/`Room.update_player_
+# position` (ROOM_BOUNDS["minX"]/["minY"], and width/height minus maxX/maxY --
+# currently 20px on every side). A player's position can never go past that
+# clamp boundary, so if EDGE_EPSILON were smaller than the margin (it used to
+# be 14 against a 20px margin), the edge-transition threshold would sit just
+# outside the reachable range and players would get stuck exactly at the
+# clamped boundary, unable to ever trigger a tile transition -- including
+# into newly builder-added neighbor tiles.
+EDGE_EPSILON = 20.0
 TRANSITION_INSET = 28.0
 
 

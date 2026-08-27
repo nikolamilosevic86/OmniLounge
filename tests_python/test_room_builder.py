@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from server.game.room_builder import RoomBuilderState
+from server.game.room_object_catalog import SIZE_PRESETS
 
 
 # ─── Tile graph editor ──────────────────────────────────────────────────────
@@ -215,12 +216,12 @@ class TestObjectStyleAndSizePresets:
     def test_create_object_without_geometry_uses_type_default_preset(self):
         obj = self.builder.create_object("o1", "chair", (0, 0), x=10, y=10)
         assert obj["sizePreset"] == "S"
-        assert (obj["width"], obj["height"]) == (32.0, 32.0)
+        assert (obj["width"], obj["height"]) == SIZE_PRESETS["S"]
 
     def test_create_object_with_explicit_size_preset(self):
         obj = self.builder.create_object("o1", "table", (0, 0), x=10, y=10, size_preset="L")
         assert obj["sizePreset"] == "L"
-        assert (obj["width"], obj["height"]) == (72.0, 72.0)
+        assert (obj["width"], obj["height"]) == SIZE_PRESETS["L"]
 
     def test_create_object_with_custom_size_ignores_preset_default(self):
         obj = self.builder.create_object("o1", "table", (0, 0), x=10, y=10, width=99, height=44)
@@ -256,7 +257,7 @@ class TestObjectStyleAndSizePresets:
         self.builder.create_object("o1", "table", (0, 0), x=10, y=10, width=10, height=10)
         updated = self.builder.set_object_size_preset("o1", "L")
         assert updated["sizePreset"] == "L"
-        assert (updated["width"], updated["height"]) == (72.0, 72.0)
+        assert (updated["width"], updated["height"]) == SIZE_PRESETS["L"]
 
     def test_resize_object_clears_size_preset(self):
         self.builder.create_object("o1", "table", (0, 0), x=10, y=10, size_preset="M")
@@ -753,6 +754,29 @@ class TestAiCharacterIntegration:
         character = self.builder.get_character_config("npc-1")
         assert character["name"] == "Owl"
         assert character["role"] == "guide"
+
+    def test_configure_character_appearance_requires_edit_permission(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")
+        with pytest.raises(PermissionError):
+            self.builder.configure_character_appearance("npc-1", {"hair": "curly"}, requester_id="bob")
+
+    def test_configure_character_appearance_updates_and_roundtrips(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")
+        updated = self.builder.configure_character_appearance(
+            "npc-1", {"hair": "curly", "skinColor": "#8D5524"}, requester_id="alice",
+        )
+        assert updated["appearance"]["hair"] == "curly"
+        assert updated["appearance"]["skinColor"] == "#8D5524"
+        assert self.builder.get_character_config("npc-1")["appearance"]["hair"] == "curly"
+
+    def test_list_objects_embeds_character_for_ai_character_objects(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")
+        objects = self.builder.list_objects()
+        npc_obj = next(o for o in objects if o["objectId"] == "npc-1")
+        assert npc_obj["character"]["name"] == "Owl"
+
+    def test_get_object_embeds_none_character_before_configure(self):
+        assert self.builder.get_object("npc-1")["character"] is None
 
     def test_set_character_knowledge_base_title_requires_edit_permission(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")

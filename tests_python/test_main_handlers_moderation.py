@@ -430,3 +430,91 @@ class TestHostReclaimAfterReconnect:
         assert joined_events
         assert rooms.get_room_host_id(room["id"]) == "host1"
 
+
+class TestRoomStyleSelection:
+    """A room creator picks one of the 5 empty-room styles when creating a
+    custom room; that choice is persisted on the room and handed back to
+    every player who joins (creator and later joiners alike) so everyone
+    renders the same empty-room shell."""
+
+    async def test_room_create_accepts_a_chosen_room_style(self, isolate_registry):
+        from server.game.room_styles import ROOM_STYLE_IDS
+
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("host1", avatar, "lobby")
+        chosen = sorted(ROOM_STYLE_IDS)[1]
+
+        await main_module.room_create("host1", {"name": "Edu Room", "roomStyle": chosen})
+
+        created_events = [e for e in fake_sio.emitted if e[0] == "room:created" and e[2] == "host1"]
+        assert created_events
+        assert created_events[-1][1]["roomStyle"] == chosen
+
+    async def test_room_create_defaults_room_style_when_not_provided(self, isolate_registry):
+        from server.game.room_styles import DEFAULT_ROOM_STYLE
+
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("host1", avatar, "lobby")
+
+        await main_module.room_create("host1", {"name": "Edu Room"})
+
+        created_events = [e for e in fake_sio.emitted if e[0] == "room:created" and e[2] == "host1"]
+        assert created_events[-1][1]["roomStyle"] == DEFAULT_ROOM_STYLE
+
+    async def test_room_create_falls_back_to_default_for_an_invalid_room_style(self, isolate_registry):
+        from server.game.room_styles import DEFAULT_ROOM_STYLE
+
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("host1", avatar, "lobby")
+
+        await main_module.room_create("host1", {"name": "Edu Room", "roomStyle": "haunted-mansion"})
+
+        created_events = [e for e in fake_sio.emitted if e[0] == "room:created" and e[2] == "host1"]
+        assert created_events[-1][1]["roomStyle"] == DEFAULT_ROOM_STYLE
+
+    async def test_room_joined_includes_the_rooms_style_for_the_creator(self, isolate_registry):
+        from server.game.room_styles import ROOM_STYLE_IDS
+
+        rooms, fake_sio = isolate_registry
+        chosen = sorted(ROOM_STYLE_IDS)[2]
+        room = rooms.create_room(host_id="host1", name="Edu Room", room_style=chosen)
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("host1", avatar, "lobby")
+
+        await main_module.room_join("host1", {"roomId": room["id"]})
+
+        joined_events = [e for e in fake_sio.emitted if e[0] == "room:joined" and e[2] == "host1"]
+        assert joined_events
+        assert joined_events[-1][1]["roomStyle"] == chosen
+
+    async def test_room_joined_includes_the_rooms_style_for_a_later_joiner(self, isolate_registry):
+        from server.game.room_styles import ROOM_STYLE_IDS
+
+        rooms, fake_sio = isolate_registry
+        chosen = sorted(ROOM_STYLE_IDS)[3]
+        room = rooms.create_room(host_id="host1", name="Edu Room", room_style=chosen)
+        avatar = create_default_avatar("Bob")
+        rooms.join_room("bob", avatar, "lobby")
+
+        await main_module.room_join("bob", {"roomId": room["id"]})
+
+        joined_events = [e for e in fake_sio.emitted if e[0] == "room:joined" and e[2] == "bob"]
+        assert joined_events
+        assert joined_events[-1][1]["roomStyle"] == chosen
+
+    async def test_room_joined_reports_lobby_default_room_style(self, isolate_registry):
+        from server.game.room_styles import DEFAULT_ROOM_STYLE
+
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("host1", avatar, "lobby")
+
+        await main_module.room_join("host1", {"roomId": "lobby"})
+
+        joined_events = [e for e in fake_sio.emitted if e[0] == "room:joined" and e[2] == "host1"]
+        assert joined_events
+        assert joined_events[-1][1]["roomStyle"] == DEFAULT_ROOM_STYLE
+

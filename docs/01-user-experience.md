@@ -2,9 +2,37 @@
 
 OmniLaunge currently delivers a complete single-room social experience that starts with identity creation and quickly transitions into shared real-time interaction. The first contact is the avatar creator, where users choose a display name and visual traits including skin tone, hair style, beard style, glasses, clothes, and accessory options. The preview is live-rendered, so what users see in the creator is a faithful representation of their in-room appearance.
 
-Once users enter the lounge, they now see a room chooser overlay that supports two core pathways: creating a new room and joining an existing room discovered from the server. If the user chooses not to switch immediately, they can continue in the default lobby. This gives the experience a transitional step toward the educational multi-room future while keeping the current social flow intact.
+Once users enter the lounge, they now see a room chooser overlay that supports two core pathways: creating a new room and joining an existing room discovered from the server. If the user closes the chooser without switching, they simply remain in the default lobby. This gives the experience a transitional step toward the educational multi-room future while keeping the current social flow intact.
 
 The chooser now also includes discovery controls so users can filter by topic tag, access type (all/public/invite), and sorting mode (newest or most active). Invite rooms can be joined by providing an invite code, and full rooms are clearly marked as unavailable.
+
+The chooser is no longer a one-time, first-connect-only screen. A Change Room pill lives permanently in the room HUD next to the online-player count, so users can reopen the chooser at any point during a session to browse or create rooms, without needing to reload the page. Reopening mid-session re-requests the live room list and correctly marks whichever room the user currently occupies as the current room with its Join button disabled, so the affordance stays honest about where the user already is.
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant C as Client
+  participant S as Server
+
+  U->>C: Connect (first load)
+  C->>S: player:join
+  C->>S: room:list
+  S-->>C: room:list (available rooms)
+  C-->>U: Show room chooser overlay
+  U->>C: Close chooser (or join a room)
+  C-->>U: Enter lobby / selected room
+
+  Note over U,C: Later in the same session
+  U->>C: Click Change Room HUD pill
+  C->>S: room:list
+  S-->>C: room:list (refreshed)
+  C-->>U: Reopen chooser, current room marked and disabled
+  U->>C: Select a different room
+  C->>S: room:join
+  S-->>C: room:joined + room:state
+```
+
+The avatar customization controls (skin color swatches and trait option buttons on the creator screen) are now proper toggle buttons for assistive technology: each carries a button type, an accessible name (an aria-label on color swatches, since color alone isn't identified by visible text), and an aria-pressed state that stays in sync with the current selection.
 
 After room selection, users move from setup into active multiplayer presence. The room conveys social activity through movement, layered avatar rendering, and chat visibility. Public messages appear in the chat panel and as short-lived speech bubbles above avatars, while private messages preserve one-to-one visibility.
 

@@ -6,9 +6,25 @@ The project has repeatedly used TDD cycles for high-risk animation and combat ch
 
 ## Test Surface
 
-JavaScript tests cover movement logic, room logic, chat helpers, combat calculations, attack animation curves, and avatar renderer behavior. Python tests cover movement primitives, room management behavior, chat logic, and avatar validation.
+JavaScript tests cover movement logic, room logic, chat helpers, combat calculations, attack animation curves, and avatar renderer behavior. Python tests cover movement primitives, room management behavior, chat logic, avatar validation, and socket handler integration (tests_python/test_main_*.py, using a fake Socket.IO server so no real network I/O occurs). Coverage also now extends to two previously-untested infrastructure modules: server/config.py (env var defaults and type coercion, verified via importlib.reload under controlled environment variables) and server/db/database.py (avatar/message persistence methods, verified against a hand-rolled fake asyncpg pool/connection so no real Postgres connection is required).
 
 Contributors should run full suites before pushing. For partial work, targeted suites are acceptable during iteration, but final validation should remain full-stack where feasible.
+
+## Socket Event Contract Audits
+
+Because the client and server agree on event names only by convention (plain strings, no shared schema/codegen), event contract drift is a standing risk: a renamed or newly-added event on one side that isn't mirrored on the other fails silently at runtime with no error, only a dropped or unhandled message. Periodically cross-reference the full set of server @sio.on(...) handlers and sio.emit(...) calls in server/main.py against state.socket.on(...) and state.socket.emit(...) calls in client/js/main.js, and confirm every server-side room-targeted emit passes room=room_channel(room_id) rather than broadcasting globally.
+
+```mermaid
+flowchart LR
+  A[Enumerate server sio.on handlers] --> D[Cross-reference]
+  B[Enumerate server sio.emit calls] --> D
+  C[Enumerate client socket.on / socket.emit calls] --> D
+  D --> E{Mismatch found?}
+  E -- Orphaned client emit --> F[Add missing server handler]
+  E -- Orphaned server emit --> G[Add missing client listener, or confirm intentionally unused]
+  E -- Missing room scoping --> H[Add room=room_channel to fix cross-room leak]
+  E -- None --> I[Contract confirmed consistent]
+```
 
 ## Local Runtime Model
 

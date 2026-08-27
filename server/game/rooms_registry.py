@@ -5,6 +5,7 @@ from typing import Any
 from server.game.moderation import ModerationState
 from server.game.room import Room
 from server.game.room_builder import RoomBuilderState
+from server.game.room_styles import DEFAULT_ROOM_STYLE, resolve_room_style
 from server.game.tile_navigation import (
     can_add_neighbor_tile,
     detect_edge_transition,
@@ -54,6 +55,7 @@ class RoomsRegistry:
         access: str = "public",
         max_users: int = 30,
         invite_code: str | None = None,
+        room_style: str | None = None,
     ) -> dict[str, Any]:
         room_id = self._next_room_id()
         normalized_access = "invite" if access == "invite" else "public"
@@ -68,6 +70,7 @@ class RoomsRegistry:
             "createdAtMs": int(time.time() * 1000),
             "inviteCode": invite_code if normalized_access == "invite" else None,
             "hostToken": secrets.token_urlsafe(24),
+            "roomStyle": resolve_room_style(room_style),
         }
         self.room_tiles[room_id] = {(0, 0)}
         self.room_builders[room_id] = RoomBuilderState()
@@ -90,6 +93,10 @@ class RoomsRegistry:
     def get_room_host_token(self, room_id: str) -> str | None:
         meta = self.room_meta.get(room_id)
         return meta.get("hostToken") if meta else None
+
+    def get_room_style(self, room_id: str) -> str:
+        meta = self.room_meta.get(room_id)
+        return meta.get("roomStyle", DEFAULT_ROOM_STYLE) if meta else DEFAULT_ROOM_STYLE
 
     def reclaim_host(self, room_id: str, new_player_id: str, host_token: str | None) -> bool:
         """Re-establish `new_player_id` as the owner/host of `room_id` if
@@ -133,6 +140,7 @@ class RoomsRegistry:
             "maxUsers": meta.get("maxUsers", 30),
             "createdAtMs": meta.get("createdAtMs", 0),
             "activeUsers": room.get_player_count(),
+            "roomStyle": meta.get("roomStyle", DEFAULT_ROOM_STYLE),
         }
 
     def list_rooms(

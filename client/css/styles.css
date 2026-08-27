@@ -678,12 +678,13 @@ a:focus-visible,
 
 .room-create-row {
   display: grid;
-  grid-template-columns: 2fr 2fr auto auto;
+  grid-template-columns: 2fr 2fr 1.4fr auto auto;
   gap: 0.6rem;
   margin-bottom: 1rem;
 }
 
-.room-create-row input {
+.room-create-row input,
+.room-create-row select {
   width: 100%;
   border: 1px solid var(--md-outline);
   background: var(--md-surface-container-highest);
@@ -712,6 +713,7 @@ a:focus-visible,
 }
 
 .room-create-row input:focus,
+.room-create-row select:focus,
 .room-filter-row input:focus,
 .room-filter-row select:focus {
   outline: none;
@@ -834,6 +836,7 @@ a:focus-visible,
   align-items: center;
   gap: 0.5rem;
   box-shadow: var(--md-elevation-1);
+  transition: background var(--md-duration-short) var(--md-easing-standard);
 }
 
 .tile-pill,
@@ -879,6 +882,34 @@ a:focus-visible,
   border-color: transparent;
 }
 
+#room-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--md-shape-full);
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: color var(--md-duration-short) var(--md-easing-standard);
+}
+
+#room-switch-btn .material-symbols-outlined {
+  font-size: 1.05rem;
+}
+
+.room-switch-pill:hover {
+  background: var(--md-surface-container-highest);
+}
+
+#room-switch-btn:hover {
+  color: var(--md-on-surface);
+}
+
 .build-controls.hidden {
   display: none;
 }
@@ -903,6 +934,10 @@ a:focus-visible,
 
 .build-controls-grid button:hover {
   background: var(--hover-overlay);
+}
+
+.build-controls-grid button:active {
+  transform: scale(0.96);
 }
 
 /* ── Room Builder side panel (Phase D) ──────────────────────────────── */
@@ -954,6 +989,21 @@ a:focus-visible,
   padding-bottom: 0;
 }
 
+.builder-section.hidden {
+  display: none;
+}
+
+/* #configure-controls shows exactly one section at a time (see
+   selectBuilderObjectForConfiguration() in main.js), so there's never a
+   second visible sibling to separate from -- drop the divider entirely
+   there instead of relying on :last-child, which only tracks DOM order
+   and would leave a stray trailing border under whichever section
+   happens to be the one currently visible. */
+#configure-controls .builder-section {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
 .builder-section h4 {
   font-size: 0.72rem;
   font-weight: 600;
@@ -961,6 +1011,25 @@ a:focus-visible,
   text-transform: uppercase;
   color: var(--text-muted);
   margin: 0;
+}
+
+.builder-subheading {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.25rem 0 -0.15rem;
+}
+
+.builder-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: -0.35rem 0 0;
+}
+
+.builder-hint.hidden {
+  display: none;
 }
 
 .builder-field {
@@ -1009,17 +1078,32 @@ a:focus-visible,
   border: none;
   background: var(--md-primary-container);
   color: var(--md-on-primary-container);
-  border-radius: var(--md-shape-sm);
-  padding: 0.5rem 0.75rem;
+  border-radius: var(--md-shape-full);
+  padding: 0.55rem 1rem;
   font-family: inherit;
   font-weight: 500;
   font-size: 0.8rem;
   cursor: pointer;
-  transition: filter var(--md-duration-short) var(--md-easing-standard);
+  box-shadow: var(--md-elevation-1);
+  transition: box-shadow var(--md-duration-short) var(--md-easing-standard),
+    transform var(--md-duration-short) var(--md-easing-standard);
 }
 
-.builder-primary-btn:hover {
-  filter: brightness(1.12);
+.builder-primary-btn:hover:not(:disabled) {
+  box-shadow: var(--md-elevation-2);
+}
+
+.builder-primary-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: var(--md-elevation-1);
+}
+
+.builder-primary-btn:disabled {
+  background: var(--md-surface-container-highest);
+  color: var(--md-on-surface-variant);
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .builder-object-list,
@@ -1415,6 +1499,16 @@ a:focus-visible,
   color: var(--md-success);
   background: rgba(143, 217, 168, 0.15);
   border: 1px solid rgba(143, 217, 168, 0.3);
+}
+
+.room-npc {
+  pointer-events: none;
+}
+
+.room-npc .player-name {
+  color: var(--md-tertiary, #d4b3ff);
+  background: rgba(120, 80, 180, 0.25);
+  border: 1px solid rgba(180, 140, 255, 0.35);
 }
 
 .self-indicator {
@@ -1831,7 +1925,8 @@ a:focus-visible,
 #moderation-section.hidden,
 #external-links-field.hidden,
 #audit-log-list.hidden,
-#reports-list.hidden {
+#reports-list.hidden,
+#object-size-field.hidden {
   display: none;
 }
 
@@ -1941,9 +2036,26 @@ a:focus-visible,
 .reader-modal-close {
   background: none;
   border: none;
-  font-size: 1.2rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--md-shape-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   cursor: pointer;
   color: var(--md-on-surface-variant);
+  transition: background var(--md-duration-short) var(--md-easing-standard),
+    color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.reader-modal-close .material-symbols-outlined {
+  font-size: 1.35rem;
+}
+
+.reader-modal-close:hover {
+  background: var(--hover-overlay);
+  color: var(--md-on-surface);
 }
 
 .reader-book-list {
@@ -2066,12 +2178,27 @@ a:focus-visible,
   cursor: pointer;
   color: var(--md-on-surface);
   font-size: 0.85rem;
+  transition: background var(--md-duration-short) var(--md-easing-standard),
+    color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.media-sync-toggle-btn:hover:not(:disabled) {
+  background: var(--hover-overlay);
 }
 
 .media-sync-toggle-btn.active {
   background: var(--md-primary);
   color: var(--md-on-primary);
   border-color: var(--md-primary);
+}
+
+.media-sync-toggle-btn.active:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.media-sync-toggle-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 .dialogue-mode-indicator {
