@@ -166,6 +166,50 @@ class TestKnowledgeBase:
         docs = self.engine.list_knowledge_documents("npc-1", "char-1")
         assert [d["docId"] for d in docs] == ["doc-1", "doc-2"]
 
+    def test_update_knowledge_document_replaces_fields_in_place(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="original")
+        char = self.engine.update_knowledge_document(
+            "npc-1", "char-1", "doc-1", "A renamed", "text", content="updated content", now_ms=42.0,
+        )
+        docs = char["knowledgeBase"]["documents"]
+        assert docs == [{"docId": "doc-1", "title": "A renamed", "docType": "text",
+                          "content": "updated content", "url": None}]
+        assert char["knowledgeBase"]["updatedAt"] == 42.0
+
+    def test_update_knowledge_document_preserves_position(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-2", "B", "text", content="b")
+        char = self.engine.update_knowledge_document("npc-1", "char-1", "doc-1", "A2", "text", content="a2")
+        assert [d["docId"] for d in char["knowledgeBase"]["documents"]] == ["doc-1", "doc-2"]
+
+    def test_update_knowledge_document_can_change_doc_type(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        char = self.engine.update_knowledge_document(
+            "npc-1", "char-1", "doc-1", "A", "link", url="https://example.com/a",
+        )
+        assert char["knowledgeBase"]["documents"][0]["docType"] == "link"
+        assert char["knowledgeBase"]["documents"][0]["url"] == "https://example.com/a"
+
+    def test_update_knowledge_document_rejects_unsafe_link_url(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        with pytest.raises(ValueError):
+            self.engine.update_knowledge_document(
+                "npc-1", "char-1", "doc-1", "A", "link", url="http://127.0.0.1/secret",
+            )
+
+    def test_update_knowledge_document_rejects_invalid_doc_type(self):
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "A", "text", content="a")
+        with pytest.raises(ValueError):
+            self.engine.update_knowledge_document("npc-1", "char-1", "doc-1", "A", "video", content="a")
+
+    def test_update_knowledge_document_raises_for_unknown_doc(self):
+        with pytest.raises(KeyError):
+            self.engine.update_knowledge_document("npc-1", "char-1", "unknown-doc", "A", "text", content="a")
+
+    def test_update_knowledge_document_raises_for_unknown_character(self):
+        with pytest.raises(KeyError):
+            self.engine.update_knowledge_document("npc-1", "unknown", "doc-1", "A", "text", content="a")
+
 
 class TestGenerativeConfig:
     def setup_method(self):

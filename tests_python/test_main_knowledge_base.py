@@ -198,6 +198,85 @@ class TestKnowledgeBaseDocumentRemove:
         assert any(e[0] == "error" for e in fake_sio.emitted)
 
 
+class TestKnowledgeBaseDocumentUpdate:
+    async def test_updates_document_fields(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        added = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "Habitat", "docType": "text", "content": "Owls live in forests.",
+        })
+        doc_id = added["knowledgeBase"]["documents"][0]["docId"]
+
+        character = await main_module.room_character_knowledge_base_document_update("p1", {
+            "objectId": object_id, "docId": doc_id, "title": "Habitat (updated)",
+            "docType": "text", "content": "Owls live in forests and deserts.",
+        })
+
+        doc = character["knowledgeBase"]["documents"][0]
+        assert doc["title"] == "Habitat (updated)"
+        assert doc["content"] == "Owls live in forests and deserts."
+
+    async def test_can_change_doc_type_to_link(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        added = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "Habitat", "docType": "text", "content": "Owls live in forests.",
+        })
+        doc_id = added["knowledgeBase"]["documents"][0]["docId"]
+
+        character = await main_module.room_character_knowledge_base_document_update("p1", {
+            "objectId": object_id, "docId": doc_id, "title": "Habitat",
+            "docType": "link", "url": "https://example.com/habitat",
+        })
+
+        doc = character["knowledgeBase"]["documents"][0]
+        assert doc["docType"] == "link"
+        assert doc["url"] == "https://example.com/habitat"
+
+    async def test_rejects_unsafe_link_url(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        added = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "Habitat", "docType": "text", "content": "Owls live in forests.",
+        })
+        doc_id = added["knowledgeBase"]["documents"][0]["docId"]
+
+        result = await main_module.room_character_knowledge_base_document_update("p1", {
+            "objectId": object_id, "docId": doc_id, "title": "Habitat",
+            "docType": "link", "url": "http://127.0.0.1/secret",
+        })
+
+        assert result is None
+        assert any(e[0] == "error" for e in fake_sio.emitted)
+
+    async def test_unknown_doc_id_surfaces_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+
+        result = await main_module.room_character_knowledge_base_document_update("p1", {
+            "objectId": object_id, "docId": "unknown-doc", "title": "x", "docType": "text", "content": "x",
+        })
+
+        assert result is None
+        assert any(e[0] == "error" for e in fake_sio.emitted)
+
+    async def test_denied_for_non_owner_non_host(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        object_id = await _make_character(rooms)
+        added = await main_module.room_character_knowledge_base_document_add("p1", {
+            "objectId": object_id, "title": "Habitat", "docType": "text", "content": "Owls live in forests.",
+        })
+        doc_id = added["knowledgeBase"]["documents"][0]["docId"]
+        rooms.join_room("p2", create_default_avatar("Bob"), "lobby")
+
+        result = await main_module.room_character_knowledge_base_document_update("p2", {
+            "objectId": object_id, "docId": doc_id, "title": "Hijacked", "docType": "text", "content": "x",
+        })
+
+        assert result is None
+        assert any(e[0] == "error" for e in fake_sio.emitted)
+
+
 class TestGenerativeAskUsesKnowledgeDocuments:
     async def test_ask_generative_forwards_combined_knowledge_context(self, isolate_registry, monkeypatch):
         rooms, fake_sio = isolate_registry
@@ -317,12 +396,23 @@ class TestKnowledgeStoreEndToEndJourney:
         assert "Owls live in forests." in system_context
         assert "https://example.com/owls" in system_context
 
-        # 4. Remove the link document and confirm only the text document remains.
+        # 4. Update the text document's content in place -- confirm the
+        # docId and list position are preserved (unlike remove + re-add).
+        character = await main_module.room_character_knowledge_base_document_update("p1", {
+            "objectId": object_id, "docId": text_doc_id, "title": "Habitat",
+            "docType": "text", "content": "Owls live in forests and deserts.",
+        })
+        assert [d["docId"] for d in character["knowledgeBase"]["documents"]] == [text_doc_id, link_doc_id]
+        assert character["knowledgeBase"]["documents"][0]["content"] == "Owls live in forests and deserts."
+
+        # 5. Remove the link document and confirm only the text document remains.
         character = await main_module.room_character_knowledge_base_document_remove("p1", {
             "objectId": object_id, "docId": link_doc_id,
         })
         assert [d["docId"] for d in character["knowledgeBase"]["documents"]] == [text_doc_id]
 
-        # 5. Final state sanity check via listing on the story engine directly
+        # 6. Final state sanity check via listing on the story engine directly
         # is implicitly covered by the returned character payload above.
         assert character["knowledgeBase"]["title"] == "Owl Facts"
+        assert character["knowledgeBase"]["documents"][0]["content"] == "Owls live in forests and deserts."
+

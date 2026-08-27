@@ -188,6 +188,28 @@ class StoryEngine:
         record["knowledgeBase"]["updatedAt"] = now_ms
         return self._public_character(record)
 
+    def update_knowledge_document(
+        self, object_id: str, character_id: str, doc_id: str, title: str, doc_type: str,
+        content: str | None = None, url: str | None = None, now_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        record = self._require_character(object_id, character_id)
+        documents = record["knowledgeBase"]["documents"]
+        index = next((i for i, d in enumerate(documents) if d["docId"] == doc_id), None)
+        if index is None:
+            raise KeyError(f"unknown knowledge document: {doc_id}")
+        validated = KnowledgeDocumentModel(title=title, docType=doc_type, content=content, url=url)
+        if validated.doc_type == "link":
+            if not validated.url or not is_safe_external_url(validated.url):
+                raise ValueError("link documents require a safe http(s) url")
+        elif not validated.content or not validated.content.strip():
+            raise ValueError(f"{validated.doc_type} documents require non-empty content")
+        documents[index] = {
+            "docId": doc_id, "title": validated.title, "docType": validated.doc_type,
+            "content": validated.content, "url": validated.url,
+        }
+        record["knowledgeBase"]["updatedAt"] = now_ms
+        return self._public_character(record)
+
     def list_knowledge_documents(self, object_id: str, character_id: str) -> list[dict[str, Any]]:
         record = self._require_character(object_id, character_id)
         return [dict(d) for d in record["knowledgeBase"]["documents"]]

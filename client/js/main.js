@@ -96,6 +96,7 @@ const state = {
   suppressMediaModalForBrowse: false,
   builderCharacters: {},  // objectId → character config
   builderStoryNodes: {},  // objectId → nodes[]
+  editingKnowledgeDocId: null,  // docId currently being edited in the knowledge store form, or null
   dialogueModalObjectId: null,
   dialogueCurrentNode: null,
   roomHostId: null,
@@ -231,6 +232,8 @@ const knowledgeDocumentUrlField = document.getElementById('knowledge-document-ur
 const knowledgeDocumentUrlInput = document.getElementById('knowledge-document-url-input');
 const knowledgeDocumentError = document.getElementById('knowledge-document-error');
 const knowledgeDocumentAddBtn = document.getElementById('knowledge-document-add-btn');
+const knowledgeDocumentCancelBtn = document.getElementById('knowledge-document-cancel-btn');
+const knowledgeDocumentFormHeading = document.getElementById('knowledge-document-form-heading');
 const characterApiUrlInput = document.getElementById('character-api-url-input');
 const characterApiKeyInput = document.getElementById('character-api-key-input');
 const characterGenerativeBtn = document.getElementById('character-generative-btn');
@@ -869,34 +872,53 @@ function initGame() {
       return;
     }
     knowledgeDocumentError?.classList.add('hidden');
-    state.socket?.emit('room:character:knowledge_base:document:add', {
+    const docId = state.editingKnowledgeDocId;
+    const eventName = docId
+      ? 'room:character:knowledge_base:document:update'
+      : 'room:character:knowledge_base:document:add';
+    const payload = {
       objectId,
       title: title.trim(),
       docType,
       content: docType === 'link' ? undefined : content.trim(),
       url: docType === 'link' ? url.trim() : undefined,
-    }, (character) => {
+    };
+    if (docId) payload.docId = docId;
+    state.socket?.emit(eventName, payload, (character) => {
       if (!character) return;
       state.builderCharacters[objectId] = character;
-      if (knowledgeDocumentTitleInput) knowledgeDocumentTitleInput.value = '';
-      if (knowledgeDocumentContentInput) knowledgeDocumentContentInput.value = '';
-      if (knowledgeDocumentUrlInput) knowledgeDocumentUrlInput.value = '';
+      exitKnowledgeDocumentEditMode();
       renderCharacterConfigFields();
     });
   });
 
+  knowledgeDocumentCancelBtn?.addEventListener('click', () => {
+    exitKnowledgeDocumentEditMode();
+  });
+
   knowledgeDocumentList?.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-doc-id]');
-    if (!btn) return;
     const objectId = characterNpcSelect?.value;
-    const docId = btn.dataset.docId;
-    if (!objectId || !docId) return;
+    if (!objectId) return;
+    const editBtn = event.target.closest('[data-edit-doc-id]');
+    if (editBtn) {
+      const docId = editBtn.dataset.editDocId;
+      const character = state.builderCharacters[objectId];
+      const doc = character?.knowledgeBase?.documents?.find((d) => d.docId === docId);
+      if (doc) enterKnowledgeDocumentEditMode(doc);
+      return;
+    }
+    const removeBtn = event.target.closest('[data-doc-id]');
+    if (!removeBtn) return;
+    const docId = removeBtn.dataset.docId;
+    if (!docId) return;
     state.socket?.emit('room:character:knowledge_base:document:remove', { objectId, docId }, (character) => {
       if (!character) return;
       state.builderCharacters[objectId] = character;
+      if (state.editingKnowledgeDocId === docId) exitKnowledgeDocumentEditMode();
       renderCharacterConfigFields();
     });
   });
+
 
   characterGenerativeBtn?.addEventListener('click', () => {
     const objectId = characterNpcSelect?.value;
@@ -2106,6 +2128,7 @@ function renderCharacterConfigFields() {
   if (characterStartNodeInput) characterStartNodeInput.value = character?.startNodeId || '';
   if (characterPortraitInput) characterPortraitInput.value = character?.portraitUrl || '';
   if (characterKnowledgeBaseTitleInput) characterKnowledgeBaseTitleInput.value = character?.knowledgeBase?.title || '';
+  exitKnowledgeDocumentEditMode();
   renderKnowledgeDocumentList(character);
   updateKnowledgeDocumentFormFields();
   if (characterApiUrlInput) characterApiUrlInput.value = character?.apiBaseUrl || '';
@@ -2115,6 +2138,32 @@ function updateKnowledgeDocumentFormFields() {
   const isLink = (knowledgeDocumentTypeSelect?.value ?? 'text') === 'link';
   knowledgeDocumentContentField?.classList.toggle('hidden', isLink);
   knowledgeDocumentUrlField?.classList.toggle('hidden', !isLink);
+}
+
+function enterKnowledgeDocumentEditMode(doc) {
+  state.editingKnowledgeDocId = doc.docId;
+  if (knowledgeDocumentTitleInput) knowledgeDocumentTitleInput.value = doc.title || '';
+  if (knowledgeDocumentTypeSelect) knowledgeDocumentTypeSelect.value = doc.docType || 'text';
+  if (knowledgeDocumentContentInput) knowledgeDocumentContentInput.value = doc.content || '';
+  if (knowledgeDocumentUrlInput) knowledgeDocumentUrlInput.value = doc.url || '';
+  updateKnowledgeDocumentFormFields();
+  knowledgeDocumentError?.classList.add('hidden');
+  if (knowledgeDocumentFormHeading) knowledgeDocumentFormHeading.textContent = 'Edit Document';
+  if (knowledgeDocumentAddBtn) knowledgeDocumentAddBtn.textContent = 'Update Document';
+  knowledgeDocumentCancelBtn?.classList.remove('hidden');
+}
+
+function exitKnowledgeDocumentEditMode() {
+  state.editingKnowledgeDocId = null;
+  if (knowledgeDocumentTitleInput) knowledgeDocumentTitleInput.value = '';
+  if (knowledgeDocumentContentInput) knowledgeDocumentContentInput.value = '';
+  if (knowledgeDocumentUrlInput) knowledgeDocumentUrlInput.value = '';
+  if (knowledgeDocumentTypeSelect) knowledgeDocumentTypeSelect.value = 'text';
+  updateKnowledgeDocumentFormFields();
+  knowledgeDocumentError?.classList.add('hidden');
+  if (knowledgeDocumentFormHeading) knowledgeDocumentFormHeading.textContent = 'Add Document';
+  if (knowledgeDocumentAddBtn) knowledgeDocumentAddBtn.textContent = 'Add Document';
+  knowledgeDocumentCancelBtn?.classList.add('hidden');
 }
 
 function renderKnowledgeDocumentList(character) {
@@ -2128,10 +2177,14 @@ function renderKnowledgeDocumentList(character) {
             <strong>${escapeHtml(doc.title)}</strong>
           </div>
           <div class="kb-carbon__list-item-preview">${escapeHtml(summarizeKnowledgeDocument(doc))}</div>
-          <button type="button" class="kb-carbon__button kb-carbon__button--danger" data-doc-id="${escapeHtml(doc.docId)}">Remove</button>
+          <div class="kb-carbon__list-item-actions">
+            <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-edit-doc-id="${escapeHtml(doc.docId)}">Edit</button>
+            <button type="button" class="kb-carbon__button kb-carbon__button--danger" data-doc-id="${escapeHtml(doc.docId)}">Remove</button>
+          </div>
         </li>`).join('')
     : '<li class="kb-carbon__empty-hint">No documents yet.</li>';
 }
+
 
 function renderBuilderStoryNodeList() {
   if (!storyNodeListEl) return;

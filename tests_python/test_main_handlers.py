@@ -680,6 +680,7 @@ CLIENT_EMITTED_EVENTS = [
     "room:character:generative:configure",
     "room:character:knowledge_base:document:add",
     "room:character:knowledge_base:document:remove",
+    "room:character:knowledge_base:document:update",
     "room:character:knowledge_base:title:set",
     "room:character:node:add",
     "room:character:talk",

@@ -346,6 +346,7 @@
 
               <ul id="knowledge-document-list" class="kb-carbon__list"></ul>
 
+              <h6 class="kb-carbon__subheading" id="knowledge-document-form-heading">Add Document</h6>
               <label class="kb-carbon__field">
                 <span class="kb-carbon__label">Document title</span>
                 <input type="text" id="knowledge-document-title-input" class="kb-carbon__input" maxlength="120" placeholder="Document title" />
@@ -367,7 +368,10 @@
                 <input type="text" id="knowledge-document-url-input" class="kb-carbon__input" placeholder="https://example.com" />
               </label>
               <p class="kb-carbon__error hidden" id="knowledge-document-error"></p>
-              <button type="button" id="knowledge-document-add-btn" class="kb-carbon__button kb-carbon__button--primary">Add Document</button>
+              <div class="kb-carbon__button-row">
+                <button type="button" id="knowledge-document-add-btn" class="kb-carbon__button kb-carbon__button--primary">Add Document</button>
+                <button type="button" id="knowledge-document-cancel-btn" class="kb-carbon__button kb-carbon__button--secondary hidden">Cancel</button>
+              </div>
             </div>
 
             <label class="builder-field">

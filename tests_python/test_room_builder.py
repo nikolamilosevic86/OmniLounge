@@ -796,6 +796,27 @@ class TestAiCharacterIntegration:
         character = self.builder.remove_character_knowledge_document("npc-1", "doc-1", requester_id="alice")
         assert character["knowledgeBase"]["documents"] == []
 
+    def test_update_character_knowledge_document_requires_edit_permission(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        self.builder.add_character_knowledge_document(
+            "npc-1", "doc-1", "Habitat", "text", content="Owls are nocturnal.", requester_id="alice",
+        )
+        with pytest.raises(PermissionError):
+            self.builder.update_character_knowledge_document(
+                "npc-1", "doc-1", "Habitat 2", "text", content="Updated.", requester_id="bob",
+            )
+
+    def test_update_character_knowledge_document_updates_character(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
+        self.builder.add_character_knowledge_document(
+            "npc-1", "doc-1", "Habitat", "text", content="Owls are nocturnal.", requester_id="alice",
+        )
+        character = self.builder.update_character_knowledge_document(
+            "npc-1", "doc-1", "Habitat 2", "text", content="Updated.", requester_id="alice",
+        )
+        assert character["knowledgeBase"]["documents"][0]["title"] == "Habitat 2"
+        assert character["knowledgeBase"]["documents"][0]["content"] == "Updated."
+
     def test_configure_generative_mode_enables_only_when_url_and_key_present(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
         character = self.builder.configure_character_generative_mode(

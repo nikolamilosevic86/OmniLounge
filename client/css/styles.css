@@ -2160,6 +2160,15 @@ a:focus-visible,
   margin: 0 0 0.25rem;
 }
 
+.kb-carbon__subheading {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kb-gray-20);
+  margin: 0.5rem 0 0;
+}
+
 .kb-carbon__field {
   display: flex;
   flex-direction: column;
@@ -2231,6 +2240,25 @@ a:focus-visible,
   color: #ffffff;
 }
 
+.kb-carbon__button--secondary {
+  background: transparent;
+  color: var(--kb-blue-60);
+  border: 1px solid var(--kb-blue-60);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+  align-self: flex-start;
+}
+
+.kb-carbon__button--secondary:hover {
+  background: var(--kb-blue-60);
+  color: #ffffff;
+}
+
+.kb-carbon__button-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .kb-carbon__error {
   font-size: 0.75rem;
   color: var(--kb-red-60);
@@ -2272,6 +2300,11 @@ a:focus-visible,
   font-size: 0.75rem;
   color: var(--kb-gray-20);
   overflow-wrap: anywhere;
+}
+
+.kb-carbon__list-item-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .kb-carbon__tag {

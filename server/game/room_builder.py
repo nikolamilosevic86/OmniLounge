@@ -635,6 +635,16 @@ class RoomBuilderState:
         self._require_edit_permission(record, requester_id, is_room_host)
         return self._story.remove_knowledge_document(object_id, object_id, doc_id)
 
+    def update_character_knowledge_document(
+        self, object_id: str, doc_id: str, title: str, doc_type: str, content: str | None = None,
+        url: str | None = None, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._story.update_knowledge_document(
+            object_id, object_id, doc_id, title, doc_type, content=content, url=url,
+        )
+
     def configure_character_generative_mode(
         self, object_id: str, api_base_url: str | None = None, api_key: str | None = None,
         requester_id: str | None = None, is_room_host: bool = False,
