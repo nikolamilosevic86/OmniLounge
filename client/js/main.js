@@ -14,6 +14,7 @@ import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppl
 import {
   formatModeLabel, parseChoicesInput, resolveCharacterMode,
   validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
+  MAX_KNOWLEDGE_DOCUMENTS, isKnowledgeBaseFull,
 } from './story.js';
 import { canSendChatMessage } from './chat.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
@@ -225,6 +226,7 @@ const characterConfigureBtn = document.getElementById('character-configure-btn')
 const characterKnowledgeBaseTitleInput = document.getElementById('character-knowledge-base-title-input');
 const characterKnowledgeBaseTitleBtn = document.getElementById('character-knowledge-base-title-btn');
 const knowledgeDocumentList = document.getElementById('knowledge-document-list');
+const knowledgeDocumentCount = document.getElementById('knowledge-document-count');
 const knowledgeDocumentTitleInput = document.getElementById('knowledge-document-title-input');
 const knowledgeDocumentTypeSelect = document.getElementById('knowledge-document-type-select');
 const knowledgeDocumentContentField = document.getElementById('knowledge-document-content-field');
@@ -864,6 +866,15 @@ function initGame() {
   knowledgeDocumentAddBtn?.addEventListener('click', () => {
     const objectId = characterNpcSelect?.value;
     if (!objectId) return;
+    const docId = state.editingKnowledgeDocId;
+    const documentCount = state.builderCharacters[objectId]?.knowledgeBase?.documents?.length ?? 0;
+    if (!docId && isKnowledgeBaseFull(documentCount)) {
+      if (knowledgeDocumentError) {
+        knowledgeDocumentError.textContent = `Knowledge base is full (${MAX_KNOWLEDGE_DOCUMENTS} documents). Remove a document to add a new one.`;
+        knowledgeDocumentError.classList.remove('hidden');
+      }
+      return;
+    }
     const title = knowledgeDocumentTitleInput?.value ?? '';
     const docType = knowledgeDocumentTypeSelect?.value ?? 'text';
     const content = knowledgeDocumentContentInput?.value ?? '';
@@ -877,7 +888,6 @@ function initGame() {
       return;
     }
     knowledgeDocumentError?.classList.add('hidden');
-    const docId = state.editingKnowledgeDocId;
     const eventName = docId
       ? 'room:character:knowledge_base:document:update'
       : 'room:character:knowledge_base:document:add';
@@ -897,8 +907,11 @@ function initGame() {
     });
   });
 
+
   knowledgeDocumentCancelBtn?.addEventListener('click', () => {
+    const objectId = characterNpcSelect?.value;
     exitKnowledgeDocumentEditMode();
+    renderKnowledgeDocumentList(objectId ? state.builderCharacters[objectId] : null);
   });
 
   knowledgeDocumentList?.addEventListener('click', (event) => {
@@ -2187,7 +2200,10 @@ function enterKnowledgeDocumentEditMode(doc) {
   updateKnowledgeDocumentFormFields();
   knowledgeDocumentError?.classList.add('hidden');
   if (knowledgeDocumentFormHeading) knowledgeDocumentFormHeading.textContent = 'Edit Document';
-  if (knowledgeDocumentAddBtn) knowledgeDocumentAddBtn.textContent = 'Update Document';
+  if (knowledgeDocumentAddBtn) {
+    knowledgeDocumentAddBtn.textContent = 'Update Document';
+    knowledgeDocumentAddBtn.disabled = false;
+  }
   knowledgeDocumentCancelBtn?.classList.remove('hidden');
 }
 
@@ -2223,7 +2239,16 @@ function renderKnowledgeDocumentList(character) {
           </div>
         </li>`).join('')
     : '<li class="kb-carbon__empty-hint">No documents yet.</li>';
+  if (knowledgeDocumentCount) {
+    const full = isKnowledgeBaseFull(documents.length);
+    knowledgeDocumentCount.textContent = `${documents.length} / ${MAX_KNOWLEDGE_DOCUMENTS} documents`;
+    knowledgeDocumentCount.classList.toggle('kb-carbon__count--full', full);
+  }
+  if (knowledgeDocumentAddBtn && !state.editingKnowledgeDocId) {
+    knowledgeDocumentAddBtn.disabled = isKnowledgeBaseFull(documents.length);
+  }
 }
+
 
 
 

@@ -29,6 +29,11 @@ export function parseChoicesInput(input) {
 export const KNOWLEDGE_DOC_TYPES = ['text', 'markdown', 'link'];
 export const MAX_KNOWLEDGE_DOC_TITLE_LENGTH = 120;
 export const MAX_KNOWLEDGE_DOC_CONTENT_LENGTH = 4000;
+export const MAX_KNOWLEDGE_DOCUMENTS = 20;
+
+export function isKnowledgeBaseFull(documentCount) {
+  return documentCount >= MAX_KNOWLEDGE_DOCUMENTS;
+}
 
 export function isValidKnowledgeDocType(docType) {
   return KNOWLEDGE_DOC_TYPES.includes(docType);

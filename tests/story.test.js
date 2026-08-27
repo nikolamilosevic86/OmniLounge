@@ -9,6 +9,8 @@ import {
   isValidKnowledgeDocType,
   validateKnowledgeDocumentInput,
   summarizeKnowledgeDocument,
+  MAX_KNOWLEDGE_DOCUMENTS,
+  isKnowledgeBaseFull,
 } from '../src/story.js';
 
 describe('CHARACTER_ROLES', () => {
@@ -174,3 +176,28 @@ describe('summarizeKnowledgeDocument', () => {
     expect(summarizeKnowledgeDocument(null)).toBe('');
   });
 });
+
+describe('MAX_KNOWLEDGE_DOCUMENTS', () => {
+  it('matches the server-side cap of 20 documents per character', () => {
+    expect(MAX_KNOWLEDGE_DOCUMENTS).toBe(20);
+  });
+});
+
+describe('isKnowledgeBaseFull', () => {
+  it('returns false when below the cap', () => {
+    expect(isKnowledgeBaseFull(19)).toBe(false);
+  });
+
+  it('returns true when at the cap', () => {
+    expect(isKnowledgeBaseFull(20)).toBe(true);
+  });
+
+  it('returns true when over the cap', () => {
+    expect(isKnowledgeBaseFull(21)).toBe(true);
+  });
+
+  it('returns false for an empty knowledge base', () => {
+    expect(isKnowledgeBaseFull(0)).toBe(false);
+  });
+});
+

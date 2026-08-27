@@ -2169,6 +2169,17 @@ a:focus-visible,
   margin: 0.5rem 0 0;
 }
 
+.kb-carbon__count {
+  font-size: 0.75rem;
+  color: var(--kb-gray-60);
+  margin: 0.25rem 0 0;
+}
+
+.kb-carbon__count--full {
+  color: var(--kb-red-60);
+  font-weight: 600;
+}
+
 .kb-carbon__field {
   display: flex;
   flex-direction: column;
