@@ -279,6 +279,7 @@ async def game_loop() -> None:
 
             moved_by_room[room_id] = moved
             await tick_guided_tours(room_id, now_ms)
+            await tick_escape_sessions(room_id, now_ms)
 
         # ── AI bot tick (lobby only) ─────────────────────────────────────────
         lobby = rooms.get_room("lobby")
@@ -848,6 +849,14 @@ def _is_room_host(sid: str, room_id: str) -> bool:
     return rooms.get_room_host_id(room_id) == sid
 
 
+def _display_name(sid: str, room_id: str) -> str:
+    room = rooms.get_room(room_id)
+    player = room.get_player(sid) if room else None
+    if player is None:
+        return sid
+    return player["avatar"]["username"]
+
+
 @sio.on("room:builder:request")
 async def room_builder_request(sid, data):
     room_id, tile, builder = _current_room_and_builder(sid)
@@ -1096,16 +1105,35 @@ async def room_object_interact(sid, data):
         return
 
     data = data or {}
+    now_ms = time.time() * 1000
     try:
         result = builder.interact_with_object(
             data["objectId"], data["interactionType"],
-            requester_id=sid, now_ms=time.time() * 1000,
+            requester_id=sid, now_ms=now_ms, display_name=_display_name(sid, room_id),
         )
     except (KeyError, PermissionError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)
         return
 
     await sio.emit("room:object:interacted", {"roomId": room_id, **result}, room=sid)
+
+    # A door with no `destinationTile` opening for the first time is a win
+    # trigger (design doc §5.1/§8.3); `mark_won` inside `attempt_open_door`
+    # is a no-op unless that visitor's session was `in_progress`, so check
+    # status afterwards rather than assuming every fresh open is a win.
+    payload = result.get("payload", {})
+    if (
+        result.get("objectType") == "escape_door"
+        and result.get("interactionType") == "attempt_open"
+        and payload.get("opened")
+        and not payload.get("alreadyOpen")
+        and payload.get("destinationTile") is None
+    ):
+        if builder.get_escape_status(sid, now_ms=now_ms)["state"] == "won":
+            won_payload = {"roomId": room_id, "displayName": _display_name(sid, room_id)}
+            await sio.emit("room:escape:won", won_payload, room=sid)
+            await sio.emit("room:escape:won", won_payload, room=room_channel(room_id), skip_sid=sid)
+
     return result
 
 
@@ -2226,6 +2254,258 @@ async def room_moderation_external_links_set(sid, data):
     result = {"allowed": moderation.are_external_links_allowed()}
     await sio.emit("room:moderation:external_links", result, room=room_channel(room_id))
     return result
+
+
+@sio.on("room:escape:configure")
+async def room_escape_configure(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        builder.configure_escape_session(
+            bool(data.get("enabled", False)), data["timeLimitMs"], briefing=data.get("briefing"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return True
+
+
+@sio.on("room:escape:start")
+async def room_escape_start(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    return builder.start_escape_session(sid, now_ms=time.time() * 1000)
+
+
+@sio.on("room:escape:status")
+async def room_escape_status(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    return builder.get_escape_status(sid, now_ms=time.time() * 1000)
+
+
+@sio.on("room:escape:reset")
+async def room_escape_reset(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    try:
+        builder.reset_escape_session(sid)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return True
+
+
+@sio.on("room:escape:leaderboard:list")
+async def room_escape_leaderboard_list(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    limit = (data or {}).get("limit", 10)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        limit = 10
+    return builder.escape_leaderboard(limit)
+
+
+@sio.on("room:puzzle:add")
+async def room_puzzle_add(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        puzzle = builder.add_puzzle(
+            data["puzzleId"], data["prompt"], data["answer"], hints=data.get("hints"),
+            reveal_item_id=data.get("revealItemId"), unlock_door_id=data.get("unlockDoorId"),
+            match_mode=data.get("matchMode", "exact"), max_attempts=data.get("maxAttempts"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return puzzle
+
+
+@sio.on("room:puzzle:remove")
+async def room_puzzle_remove(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        removed = builder.remove_puzzle(
+            data["puzzleId"], requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+    if not removed:
+        await sio.emit("error", {"message": "Unknown puzzle"}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return True
+
+
+@sio.on("room:puzzle:list")
+async def room_puzzle_list(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    return builder.list_puzzles()
+
+
+@sio.on("room:puzzle:attempt")
+async def room_puzzle_attempt(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        result = builder.attempt_solve_puzzle(
+            data["puzzleId"], requester_id=sid, guess=data["guess"], now_ms=time.time() * 1000,
+        )
+    except KeyError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return result
+
+
+@sio.on("room:puzzle:hint")
+async def room_puzzle_hint(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        result = builder.request_puzzle_hint(data["puzzleId"], requester_id=sid, now_ms=time.time() * 1000)
+    except (KeyError, PermissionError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return result
+
+
+@sio.on("room:puzzle:reset")
+async def room_puzzle_reset(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        builder.reset_puzzle_attempts(
+            data["puzzleId"], data["userId"], requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return True
+
+
+@sio.on("room:door:configure")
+async def room_door_configure(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        door = builder.configure_door(
+            data["objectId"], required_item_id=data.get("requiredItemId"),
+            required_puzzle_ids=data.get("requiredPuzzleIds"), destination_tile=data.get("destinationTile"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return door
+
+
+@sio.on("room:item:configure")
+async def room_item_configure(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        item = builder.configure_item(
+            data["objectId"], item_kind=data.get("itemKind"), single_use=data.get("singleUse"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return item
+
+
+@sio.on("room:inventory:list")
+async def room_inventory_list(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    return builder.list_inventory(sid)
+
+
+async def tick_escape_sessions(room_id: str, now_ms: float) -> None:
+    """Expire any escape-room session that has run past its configured time
+    limit (design doc §8.3), mirroring `tick_guided_tours`'s per-room,
+    per-tick, try/except-wrapped shape so one broken room can never take
+    down the shared game loop."""
+    builder = rooms.get_builder(room_id)
+    if builder is None:
+        return
+    try:
+        expired_user_ids = builder.expire_escape_sessions(now_ms)
+    except Exception:  # a broken tick must never take the whole game loop down
+        logger.exception("escape session tick failed for room %s", room_id)
+        return
+
+    for user_id in expired_user_ids:
+        await sio.emit("room:escape:expired", {"roomId": room_id}, room=user_id)
 
 
 socket_app = socketio.ASGIApp(sio, app)

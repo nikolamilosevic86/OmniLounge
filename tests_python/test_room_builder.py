@@ -1356,3 +1356,181 @@ class TestHasOpenedDoorWrapper:
         self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=0)
         assert self.builder.has_opened_door("door-1", "p2") is False
 
+
+# ─── Escape room: attempt_solve_puzzle auto-reveals reward item (§6.1) ─────
+# "reveal is driven purely by reveal_item_id" -- solving a puzzle must
+# reveal its configured reward item for that visitor without any separate
+# call, so the client-side "solve puzzle -> item appears" flow works with
+# nothing more than a single room:puzzle:attempt round trip.
+
+class TestAttemptSolvePuzzleRevealsRewardItem:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", reveal_item_id="key-1")
+
+    def test_correct_guess_reveals_the_reward_item_for_that_visitor(self):
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        visible = self.builder.list_objects(requester_id="p1")
+        assert any(o["objectId"] == "key-1" for o in visible)
+
+    def test_wrong_guess_does_not_reveal_the_reward_item(self):
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="5", now_ms=1)
+        visible = self.builder.list_objects(requester_id="p1")
+        assert not any(o["objectId"] == "key-1" for o in visible)
+
+    def test_reveal_is_per_visitor_not_room_wide(self):
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        visible_for_other = self.builder.list_objects(requester_id="p2")
+        assert not any(o["objectId"] == "key-1" for o in visible_for_other)
+
+    def test_puzzle_without_reveal_item_id_does_not_raise(self):
+        self.builder.add_puzzle("riddle-2", "3+3?", "6")
+        result = self.builder.attempt_solve_puzzle("riddle-2", requester_id="p1", guess="6", now_ms=1)
+        assert result["correct"] is True
+
+
+# ─── Escape room: puzzle authoring wrappers (§6.1, §9) ─────────────────────
+
+class TestPuzzleAuthoringWrappers:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_list_puzzles_returns_public_puzzles(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        puzzles = self.builder.list_puzzles()
+        assert len(puzzles) == 1
+        assert "answer" not in puzzles[0]
+
+    def test_remove_puzzle_removes_it(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        assert self.builder.remove_puzzle("riddle-1") is True
+        assert self.builder.list_puzzles() == []
+
+    def test_remove_unknown_puzzle_returns_false(self):
+        assert self.builder.remove_puzzle("ghost") is False
+
+    def test_request_puzzle_hint_returns_next_hint(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", hints=["It's even."])
+        result = self.builder.request_puzzle_hint("riddle-1", requester_id="p1", now_ms=0)
+        assert result["hint"] == "It's even."
+
+    def test_reset_puzzle_attempts_clears_lockout(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", max_attempts=1)
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="wrong", now_ms=1)
+        locked = self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=2)
+        assert locked["locked"] is True
+
+        self.builder.reset_puzzle_attempts("riddle-1", "p1")
+        unlocked = self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=3)
+        assert unlocked["correct"] is True
+
+    def test_add_puzzle_with_requester_id_and_no_room_host_is_rejected(self):
+        with pytest.raises(PermissionError):
+            self.builder.add_puzzle("riddle-1", "2+2?", "4", requester_id="p1", is_room_host=False)
+
+    def test_add_puzzle_with_room_host_succeeds(self):
+        result = self.builder.add_puzzle("riddle-1", "2+2?", "4", requester_id="host-1", is_room_host=True)
+        assert result["puzzleId"] == "riddle-1"
+
+    def test_remove_puzzle_with_requester_id_and_no_room_host_is_rejected(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        with pytest.raises(PermissionError):
+            self.builder.remove_puzzle("riddle-1", requester_id="p1", is_room_host=False)
+
+
+# ─── Escape room: session wrappers (§8, §9) ─────────────────────────────────
+
+class TestEscapeSessionWrappers:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_configure_escape_session_with_requester_id_and_no_room_host_is_rejected(self):
+        with pytest.raises(PermissionError):
+            self.builder.configure_escape_session(True, 60_000, requester_id="p1", is_room_host=False)
+
+    def test_configure_escape_session_with_room_host_succeeds(self):
+        self.builder.configure_escape_session(True, 60_000, requester_id="host-1", is_room_host=True)
+        status = self.builder.get_escape_status("p1", now_ms=0)
+        assert status["state"] == "not_started"
+
+    def test_escape_leaderboard_starts_empty(self):
+        assert self.builder.escape_leaderboard() == []
+
+    def test_reset_escape_session_clears_expired_session(self):
+        self.builder.configure_escape_session(True, 10, requester_id=None)
+        self.builder.start_escape_session("p1", now_ms=0)
+        assert self.builder.expire_escape_sessions(100) == ["p1"]
+        self.builder.reset_escape_session("p1")
+        assert self.builder.get_escape_status("p1", now_ms=200)["state"] == "not_started"
+
+    def test_list_inventory_returns_held_items(self):
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+        self.builder._escape.reveal_item("p1", "key-1")
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=0)
+        assert self.builder.list_inventory("p1") == ["key-1"]
+
+    def test_expire_escape_sessions_returns_overdue_user_ids(self):
+        self.builder.configure_escape_session(True, 10, requester_id=None)
+        self.builder.start_escape_session("p1", now_ms=0)
+        assert self.builder.expire_escape_sessions(100) == ["p1"]
+        assert self.builder.get_escape_status("p1", now_ms=200)["state"] == "expired"
+
+
+# ─── Escape room: door/item configure wrappers (§9) ────────────────────────
+
+class TestConfigureDoorAndItem:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20, created_by="alice",
+        )
+        self.builder.create_object(
+            "key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10, created_by="alice",
+        )
+
+    def test_configure_door_sets_required_item_and_destination_tile(self):
+        obj = self.builder.configure_door(
+            "door-1", required_item_id="key-1", destination_tile={"x": 1, "y": 0}, requester_id="alice",
+        )
+        assert obj["config"]["requiredItemId"] == "key-1"
+        assert obj["config"]["destinationTile"] == {"x": 1, "y": 0}
+
+    def test_configure_door_sets_required_puzzle_ids(self):
+        obj = self.builder.configure_door("door-1", required_puzzle_ids=["riddle-1"], requester_id="alice")
+        assert obj["config"]["requiredPuzzleIds"] == ["riddle-1"]
+
+    def test_configure_door_on_non_door_object_raises_value_error(self):
+        with pytest.raises(ValueError):
+            self.builder.configure_door("key-1", required_item_id="key-1")
+
+    def test_configure_door_requires_edit_permission(self):
+        with pytest.raises(PermissionError):
+            self.builder.configure_door("door-1", required_item_id="key-1", requester_id="mallory")
+
+    def test_configure_item_sets_item_kind_and_single_use(self):
+        obj = self.builder.configure_item("key-1", item_kind="key", single_use=False, requester_id="alice")
+        assert obj["config"]["itemKind"] == "key"
+        assert obj["config"]["singleUse"] is False
+
+    def test_configure_item_on_non_item_object_raises_value_error(self):
+        with pytest.raises(ValueError):
+            self.builder.configure_item("door-1", item_kind="key")
+
+    def test_configure_item_requires_edit_permission(self):
+        with pytest.raises(PermissionError):
+            self.builder.configure_item("key-1", item_kind="key", requester_id="mallory")
+
+    def test_single_use_false_item_remains_visible_after_pickup(self):
+        self.builder.configure_item("key-1", single_use=False, requester_id="alice")
+        self.builder._escape.reveal_item("p1", "key-1")
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=0)
+        visible = self.builder.list_objects(requester_id="p1")
+        assert any(o["objectId"] == "key-1" for o in visible)
+
+    def test_single_use_default_true_item_disappears_after_pickup(self):
+        self.builder._escape.reveal_item("p1", "key-1")
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=0)
+        visible = self.builder.list_objects(requester_id="p1")
+        assert not any(o["objectId"] == "key-1" for o in visible)
+

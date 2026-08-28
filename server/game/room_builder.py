@@ -340,7 +340,9 @@ class RoomBuilderState:
             return True
         object_id = record["objectId"]
         if self._inventory.has(requester_id, object_id):
-            return False  # already picked up -- would look duplicated in their own view
+            if record["config"].get("singleUse", True):
+                return False  # already picked up -- would look duplicated in their own view
+            return True  # singleUse=False items remain re-visible/re-collectible after pickup
         return self._escape.has_revealed(requester_id, object_id)
 
     def _require_object(self, object_id: str) -> dict[str, Any]:
@@ -1088,6 +1090,18 @@ class RoomBuilderState:
 
     # ── Escape room orchestration (design doc §6.1, §8) ──────────────────
 
+    def _require_room_host(self, requester_id: str | None, is_room_host: bool) -> None:
+        """Host-only gate for room-wide (non-object-bound) escape-room admin
+        actions -- puzzle authoring and escape-session configuration have no
+        single owning object for `_require_edit_permission` to check against,
+        so access is restricted to the room host, mirroring
+        `configure_character_generative_mode`'s existing room-host gate.
+        `requester_id is None` means a trusted/internal caller (existing
+        tests, server-side migrations) and is always allowed, matching the
+        same convention `_can_edit`/`list_objects` already use."""
+        if requester_id is not None and not is_room_host:
+            raise PermissionError("only the room host can manage this")
+
     def add_puzzle(
         self,
         puzzle_id: str,
@@ -1098,6 +1112,8 @@ class RoomBuilderState:
         unlock_door_id: str | None = None,
         match_mode: str = "exact",
         max_attempts: int | None = None,
+        requester_id: str | None = None,
+        is_room_host: bool = False,
     ) -> dict[str, Any]:
         """Thin orchestrator (design doc §6.1): `PuzzleEngine` has no
         reference to room objects and must not reach into `self._objects`
@@ -1106,6 +1122,7 @@ class RoomBuilderState:
         instead. `unlock_door_id` is validated *before* creating the puzzle
         so a bad reference never leaves a dangling puzzle definition behind.
         """
+        self._require_room_host(requester_id, is_room_host)
         if unlock_door_id is not None:
             self._require_object(unlock_door_id)
         result = self._puzzles.add_puzzle(
@@ -1117,14 +1134,47 @@ class RoomBuilderState:
             door_config.setdefault("requiredPuzzleIds", []).append(puzzle_id)
         return result
 
+    def remove_puzzle(
+        self, puzzle_id: str, requester_id: str | None = None, is_room_host: bool = False
+    ) -> bool:
+        self._require_room_host(requester_id, is_room_host)
+        return self._puzzles.remove_puzzle(puzzle_id)
+
+    def list_puzzles(self) -> list[dict[str, Any]]:
+        return self._puzzles.list_puzzles()
+
     def attempt_solve_puzzle(
         self, puzzle_id: str, requester_id: str, guess: str, now_ms: float
     ) -> dict[str, Any]:
-        return self._puzzles.attempt_solve(puzzle_id, requester_id, guess, now_ms)
+        result = self._puzzles.attempt_solve(puzzle_id, requester_id, guess, now_ms)
+        if result["correct"]:
+            # "reveal is driven purely by reveal_item_id" (§6.1) -- solving
+            # the puzzle is the reward trigger itself, so this is the one
+            # place that calls `reveal_item`, not a separate client round
+            # trip. Idempotent to call again on an already-solved re-check.
+            reveal_item_id = self._puzzles.get_puzzle_public(puzzle_id)["revealItemId"]
+            if reveal_item_id is not None:
+                self._escape.reveal_item(requester_id, reveal_item_id)
+        return result
+
+    def request_puzzle_hint(self, puzzle_id: str, requester_id: str, now_ms: float) -> dict[str, Any]:
+        return self._puzzles.request_hint(puzzle_id, requester_id, now_ms)
+
+    def reset_puzzle_attempts(
+        self, puzzle_id: str, user_id: str, requester_id: str | None = None, is_room_host: bool = False
+    ) -> None:
+        self._require_room_host(requester_id, is_room_host)
+        self._puzzles.reset_attempts(puzzle_id, user_id)
 
     def configure_escape_session(
-        self, enabled: bool, time_limit_ms: float, briefing: str | None = None
+        self,
+        enabled: bool,
+        time_limit_ms: float,
+        briefing: str | None = None,
+        requester_id: str | None = None,
+        is_room_host: bool = False,
     ) -> None:
+        self._require_room_host(requester_id, is_room_host)
         self._escape.configure(enabled, time_limit_ms, briefing)
 
     def start_escape_session(self, requester_id: str, now_ms: float) -> dict[str, Any]:
@@ -1133,12 +1183,72 @@ class RoomBuilderState:
     def get_escape_status(self, requester_id: str, now_ms: float) -> dict[str, Any]:
         return self._escape.status(requester_id, now_ms)
 
+    def reset_escape_session(self, requester_id: str) -> None:
+        """Self-serve retry (room:escape:reset, §9): a visitor may only ever
+        reset their own session, so no room-host gate is needed here --
+        `EscapeSessionEngine.reset` already restricts itself to that one
+        user_id's state and rejects an in-progress session with
+        `PermissionError` (§8.1)."""
+        self._escape.reset(requester_id)
+
+    def escape_leaderboard(self, limit: int = 10) -> list[dict[str, Any]]:
+        return self._escape.leaderboard(limit)
+
+    def expire_escape_sessions(self, now_ms: float) -> list[str]:
+        """Thin accessor so `server/main.py`'s game loop (§8.3) can expire
+        overdue sessions each tick, mirroring `tick_character_tours`'s
+        per-tick engine-driving wrappers, without reaching into `_escape`
+        directly."""
+        return self._escape.expire_overdue_sessions(now_ms)
+
+    def list_inventory(self, requester_id: str) -> list[str]:
+        return self._inventory.list_items(requester_id)
+
     def has_opened_door(self, object_id: str, requester_id: str) -> bool:
         """Thin accessor so `server/main.py`'s collision code (\u00a75.1) can
         check per-visitor door-open state without reaching into the private
         `_escape` engine directly -- the same discipline every other
         cross-module caller already follows."""
         return self._escape.has_opened(requester_id, object_id)
+
+    def configure_door(
+        self,
+        object_id: str,
+        required_item_id: str | None = None,
+        required_puzzle_ids: list[str] | None = None,
+        destination_tile: dict[str, int] | None = None,
+        requester_id: str | None = None,
+        is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_object(object_id)
+        if record["objectType"] != "escape_door":
+            raise ValueError(f"object {object_id} is not an escape_door")
+        self._require_edit_permission(record, requester_id, is_room_host)
+        if required_item_id is not None:
+            record["config"]["requiredItemId"] = required_item_id
+        if required_puzzle_ids is not None:
+            record["config"]["requiredPuzzleIds"] = list(required_puzzle_ids)
+        if destination_tile is not None:
+            record["config"]["destinationTile"] = destination_tile
+        return dict(record)
+
+    def configure_item(
+        self,
+        object_id: str,
+        item_kind: str | None = None,
+        single_use: bool | None = None,
+        requester_id: str | None = None,
+        is_room_host: bool = False,
+    ) -> dict[str, Any]:
+        record = self._require_object(object_id)
+        if record["objectType"] != "hidden_item":
+            raise ValueError(f"object {object_id} is not a hidden_item")
+        self._require_edit_permission(record, requester_id, is_room_host)
+        if item_kind is not None:
+            record["config"]["itemKind"] = item_kind
+        if single_use is not None:
+            record["config"]["singleUse"] = single_use
+        return dict(record)
 
     # ── Collision / interaction zone editor ──────────────────────────────
 
