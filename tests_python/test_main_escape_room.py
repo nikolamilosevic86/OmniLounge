@@ -71,6 +71,18 @@ class TestEscapeSessionHandlers:
 
         assert status["state"] == "in_progress"
 
+    async def test_start_before_escape_mode_is_configured_emits_error_not_a_crash(self, isolate_registry):
+        # PermissionError from EscapeSessionEngine.start()'s _require_enabled()
+        # guard must be caught here like every other handler that calls into
+        # an engine method that can raise, instead of propagating uncaught.
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+
+        result = await main_module.room_escape_start("p1", {})
+
+        assert result is None
+        assert _errors(fake_sio)
+
     async def test_status_includes_briefing_text(self, isolate_registry):
         rooms, fake_sio = isolate_registry
         room = rooms.create_room(host_id="host-1", name="Test Room")

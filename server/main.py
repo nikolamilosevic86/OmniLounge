@@ -2428,7 +2428,11 @@ async def room_escape_start(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
-    return builder.start_escape_session(sid, now_ms=time.time() * 1000)
+    try:
+        return builder.start_escape_session(sid, now_ms=time.time() * 1000)
+    except PermissionError as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
 
 
 @sio.on("room:escape:status")
