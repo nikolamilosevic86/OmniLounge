@@ -1133,6 +1133,13 @@ class RoomBuilderState:
     def get_escape_status(self, requester_id: str, now_ms: float) -> dict[str, Any]:
         return self._escape.status(requester_id, now_ms)
 
+    def has_opened_door(self, object_id: str, requester_id: str) -> bool:
+        """Thin accessor so `server/main.py`'s collision code (\u00a75.1) can
+        check per-visitor door-open state without reaching into the private
+        `_escape` engine directly -- the same discipline every other
+        cross-module caller already follows."""
+        return self._escape.has_opened(requester_id, object_id)
+
     # ── Collision / interaction zone editor ──────────────────────────────
 
     def create_zone(

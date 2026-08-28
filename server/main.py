@@ -134,12 +134,17 @@ async def broadcast_bubbles(room_id: str) -> None:
         await sio.emit("chat:bubbles", bubbles, room=player["id"])
 
 
-def _tile_collision_obstacles(room_id: str, tile: Any) -> list[dict[str, float]]:
+def _tile_collision_obstacles(room_id: str, tile: Any, requester_id: str | None = None) -> list[dict[str, float]]:
     """Builder-placed objects on a player's current tile must block movement
     just like the lobby's hardcoded furniture -- otherwise a room-builder
     user can place a table/sofa/etc. that players simply walk straight
     through. Returns a list of `{x, y, w, h}` AABBs for `move_by_direction`/
-    `move_toward` to treat as extra obstacles."""
+    `move_toward` to treat as extra obstacles.
+
+    `requester_id` (design doc feature_designs/escape_room_feature_design.md
+    §5.1) skips only `escape_door` objects that specific player has
+    personally opened, so the door keeps blocking every other visitor who
+    hasn't opened it themselves -- every other object type is unaffected."""
     builder = rooms.get_builder(room_id)
     if builder is None:
         return []
@@ -149,10 +154,16 @@ def _tile_collision_obstacles(room_id: str, tile: Any) -> list[dict[str, float]]
         tile_coord = (0, 0)
     if not (isinstance(tile_coord[0], int) and isinstance(tile_coord[1], int)):
         return []
-    return [
-        {"x": obj["x"], "y": obj["y"], "w": obj["width"], "h": obj["height"]}
-        for obj in builder.list_objects(tile=tile_coord)
-    ]
+    obstacles = []
+    for obj in builder.list_objects(tile=tile_coord):
+        if (
+            obj["objectType"] == "escape_door"
+            and requester_id is not None
+            and builder.has_opened_door(obj["objectId"], requester_id)
+        ):
+            continue
+        obstacles.append({"x": obj["x"], "y": obj["y"], "w": obj["width"], "h": obj["height"]})
+    return obstacles
 
 
 def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float) -> bool:
@@ -162,7 +173,7 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
     This must run for every player in the room, including the AI bot: only
     stamina regeneration is bot-exempt, not movement processing.
     """
-    extra_obstacles = _tile_collision_obstacles(room_id, player.get("tile"))
+    extra_obstacles = _tile_collision_obstacles(room_id, player.get("tile"), requester_id=player.get("id"))
 
     direction = player.get("direction", {"x": 0, "y": 0})
     if direction["x"] != 0 or direction["y"] != 0:

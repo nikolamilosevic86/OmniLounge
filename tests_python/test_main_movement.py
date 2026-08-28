@@ -290,3 +290,68 @@ class TestTileTransitionBroadcastsUpdatedTile:
             "room:state omitted the updated tile, so the client can never "
             "detect the transition and play the swoosh animation"
         )
+
+
+class TestEscapeDoorCollisionIsPerVisitor:
+    """server/main.py: `_tile_collision_obstacles` gains a `requester_id`
+    param (design doc feature_designs/escape_room_feature_design.md §5.1)
+    and skips only `escape_door` objects that specific player has personally
+    opened -- an escape_door blocks movement like any other object until the
+    requesting player opens it, and keeps blocking every other player who
+    hasn't opened it themselves."""
+
+    async def test_unopened_escape_door_blocks_movement(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = {"x": 300.0, "y": 300.0}
+
+        builder = rooms.get_builder("lobby")
+        # A full room-height wall segment, matching how an escape_door
+        # would realistically be sized to seal off a tile edge -- a small
+        # box would just trigger the existing anti-stuck wall-slide-around
+        # behavior (see TestTileTransitionEndToEnd) instead of testing that
+        # the door itself blocks the player.
+        builder.create_object("door-1", "escape_door", (0, 0), x=340.0, y=20.0, width=40.0, height=560.0)
+
+        player["direction"] = {"x": 1, "y": 0}
+        for _ in range(20):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+
+        assert player["position"]["x"] < 340.0
+
+    async def test_escape_door_opened_by_this_player_no_longer_blocks_them(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = {"x": 300.0, "y": 300.0}
+
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=340.0, y=20.0, width=40.0, height=560.0)
+        builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=0)
+
+        player["direction"] = {"x": 1, "y": 0}
+        for _ in range(80):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+
+        assert player["position"]["x"] > 400.0
+
+    async def test_escape_door_opened_by_another_player_still_blocks_this_one(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        rooms.join_room("p2", create_default_avatar("Bob"), "lobby")
+        room = rooms.get_room("lobby")
+        p2 = room.get_player("p2")
+        p2["position"] = {"x": 300.0, "y": 300.0}
+
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=340.0, y=20.0, width=40.0, height=560.0)
+        builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=0)
+
+        p2["direction"] = {"x": 1, "y": 0}
+        for _ in range(20):
+            main_module.apply_player_movement(room, "lobby", p2, now_ms=0)
+
+        assert p2["position"]["x"] < 340.0

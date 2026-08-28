@@ -1333,3 +1333,26 @@ class TestHiddenItemVisibility:
         objects = self.builder.list_objects()
         assert any(o["objectId"] == "key-1" for o in objects)
 
+
+# ─── Escape room: has_opened_door wrapper (design doc §5.1 collision) ──────
+# A thin, public accessor so `server/main.py`'s `_tile_collision_obstacles`
+# can check per-visitor door-open state without reaching into
+# `RoomBuilderState`'s private `_escape` engine directly (main.py never
+# touches any other engine's private attribute either).
+
+class TestHasOpenedDoorWrapper:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+
+    def test_has_opened_door_is_false_before_opening(self):
+        assert self.builder.has_opened_door("door-1", "p1") is False
+
+    def test_has_opened_door_is_true_after_attempt_open_succeeds(self):
+        self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=0)
+        assert self.builder.has_opened_door("door-1", "p1") is True
+
+    def test_has_opened_door_is_per_visitor(self):
+        self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=0)
+        assert self.builder.has_opened_door("door-1", "p2") is False
+
