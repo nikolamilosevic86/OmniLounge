@@ -10,6 +10,12 @@ export const ROOM_BOUNDS = {
 // Axis-aligned bounding boxes for impassable furniture.
 // Each entry is { x, y, w, h } in room pixel coords.
 // A player is treated as a point (their feet position).
+//
+// NOTE: these are the **lobby's** furniture only -- `room-renderer.js` only
+// draws them while `currentRoomId === 'lobby'`. Collision is server
+// authoritative (`server/game/movement.py`), where the equivalent list is
+// gated behind `include_lobby_obstacles`; do not apply these to custom rooms
+// or they become invisible walls players cannot see or walk through.
 export const OBSTACLES = [
   { id: 'sofa-left',    x:  48, y: 330, w: 166, h: 80  },  // left purple sofa
   { id: 'sofa-right',  x: 578, y: 330, w: 166, h: 80  },  // right pink sofa

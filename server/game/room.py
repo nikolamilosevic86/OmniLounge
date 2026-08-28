@@ -3,7 +3,13 @@ from typing import Any
 
 from server.config import BUBBLE_DURATION_MS, MAX_MESSAGES
 from server.game.chat import get_visible_messages, should_show_bubble
-from server.game.movement import calculate_distance, clamp_position, collides_with_obstacle, create_position
+from server.game.movement import (
+    LOBBY_ROOM_ID,
+    calculate_distance,
+    clamp_position,
+    collides_with_obstacle,
+    create_position,
+)
 
 MIN_PLAYER_SPAWN_DISTANCE = 34.0
 
@@ -37,11 +43,15 @@ class Room:
     def _pick_spawn_position(self) -> dict[str, float]:
         import random
 
+        # The hardcoded `OBSTACLES` are the lobby's own furniture and are only
+        # rendered there, so only the lobby needs to spawn around them.
+        in_lobby = self.id == LOBBY_ROOM_ID
+
         for _ in range(24):
             x = random.uniform(120, 360)
             y = random.uniform(380, 480)
             candidate = clamp_position(create_position(x, y))
-            if collides_with_obstacle(candidate["x"], candidate["y"]):
+            if collides_with_obstacle(candidate["x"], candidate["y"], include_lobby_obstacles=in_lobby):
                 continue
             if self._overlaps_existing_player(candidate):
                 continue
@@ -54,7 +64,7 @@ class Room:
             x = 400.0 + random.uniform(-80, 80)
             y = 520.0 + random.uniform(-50, 50)
             candidate = clamp_position(create_position(x, y))
-            if collides_with_obstacle(candidate["x"], candidate["y"]):
+            if collides_with_obstacle(candidate["x"], candidate["y"], include_lobby_obstacles=in_lobby):
                 continue
             if self._overlaps_existing_player(candidate):
                 continue

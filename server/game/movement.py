@@ -10,7 +10,18 @@ ROOM_BOUNDS = {
     "maxY": 580,
 }
 
-# Impassable furniture bounding boxes (x, y, w, h)
+# Impassable furniture bounding boxes (x, y, w, h) for the **lobby only**.
+#
+# These mirror the branded furniture `client/js/room-renderer.js` draws via
+# `drawFurniture(ctx)`, which it only ever does while `_isLobby` is true
+# (i.e. `currentRoomId === 'lobby'`). Custom/user-built rooms render an
+# empty room ready to be furnished through the room builder instead, so
+# they must NOT inherit these boxes -- doing so put invisible walls in every
+# custom room exactly where the lobby's sofas/table/DJ deck sit. Callers
+# opt out with `include_lobby_obstacles=False`; builder-placed furniture is
+# passed separately via `extra_obstacles`.
+LOBBY_ROOM_ID = "lobby"
+
 OBSTACLES = [
     {"id": "sofa-left",   "x":  48, "y": 330, "w": 166, "h": 80},
     {"id": "sofa-right",  "x": 578, "y": 330, "w": 166, "h": 80},
@@ -27,15 +38,22 @@ def _point_overlaps_obstacle(px: float, py: float, obstacle: dict[str, float], m
 
 
 def collides_with_obstacle(
-    px: float, py: float, margin: float = _MARGIN, extra_obstacles: list[dict[str, float]] | None = None,
+    px: float, py: float, margin: float = _MARGIN,
+    extra_obstacles: list[dict[str, float]] | None = None,
+    include_lobby_obstacles: bool = True,
 ) -> bool:
     """`extra_obstacles` lets callers (e.g. server/main.py) fold in dynamic,
     per-room/per-tile obstacles -- such as builder-placed furniture -- on top
     of the hardcoded lobby `OBSTACLES`, so players can't walk through them.
-    Each entry is an `{x, y, w, h}` axis-aligned bounding box."""
-    for o in OBSTACLES:
-        if _point_overlaps_obstacle(px, py, o, margin):
-            return True
+    Each entry is an `{x, y, w, h}` axis-aligned bounding box.
+
+    `include_lobby_obstacles=False` drops the hardcoded lobby furniture,
+    which is only rendered (and therefore should only collide) in the lobby
+    itself -- see the `OBSTACLES` comment above."""
+    if include_lobby_obstacles:
+        for o in OBSTACLES:
+            if _point_overlaps_obstacle(px, py, o, margin):
+                return True
     if extra_obstacles:
         for o in extra_obstacles:
             if _point_overlaps_obstacle(px, py, o, margin):
@@ -43,12 +61,20 @@ def collides_with_obstacle(
     return False
 
 
+def _all_obstacles(
+    extra_obstacles: list[dict[str, float]] | None, include_lobby_obstacles: bool,
+) -> list[dict[str, float]]:
+    base = list(OBSTACLES) if include_lobby_obstacles else []
+    return base + list(extra_obstacles or [])
+
+
 def _find_blocking_obstacle(
     px: float, py: float, margin: float = _MARGIN,
     extra_obstacles: list[dict[str, float]] | None = None,
     ignore: list[dict[str, float]] | None = None,
+    include_lobby_obstacles: bool = True,
 ) -> dict[str, float] | None:
-    for o in (list(OBSTACLES) + list(extra_obstacles or [])):
+    for o in _all_obstacles(extra_obstacles, include_lobby_obstacles):
         if ignore and o in ignore:
             continue
         if _point_overlaps_obstacle(px, py, o, margin):
@@ -59,6 +85,7 @@ def _find_blocking_obstacle(
 def resolve_collision(
     current: dict[str, float], desired: dict[str, float],
     extra_obstacles: list[dict[str, float]] | None = None,
+    include_lobby_obstacles: bool = True,
 ) -> dict[str, float]:
     # A builder can place a new object directly on top of a standing player
     # (there's no check preventing that), which would otherwise embed the
@@ -70,12 +97,15 @@ def resolve_collision(
     # back to blocking them on the very next call, so this never opens up a
     # way to walk through furniture under ordinary movement.
     embedded_in = [
-        o for o in (list(OBSTACLES) + list(extra_obstacles or []))
+        o for o in _all_obstacles(extra_obstacles, include_lobby_obstacles)
         if _point_overlaps_obstacle(current["x"], current["y"], o)
     ]
 
     def blocked(px: float, py: float) -> bool:
-        return _find_blocking_obstacle(px, py, extra_obstacles=extra_obstacles, ignore=embedded_in) is not None
+        return _find_blocking_obstacle(
+            px, py, extra_obstacles=extra_obstacles, ignore=embedded_in,
+            include_lobby_obstacles=include_lobby_obstacles,
+        ) is not None
 
     if not blocked(desired["x"], desired["y"]):
         return desired
@@ -99,7 +129,10 @@ def resolve_collision(
     step = calculate_distance(current, desired)
     if step <= 0:
         return current
-    blocking = _find_blocking_obstacle(desired["x"], desired["y"], extra_obstacles=extra_obstacles, ignore=embedded_in)
+    blocking = _find_blocking_obstacle(
+        desired["x"], desired["y"], extra_obstacles=extra_obstacles, ignore=embedded_in,
+        include_lobby_obstacles=include_lobby_obstacles,
+    )
     if blocking is not None:
         moving_vertically = desired["x"] == current["x"] and desired["y"] != current["y"]
         moving_horizontally = desired["y"] == current["y"] and desired["x"] != current["x"]
@@ -135,6 +168,7 @@ def calculate_distance(a: dict[str, float], b: dict[str, float]) -> float:
 def move_toward(
     current: dict[str, float], target: dict[str, float], step: float,
     extra_obstacles: list[dict[str, float]] | None = None,
+    include_lobby_obstacles: bool = True,
 ) -> dict[str, float]:
     dist = calculate_distance(current, target)
     if dist <= step:
@@ -145,12 +179,16 @@ def move_toward(
             "x": current["x"] + (target["x"] - current["x"]) * ratio,
             "y": current["y"] + (target["y"] - current["y"]) * ratio,
         }
-    return resolve_collision(current, desired, extra_obstacles=extra_obstacles)
+    return resolve_collision(
+        current, desired, extra_obstacles=extra_obstacles,
+        include_lobby_obstacles=include_lobby_obstacles,
+    )
 
 
 def move_by_direction(
     current: dict[str, float], direction: dict[str, float], step: float,
     extra_obstacles: list[dict[str, float]] | None = None,
+    include_lobby_obstacles: bool = True,
 ) -> dict[str, float]:
     dx = direction.get("x", 0)
     dy = direction.get("y", 0)
@@ -162,7 +200,7 @@ def move_by_direction(
     return resolve_collision(current, {
         "x": current["x"] + norm_x * step,
         "y": current["y"] + norm_y * step,
-    }, extra_obstacles=extra_obstacles)
+    }, extra_obstacles=extra_obstacles, include_lobby_obstacles=include_lobby_obstacles)
 
 
 def clamp_position(pos: dict[str, float]) -> dict[str, float]:

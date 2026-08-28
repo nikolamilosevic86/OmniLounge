@@ -180,3 +180,66 @@ class TestEmbeddedObstacleEscape:
         assert not collides_with_obstacle(current["x"], current["y"], extra_obstacles=[self.NEW_ITEM])
         # Must have been deflected around it, not passed through its center.
         assert current["x"] < self.NEW_ITEM["x"] + self.NEW_ITEM["w"] / 2 or current["y"] != self.NEW_ITEM["y"] + 10
+
+
+# A point sitting squarely inside the lobby's hardcoded "table" obstacle.
+INSIDE_LOBBY_TABLE = {"x": 400.0, "y": 390.0}
+
+
+class TestLobbyObstaclesAreLobbyOnly:
+    """The hardcoded `OBSTACLES` are the *lobby's* branded furniture -- the
+    client only ever draws them when `currentRoomId === 'lobby'`
+    (`room-renderer.js`: `if (_isLobby) drawFurniture(ctx)`). Applying them
+    to every room made custom/empty rooms contain invisible walls exactly
+    where the lobby's sofas/table/DJ deck sit, which players could not walk
+    through and could not see. Collision must therefore be opt-out per room."""
+
+    def test_lobby_table_still_blocks_by_default(self):
+        # Back-compat: existing callers that don't pass the flag are unaffected.
+        assert collides_with_obstacle(INSIDE_LOBBY_TABLE["x"], INSIDE_LOBBY_TABLE["y"]) is True
+
+    def test_lobby_table_does_not_block_when_lobby_obstacles_are_excluded(self):
+        assert collides_with_obstacle(
+            INSIDE_LOBBY_TABLE["x"], INSIDE_LOBBY_TABLE["y"], include_lobby_obstacles=False,
+        ) is False
+
+    def test_extra_obstacles_still_block_when_lobby_obstacles_are_excluded(self):
+        # Excluding the lobby furniture must not weaken builder-placed collision.
+        assert collides_with_obstacle(
+            120, 120, extra_obstacles=[CUSTOM_OBSTACLE], include_lobby_obstacles=False,
+        ) is True
+
+    def test_resolve_collision_walks_through_lobby_furniture_when_excluded(self):
+        # Start clear of the table's collision margin so this exercises
+        # ordinary blocking, not the "embedded in an obstacle" escape path.
+        current = {"x": 320.0, "y": 390.0}
+        desired = dict(INSIDE_LOBBY_TABLE)
+        assert resolve_collision(current, desired) != desired  # blocked in the lobby
+        assert resolve_collision(current, desired, include_lobby_obstacles=False) == desired
+
+    def test_move_by_direction_walks_through_lobby_furniture_when_excluded(self):
+        current = {"x": 320.0, "y": 390.0}
+        result = move_by_direction(
+            current, {"x": 1, "y": 0}, 80, include_lobby_obstacles=False,
+        )
+        assert result["x"] == 400.0
+
+    def test_move_toward_walks_through_lobby_furniture_when_excluded(self):
+        current = {"x": 320.0, "y": 390.0}
+        result = move_toward(
+            current, INSIDE_LOBBY_TABLE, 80, include_lobby_obstacles=False,
+        )
+        assert result == INSIDE_LOBBY_TABLE
+
+    def test_embedded_escape_still_works_when_lobby_obstacles_are_excluded(self):
+        # The "walk out of an object placed on top of you" behavior must
+        # survive the flag being threaded through resolve_collision.
+        item = {"id": "builder-item", "x": 200.0, "y": 200.0, "w": 60.0, "h": 60.0}
+        current = {"x": 230.0, "y": 230.0}
+        for _ in range(30):
+            current = move_by_direction(
+                current, {"x": 1, "y": 0}, 4, extra_obstacles=[item], include_lobby_obstacles=False,
+            )
+        assert not collides_with_obstacle(
+            current["x"], current["y"], extra_obstacles=[item], include_lobby_obstacles=False,
+        )

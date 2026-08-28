@@ -423,3 +423,73 @@ class TestAreaEnterTriggersFireDuringMovement:
 
         assert moved is False
         assert fired_triggers == []
+
+
+class TestLobbyFurnitureDoesNotBlockOtherRooms:
+    """Reported bug: "even in the empty rooms there are some invisible
+    objects (like on locations same as lounge), where avatar cannot move
+    through".
+
+    The hardcoded `movement.OBSTACLES` are the *lobby's* branded sofas /
+    coffee table / DJ deck, and the client only draws them while
+    `currentRoomId === 'lobby'`. The server, however, applied them to every
+    room and every tile, so a brand-new empty room contained four invisible
+    walls at the lobby's furniture coordinates. `apply_player_movement` must
+    therefore only apply them in the lobby itself."""
+
+    TABLE_START = {"x": 320.0, "y": 390.0}  # just left of the lobby coffee table
+
+    def _empty_room(self, rooms, player_id="p1"):
+        """A brand-new, unfurnished custom room -- the exact scenario in the
+        bug report. Returns `(room_id, room, player)`."""
+        summary = rooms.create_room(player_id, "Study Hall")
+        room_id = summary["id"]
+        rooms.join_room(player_id, create_default_avatar("Alice"), room_id)
+        room = rooms.get_room(room_id)
+        return room_id, room, room.get_player(player_id)
+
+    def _walk_right(self, room, room_id, player, ticks=60):
+        player["direction"] = {"x": 1, "y": 0}
+        for _ in range(ticks):
+            main_module.apply_player_movement(room, room_id, player, now_ms=0)
+
+    async def test_player_walks_straight_through_phantom_furniture_in_a_custom_room(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        room_id, room, player = self._empty_room(rooms)
+        player["position"] = dict(self.TABLE_START)
+
+        self._walk_right(room, room_id, player)
+
+        # Crossed the full width of the lobby table (x 348..452) without
+        # being deflected off its y row.
+        assert player["position"]["x"] > 452.0
+        assert player["position"]["y"] == self.TABLE_START["y"]
+
+    async def test_lobby_still_blocks_its_own_furniture(self, isolate_registry):
+        # Regression guard: the lobby's visible furniture must keep colliding.
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = dict(self.TABLE_START)
+
+        self._walk_right(room, "lobby", player, ticks=10)
+
+        assert player["position"]["y"] != self.TABLE_START["y"], (
+            "player walked through the lobby coffee table instead of around it"
+        )
+
+    async def test_builder_objects_still_block_in_a_custom_room(self, isolate_registry):
+        # Dropping the phantom lobby furniture must not weaken real,
+        # builder-placed collision in custom rooms.
+        rooms, _fake_sio = isolate_registry
+        room_id, room, player = self._empty_room(rooms)
+        player["position"] = {"x": 300.0, "y": 300.0}
+
+        builder = rooms.get_builder(room_id)
+        builder.create_object("wall-1", "bookshelf", (0, 0), x=340.0, y=20.0, width=40.0, height=560.0)
+
+        self._walk_right(room, room_id, player)
+
+        assert player["position"]["x"] < 340.0
+

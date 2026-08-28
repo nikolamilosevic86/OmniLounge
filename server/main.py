@@ -24,7 +24,7 @@ from server.game.combat import (
 )
 from server.game.ai_bot import AIBot, BOT_ID, BOT_AVATAR
 from server.game.moderation import contains_external_link
-from server.game.movement import move_by_direction, move_toward
+from server.game.movement import LOBBY_ROOM_ID, move_by_direction, move_toward
 from server.game.metrics import MetricsCollector
 from server.game.room import Room
 from server.game.rooms_registry import RoomsRegistry
@@ -203,10 +203,19 @@ def apply_player_movement(
     without every other caller of this function having to change.
     """
     extra_obstacles = _tile_collision_obstacles(room_id, player.get("tile"), requester_id=player.get("id"))
+    # `movement.OBSTACLES` are the *lobby's* branded sofas/table/DJ deck, which
+    # `client/js/room-renderer.js` only draws while `currentRoomId === 'lobby'`.
+    # Applying them everywhere put invisible, unwalkable boxes in every custom
+    # room at the lobby's furniture coordinates; custom rooms get their
+    # collision from builder-placed objects (`extra_obstacles`) alone.
+    in_lobby = room_id == LOBBY_ROOM_ID
 
     direction = player.get("direction", {"x": 0, "y": 0})
     if direction["x"] != 0 or direction["y"] != 0:
-        new_pos = move_by_direction(player["position"], direction, MOVE_SPEED, extra_obstacles=extra_obstacles)
+        new_pos = move_by_direction(
+            player["position"], direction, MOVE_SPEED,
+            extra_obstacles=extra_obstacles, include_lobby_obstacles=in_lobby,
+        )
         transition = rooms.transition_player_tile_if_needed(player["id"], room_id, new_pos)
         if transition:
             player["tile"] = transition["tile"]
@@ -221,7 +230,10 @@ def apply_player_movement(
 
     target = player.get("targetPosition")
     if target:
-        new_pos = move_toward(player["position"], target, MOVE_SPEED, extra_obstacles=extra_obstacles)
+        new_pos = move_toward(
+            player["position"], target, MOVE_SPEED,
+            extra_obstacles=extra_obstacles, include_lobby_obstacles=in_lobby,
+        )
         transition = rooms.transition_player_tile_if_needed(player["id"], room_id, new_pos)
         if transition:
             player["tile"] = transition["tile"]
