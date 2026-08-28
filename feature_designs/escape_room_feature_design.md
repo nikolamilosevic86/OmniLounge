@@ -114,6 +114,8 @@ and all(puzzles.is_solved(pid, user_id) for pid in requiredPuzzleIds)
 ```
 This is a strict **AND** across both conditions — an author configuring both a required item and required puzzles means a visitor needs *all* of them, not just one. If neither field is set, the door has no gate and opens unconditionally on first attempt (useful for a final "free exit" door with no further puzzle). This is the same logic §4.1 step 3 refers back to.
 
+**Multiple win-doors are OR-gated, not AND-gated.** `mark_won` (§8.1/§8.3) fires the first time *any* `escape_door` with no `destinationTile` opens for a visitor; it is idempotent and safe to call again if the visitor later opens a second such door. A room with several independent "final" doors therefore lets a visitor win via whichever one they reach first — they are alternate/redundant exits, not a checklist that must all be opened. A creator who wants a *staged* goal ("open door A, which leads to a second room containing door B, the real exit") must chain them with `destinationTile` rather than placing multiple unconfigured win-doors in the same room, since only a door that actually lacks a `destinationTile` counts as a win trigger.
+
 Gameplay-lock vs edit-lock: `escape_door` deliberately does **not** reuse `RoomBuilderState.isLocked`/`set_locked`, because that field already means "an editor cannot move/delete/resize this object" (`_require_unlocked` in `delete_object`/move/resize handlers). Overloading it would mean an author's escape door became un-editable the moment gameplay locked it, or (worse) a player "unlocking" it during play would accidentally grant editors the ability to move it. A door's open/closed state is therefore tracked entirely outside the object record, in `EscapeSessionEngine` (§8.1), keyed per `(object_id, user_id)` — the same kind of external, per-user-keyed runtime state `StoryEngine._progress` already keeps separate from its own node definitions (§3.1).
 
 Collision: an `escape_door` a given visitor has not yet opened remains a solid AABB obstacle for that visitor, exactly like any other object — `server/main.py: _tile_collision_obstacles` already turns every object in `RoomBuilderState.list_objects` into a blocking box with no per-type special-casing needed. Per §3.1, this function gains a `requester_id` parameter (it is already called once per player per movement tick from inside `apply_player_movement`, so the caller already has this value on hand) and skips only `escape_door` objects where `escape_session.has_opened(requester_id, object_id)` is `True` — so the door keeps blocking every other visitor who hasn't opened it themselves. This is the one behavioral change to an existing function; every other object type is completely unaffected.
@@ -134,7 +136,17 @@ Config fields — again, only the authored blueprint, per §3.1:
 
 Whether the item is currently revealed is **not** stored on the object at all — it is per-visitor runtime state on `EscapeSessionEngine` (§8.1), exactly like `escape_door`'s open state. A hidden item is revealed for visitor `user_id` via `escape_session.reveal_item(user_id, object_id)`, settable from three places, matching §4.1's three puzzle-authoring paths: a solved puzzle's reward, a fired area trigger's `reveal_object` payload (§6.3), or a story node's `knowledge_check` success branch (§6.4).
 
-**Server-side visibility, not client-side hiding.** An unrevealed `hidden_item` must never be sent to a visitor's client at all — not even with a "don't render this" flag — because a visitor could otherwise discover its exact position by inspecting network traffic before solving anything, defeating the entire puzzle. `RoomBuilderState.list_objects_for_tiles` (and `list_objects`) therefore gain a `requester_id`/`is_room_host` pair of parameters: for a normal play-mode visitor, any `hidden_item` not yet revealed for that `requester_id` is omitted from the returned list entirely; for `is_room_host` (build-mode/editor) calls, every `hidden_item` is always included (shown with a distinct "hidden until revealed" badge in the builder UI, §10) so authors can find and edit it. This is the same never-trust-the-client discipline already applied to puzzle answers (§6.1) and AI character API keys (`StoryEngine._public_character`).
+**Once picked up, an item leaves that visitor's world view.** After `InventoryEngine.grant` succeeds (§7), the item is granted but must not keep appearing as a loose, pick-up-able object in that same visitor's room view — otherwise it would look duplicated (once lying on the floor, once in the HUD strip). `list_objects_for_tiles`'s per-visitor filter (below) therefore also omits any `hidden_item` the requesting visitor already holds (`inventory.has(requester_id, object_id)`), in addition to omitting ones they haven't revealed yet; the item remains fully visible to other visitors who have separately revealed their own copy of the puzzle chain, since reveal/hold state never crosses between visitors (§3.1).
+
+**Server-side visibility, not client-side hiding.** An unrevealed `hidden_item` must never be sent to a visitor's client at all — not even with a "don't render this" flag — because a visitor could otherwise discover its exact position by inspecting network traffic before solving anything, defeating the entire puzzle. `RoomBuilderState.list_objects_for_tiles` (and `list_objects`) therefore gain a `requester_id`/`is_room_host` pair of parameters: for a normal play-mode visitor, any `hidden_item` not yet revealed for that `requester_id`, or already picked up by them, is omitted from the returned list entirely; for `is_room_host` (build-mode/editor) calls, every `hidden_item` is always included (shown with a distinct "hidden until revealed" badge in the builder UI, §10) so authors can find and edit it. This is the same never-trust-the-client discipline already applied to puzzle answers (§6.1) and AI character API keys (`StoryEngine._public_character`).
+
+### 5.3 Object Deletion Cleanup
+
+`RoomBuilderState.delete_object` already special-cases `ai_character` deletion, calling both `self._guide.discard(object_id)` and `self._story.remove_character(object_id, object_id)` so a deleted character's runtime state doesn't linger. This feature extends that same cleanup step, following the identical "delete the object, then let every engine that might reference it discard its own records" pattern, rather than a new deletion pathway:
+
+- Deleting a **`hidden_item`**: call `self._inventory.revoke_all_for_object(object_id)` (§7) so nobody keeps a phantom key for an item that no longer exists, and clear any `reveal_item`/`has_revealed` entries for that `object_id` on `EscapeSessionEngine` (§8.1) for every visitor.
+- Deleting an **`escape_door`**: clear any `open_door`/`has_opened` entries for that `object_id` on `EscapeSessionEngine` for every visitor, and if the door was the sole win condition for the room, no special handling is needed beyond that — a visitor who already won keeps their recorded leaderboard entry (§8.4), since `record_attempt` has already fired and is not retroactively undone by a later edit.
+- Deleting **any object with a bound `config.get("puzzleId")`** (§6.2): if no other object still references that `puzzle_id`, call `self._puzzles.remove_puzzle(puzzle_id)` so a dangling puzzle definition doesn't accumulate; if another object (or an `ai_character`'s `guardsPuzzleId`, §6.5) still references the same `puzzle_id`, the puzzle definition is left intact.
 
 ## 6. Puzzle Authoring Paths (reusing existing systems)
 
@@ -172,6 +184,8 @@ Answer comparison is case-insensitive and whitespace-trimmed by default (`match_
 **Attempt lockout.** A puzzle configured with `max_attempts` stops accepting guesses from a user once they exhaust it (`attempt_solve` returns `locked: True` instead of checking the guess); only a room editor can clear that lockout for that one visitor via `reset_attempts` / the `room:puzzle:reset` event (§9), so a locked-out visitor cannot brute-force further but also isn't permanently blocked without recourse.
 
 **Reconciling `reveal_item_id`/`unlock_door_id` with the door's own `requiredPuzzleIds`.** A puzzle's `reveal_item_id`/`unlock_door_id` and a door's `requiredPuzzleIds` describe the *same* authored relationship from opposite ends, which could drift out of sync if set independently. To avoid that, these are never edited as two separate raw fields: the builder's puzzle-authoring panel's "reward" picker (§4.1 step 5) is the single UI action that sets both sides atomically — choosing "reveal this hidden item" as a puzzle's reward sets the puzzle's `reveal_item_id` and nothing further is needed on the item itself (reveal is driven purely by `reveal_item_id`, not by any field stored on the `hidden_item`); choosing "unlock this door" sets the puzzle's `unlock_door_id` *and* appends this puzzle's id into that door's `requiredPuzzleIds` server-side in the same call. `requiredPuzzleIds` on the door remains the single source of truth `attempt_open` actually evaluates (§5.1); `unlock_door_id` on the puzzle is purely a convenience back-reference the builder UI uses to show "this puzzle unlocks: Vault Door" without a separate lookup.
+
+This atomic, two-sided wiring cannot live inside `PuzzleEngine.add_puzzle` itself, since `PuzzleEngine` has no reference to room objects and must not reach into `RoomBuilderState._objects` to stay a small, independently-testable module (mirroring how `GuideEngine`/`StoryEngine` never touch `_objects` directly either). Instead, `RoomBuilderState` gains a thin orchestrator method, `add_puzzle(...)`, that calls `self._puzzles.add_puzzle(...)` and then, only if `unlock_door_id` is supplied, appends the new puzzle id into `self._objects[unlock_door_id]["config"]["requiredPuzzleIds"]` directly. This is the same "engine owns its own state, `RoomBuilderState` owns cross-engine orchestration" division of responsibility already established by `create_object`'s auto-provisioning of a `StoryEngine` character for every new `ai_character` and by `configure_character`'s upsert logic (§1).
 
 `RoomBuilderState` owns one `PuzzleEngine` instance per room (`self._puzzles = PuzzleEngine()` in `__init__`, next to `self._story`/`self._guide`), the same ownership pattern already used for every other per-room engine.
 
@@ -212,15 +226,30 @@ One instance per room, owned by `RoomBuilderState` exactly like `PuzzleEngine`/`
 
 ```python
 class EscapeSessionEngine:
+    def __init__(self) -> None:
+        self._attempts: list[dict] = []  # ordered leaderboard entries, appended by record_attempt (§3, §8.4)
+
     def configure(self, enabled: bool, time_limit_ms: float, briefing: str | None) -> None: ...
-    def start(self, user_id: str, now_ms: float) -> dict:  # per-user attempt clock
+    def start(self, user_id: str, now_ms: float) -> dict:
+        # per-user attempt clock; a no-op returning the current status if already in_progress,
+        # so a visitor double-clicking Start (or reconnecting mid-session) can never reset their
+        # own clock back to full time (§16 Q2 covers the separate, explicit reset flow below)
     def status(self, user_id: str, now_ms: float) -> dict:
         # {"state": "not_started"|"in_progress"|"won"|"expired", "remainingMs": float}
-    def mark_won(self, user_id: str, now_ms: float) -> dict:  # called when the last required escape_door opens
+    def mark_won(self, user_id: str, display_name: str, now_ms: float) -> dict:
+        # called once, when the visitor's session transitions in_progress -> won (i.e. the last
+        # required escape_door opens for them); computes elapsed_ms from this session's own
+        # start_ms and calls record_attempt itself, so callers never separately compute elapsed
+        # time or forget to record a leaderboard entry
     def record_attempt(self, user_id: str, display_name: str, elapsed_ms: float) -> None:
-        # appended to an ordered leaderboard list, same append-then-sort pattern as
-        # RoomBuilderState._versions
+        # invoked only from mark_won; appended to an ordered leaderboard list, same
+        # append-then-sort pattern as RoomBuilderState._versions
     def leaderboard(self, limit: int = 10) -> list[dict]: ...
+    def reset(self, user_id: str) -> None:
+        # clears this visitor's timer plus every per-visitor flag below (reveal/open state);
+        # only callable when that visitor's own state is "not_started" or "expired" -- resetting
+        # an "in_progress" session is rejected (PermissionError) so a visitor can never use reset
+        # to dodge a bad guess's rate limit or claim a fresh leaderboard run mid-attempt (§9, §16 Q2)
 
     # Per-visitor live progress (§3.1) -- kept here, alongside the timer, rather than on the
     # objects themselves, mirroring StoryEngine's separation of node definitions from _progress:
@@ -235,9 +264,9 @@ Per-user (not room-wide) timers are the default because OmniLaunge rooms are per
 `server/main.py`'s existing `game_loop()` already ticks per-room, per-frame concerns (see `tick_guided_tours`). A new `tick_escape_sessions(room_id, now_ms)` follows the exact same shape: for each in-progress session past its `time_limit_ms`, transition it to `expired` and emit a lightweight `room:escape:expired` event to that user only — mirroring how `room:npc:moved` is a targeted, lightweight event rather than a full state rebroadcast.
 
 ### 8.3 Winning
-When `escape_door`'s `attempt_open` interaction succeeds for a visitor (per the unlock formula in §5.1), `RoomBuilderState` calls `self._escape.open_door(requester_id, object_id)` (§8.1) so the door stops blocking that visitor from now on, then: if `destinationTile` is unset, calls `mark_won(requester_id, now_ms)` and that is the win condition; if set, the visitor also transitions tiles via the existing tile-crossing path, and the room is "escaped" as a bonus rather than the sole win condition — supporting the "escape door leads to the next themed room" chained-rooms pattern from §4.2 without any new spatial code.
+When `escape_door`'s `attempt_open` interaction succeeds for a visitor (per the unlock formula in §5.1), `RoomBuilderState` calls `self._escape.open_door(requester_id, object_id)` (§8.1) so the door stops blocking that visitor from now on, then: if `destinationTile` is unset, calls `mark_won(requester_id, display_name, now_ms)` (the visitor's already-known display name, the same one every other room-presence event already carries — no new lookup required) and that single call both marks the win and records the leaderboard entry (§8.1); if `destinationTile` is set instead, the visitor also transitions tiles via the existing tile-crossing path, and the room is "escaped" as a bonus rather than the sole win condition — supporting the "escape door leads to the next themed room" chained-rooms pattern from §4.2 without any new spatial code.
 
-**Expiry does not retroactively block opening, but it does block winning.** Per the genre principle in §2.1 that a room stays explorable after time runs out, a visitor whose session has already transitioned to `expired` may still solve puzzles and open doors — nothing about gameplay is hard-gated by the timer. However, `mark_won`/`record_attempt` are only ever called while that visitor's session state is `in_progress`; if it is already `expired`, opening the final door still unlocks it mechanically (so the visitor isn't stuck) but is not recorded as a win and does not appear on the leaderboard. Puzzle attempts, hint requests, and item pickups are likewise never blocked by session state (`not_started`/`expired`) — the timer only gates leaderboard eligibility, not the ability to keep playing.
+**Expiry does not retroactively block opening, but it does block winning.** Per the genre principle in §2.1 that a room stays explorable after time runs out, a visitor whose session has already transitioned to `expired` may still solve puzzles and open doors — nothing about gameplay is hard-gated by the timer. However, `mark_won` is only ever called while that visitor's session state is `in_progress`; if it is already `expired`, opening the final door still unlocks it mechanically (so the visitor isn't stuck) but does not transition to `won` and does not record a leaderboard entry. Puzzle attempts, hint requests, and item pickups are likewise never blocked by session state (`not_started`/`expired`) — the timer only gates leaderboard eligibility, not the ability to keep playing.
 
 ### 8.4 Leaderboard
 Purely additive: an ordered list of `{displayName, elapsedMs, completedAtMs}`, exposed read-only via `room:escape:leaderboard:list`. In-memory for MVP (matches every other engine in this codebase, all of which are in-memory pending the Phase A persistence work already tracked in [educational_rooms_feature_design.md](educational_rooms_feature_design.md) §16); persisting it is a natural, low-risk Phase 2 add-on once/if a `room_versions`-style table is extended.
@@ -254,11 +283,13 @@ Following the exact naming and payload conventions of the existing `room:charact
 | `room:escape:expired` | server → client | Game-loop tick informs a visitor their time ran out |
 | `room:escape:won` | server → client | Broadcast (to the winner, and optionally room-wide as a celebratory toast that omits any spoiler detail) when that visitor opens their winning door |
 | `room:escape:leaderboard:list` | client → server | Fetch top completion times |
+| `room:escape:reset` | client → server | Self-serve retry: clears the requester's own timer, solved puzzles, revealed items, and opened doors, per `EscapeSessionEngine.reset` (§8.1). Rejected with `PermissionError` while that visitor's state is `in_progress`, so it can only be used after finishing (`won`) or timing out (`expired`), never mid-attempt |
 | `room:puzzle:add` / `:remove` / `:list` | client → server | Author puzzles (edit-permission gated) |
 | `room:puzzle:attempt` | client → server | Submit a guess; returns `{correct, attemptsRemaining, alreadySolved, locked}` — **never** the answer |
 | `room:puzzle:hint` | client → server | Same shape as `room:character:ask`'s rate-limited pattern; returns the next hint string |
 | `room:puzzle:reset` | client → server | Edit-permission gated; clears one visitor's exhausted attempt count for a puzzle without clearing their solved state (§6.1) |
-| `room:door:configure` | client → server | Set `requiredItemId`/`requiredPuzzleIds`/`destinationTile` on an `escape_door` |
+| `room:door:configure` | client → server | Set `requiredItemId`/`requiredPuzzleIds`/`destinationTile` on an `escape_door` (edit-permission gated) |
+| `room:item:configure` | client → server | Set `itemKind`/`singleUse` on a `hidden_item` (edit-permission gated) — the item-side counterpart to `room:door:configure`, following the same per-object-type "Configure" event convention already used for bookshelf/tv/music_player |
 | `room:door:attempt_open` | client → server | Also reachable via the generic `room:object:interact` with `interactionType: "attempt_open"`, consistent with every other object's interaction dispatch |
 | `room:item:pick_up` | client → server | Also reachable via `room:object:interact` with `interactionType: "pick_up"`, same as above |
 | `room:inventory:list` | client → server | Fetch the requester's current held items for the HUD |
@@ -313,7 +344,7 @@ This example uses **zero new content types** — book, character, table, and doo
 
 - **Answers never leave the server.** `PuzzleEngine.get_puzzle_public` strips `answer`, matching the existing `StoryEngine._public_character` discipline of never returning `apiKey`.
 - **Rate-limit guesses.** `attempt_solve` uses the existing `SlidingWindowRateLimiter` (already used for generative AI calls) per `(puzzle_id, user_id)`, so a short numeric code cannot be brute-forced by an automated script.
-- **Server-authoritative reveal/unlock state.** `isRevealed`/`isOpen` are only ever flipped by server-side puzzle/trigger logic, never by a raw client-sent field — the same validated-input discipline already enforced by `RoomObjectPlacementModel` and the "reject non-numeric input" bug-fix history visible in this repo's commit log.
+- **Server-authoritative reveal/unlock state.** Per-visitor reveal and open flags are only ever flipped by server-side puzzle/trigger/door logic calling `EscapeSessionEngine.reveal_item`/`open_door` (§8.1), never by a raw client-sent field — the same validated-input discipline already enforced by `RoomObjectPlacementModel` and the "reject non-numeric input" bug-fix history visible in this repo's commit log.
 - **Edit-permission-gated authoring, learner-open gameplay.** Adding/editing puzzles and doors requires the same `_require_edit_permission` check as every other object edit; *attempting* a puzzle or door is intentionally open to any room visitor, mirroring the existing precedent that *starting a guided tour* is not permission-gated even though *authoring* one is (see [docs/08-ai-characters.md](../docs/08-ai-characters.md) §"Guided tours").
 - **No SSRF/URL surface added.** This feature introduces no new external URL fields, so `is_safe_external_url` is not implicated — puzzles are pure text/number matching.
 - **Unrevealed items are never transmitted, not just unrendered.** As in §5.2, an undiscovered `hidden_item`'s position and existence are withheld server-side (filtered out of `list_objects_for_tiles` for that visitor) rather than sent to the client with a "please don't draw this" flag, which would leak its location to anyone inspecting network traffic.
@@ -325,18 +356,22 @@ Following the existing style in `server/db/schema.sql` (the current schema alrea
 
 ```sql
 CREATE TABLE IF NOT EXISTS room_puzzles (
-    id            VARCHAR PRIMARY KEY,
-    room_id       VARCHAR NOT NULL REFERENCES rooms(id),
-    prompt        TEXT NOT NULL,
-    answer_hash   VARCHAR NOT NULL,      -- never store plaintext answers
-    match_mode    VARCHAR NOT NULL DEFAULT 'exact',
-    hints         JSONB NOT NULL DEFAULT '[]',
-    reveal_item_id VARCHAR,
-    unlock_door_id VARCHAR,
-    max_attempts  INT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id               VARCHAR PRIMARY KEY,
+    room_id          VARCHAR NOT NULL REFERENCES rooms(id),
+    prompt           TEXT NOT NULL,
+    match_mode       VARCHAR NOT NULL DEFAULT 'exact',  -- 'exact' | 'numeric' | 'contains'
+    answer_hash      VARCHAR,               -- normalized-answer hash; set when match_mode is 'exact' or 'numeric'
+    answer_encrypted VARCHAR,               -- app-key-encrypted (reversible) plaintext; set when match_mode is 'contains'
+    hints            JSONB NOT NULL DEFAULT '[]',
+    reveal_item_id   VARCHAR,
+    unlock_door_id   VARCHAR,
+    max_attempts     INT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+```
+**Why two answer columns.** `"exact"`/`"numeric"` matching only ever needs to compare a normalized guess against a known normalized answer, so a one-way hash (the same discipline already used for password-style secrets) is sufficient and preferable — the plaintext answer never needs to be recovered. `"contains"` matching (a keyword that must appear somewhere inside a longer free-text guess, per §6.1's `match_mode` options) fundamentally requires the plaintext answer at check time, since there is no way to test "does this hash appear as a substring of that guess" without already knowing the substring — so `"contains"` puzzles store an application-key-encrypted (reversible), not hashed, answer instead. Exactly one of `answer_hash`/`answer_encrypted` is populated per row, determined by `match_mode`; this is validated in `PuzzleEngine.add_puzzle` before persistence, not left as an unenforced convention. In-memory (`PuzzleEngine._puzzles`, pre-persistence), the plaintext answer is simply held in process memory the same way any other in-memory engine state is today — only the eventual persisted row needs this hash-vs-encrypt distinction.
 
+```sql
 CREATE TABLE IF NOT EXISTS room_escape_attempts (
     id             VARCHAR PRIMARY KEY,
     room_id        VARCHAR NOT NULL REFERENCES rooms(id),
@@ -362,26 +397,60 @@ CREATE TABLE IF NOT EXISTS room_escape_progress (
 ```
 `room_objects.config` (already a JSON/JSONB config column per the existing schema pattern used by bookshelf/tv/music_player) absorbs `escape_door`/`hidden_item` *authored blueprint* fields with no schema change needed there; only the new `room_escape_progress` table above is needed for the *live per-visitor* state described in §3.1.
 
-## 14. Delivery Phases
+## 14. Implementation Plan (Tracked Checklist)
+
+This section is the authoritative, trackable task breakdown for building this feature. Check items off as they land; each item names the concrete artifact it produces and the design section that specifies it, so progress can be verified against the spec rather than against a vague phase name. Sub-items must be completed in order within each group where a dependency exists (e.g., an engine before the handlers that call it, handlers before the UI that calls them).
 
 ### Phase 1 (MVP)
-- `escape_door` and `hidden_item` catalog entries + per-visitor collision/reveal wiring (§3.1, §5).
-- `PuzzleEngine` with typed-answer puzzles bound to any object, including per-user solved state and attempt lockout/reset (§6.1–6.2).
-- `InventoryEngine` with pick-up/require-item door logic (§7).
-- `EscapeSessionEngine` with per-user timer, briefing, win/expired states, and per-user reveal/open tracking (§8.1–8.3).
-- Builder panel + player HUD + puzzle modal, including build-mode-only visibility of unrevealed `hidden_item` objects (§10).
-- Full unit test coverage for all three new engines, mirroring the existing `tests_python/test_npc_guide.py`/`test_story.py` structure (pure-logic tests, no sockets), plus `tests_python/test_main_*` handler-level tests following the `FakeSio` harness already used for guided tours.
+
+**Domain engines (server/game/)**
+- [ ] `server/game/puzzle.py`: `PuzzleEngine` with `add_puzzle`, `remove_puzzle`, `get_puzzle_public`, `attempt_solve` (rate-limited via the existing `SlidingWindowRateLimiter`), `reset_attempts`, `is_solved`, `request_hint` (§6.1).
+- [ ] `server/game/inventory.py`: `InventoryEngine` with `grant`, `has`, `list_items`, `revoke_all_for_object` (§7).
+- [ ] `server/game/escape_session.py`: `EscapeSessionEngine` with `configure`, `start` (idempotent no-op if already `in_progress`), `status`, `mark_won` (internally calls `record_attempt`), `record_attempt`, `leaderboard`, `reset` (rejects while `in_progress`), `reveal_item`/`has_revealed`, `open_door`/`has_opened` (§8.1).
+- [ ] Wire all three engines into `RoomBuilderState.__init__` (`self._puzzles`, `self._inventory`, `self._escape`), following the existing `self._story`/`self._guide` ownership pattern.
+- [ ] `RoomBuilderState.add_puzzle(...)` orchestrator: calls `PuzzleEngine.add_puzzle`, then atomically appends the new puzzle id to the target door's `requiredPuzzleIds` when `unlock_door_id` is set (§6.1).
+- [ ] Object-deletion cleanup in `delete_object`: revoke inventory grants for a deleted `hidden_item`, clear reveal/open state for a deleted `hidden_item`/`escape_door`, and remove an orphaned puzzle definition when its last referencing object is deleted (§5.3).
+
+**Catalog and collision**
+- [ ] `escape_door` and `hidden_item` entries added to `OBJECT_TYPE_CATALOG` in `room_object_catalog.py` (§5.1, §5.2).
+- [ ] `_tile_collision_obstacles` gains a `requester_id` parameter and skips `escape_door` objects the requester has personally opened (§5.1).
+- [ ] `list_objects_for_tiles`/`list_objects` gain `requester_id`/`is_room_host` parameters and omit unrevealed-or-already-held `hidden_item` objects for ordinary visitors (§5.2).
+- [ ] `_decorate_object` appends the `solve_puzzle` interaction only for the specific object instances whose `config.get("puzzleId")` is set (§6.2).
+
+**Socket event handlers (server/main.py)**
+- [ ] `room:escape:configure`, `room:escape:start`, `room:escape:status`, `room:escape:won` (server → client), `room:escape:expired` (server → client), `room:escape:reset`, `room:escape:leaderboard:list` (§9).
+- [ ] `room:puzzle:add`, `room:puzzle:remove`, `room:puzzle:list`, `room:puzzle:attempt`, `room:puzzle:hint`, `room:puzzle:reset` (§9).
+- [ ] `room:door:configure`, `room:item:configure`, `room:inventory:list` (§9).
+- [ ] `attempt_open`/`pick_up` wired into the existing generic `room:object:interact` dispatch (§9).
+- [ ] `tick_escape_sessions(room_id, now_ms)` added to the existing `game_loop()`, emitting targeted `room:escape:expired` events (§8.2).
+
+**Client UI — Material 3 only (§10)**
+- [ ] Builder "Escape Room" panel section (enable toggle, time limit, briefing, puzzle list) using `.builder-field`/`.builder-primary-btn`/`.builder-object-list`/`.builder-error` (§10.2).
+- [ ] Door/item "Configure" sub-panels reusing the existing per-object-type config pattern (§10.2).
+- [ ] Player HUD countdown chip + inventory strip reusing the existing HUD chip component, including the `--md-warning` low-time state (§10.2).
+- [ ] Puzzle modal reusing the existing dialogue-modal shell, with a "Solve" and secondary "Ask for a Hint" action (§10.2).
+- [ ] Briefing / win / expired overlay cards reusing the existing modal/overlay shell (§10.2).
+- [ ] Build-mode-only "hidden until revealed" badge on `hidden_item` objects (§5.2, §10.2).
+- [ ] Run the §10.4 compliance checklist (no raw hex colors, `textarea` selectors present, shared modal shell reused, HUD chip parity, both theme blocks reviewed) before merging.
+
+**Tests**
+- [ ] `tests_python/test_puzzle.py`, `tests_python/test_inventory.py`, `tests_python/test_escape_session.py` — pure-logic unit tests for the three new engines, mirroring the existing `test_npc_guide.py`/`test_story.py` structure, including: per-user isolation (two `user_id`s never see each other's solved/revealed/opened state), the AND unlock formula, attempt lockout + `reset_attempts` recovery, `reset()` rejecting an `in_progress` session, and `mark_won` producing exactly one leaderboard entry per win.
+- [ ] Handler-level tests in `tests_python/test_main_*` using the existing `FakeSio` harness for every new event in §9, including a rejected `room:escape:reset` while `in_progress` and a permission-denied case for `room:puzzle:add`/`room:door:configure` from a non-editor.
+- [ ] JS-side tests under `tests/` for the new client modules (HUD chip, puzzle modal, inventory strip), matching the existing `tests/*.test.js` structure.
 
 ### Phase 2
-- Trigger-revealed puzzles (`reveal_object` event type) (§6.3).
-- Story-character `knowledge_check` gating (§6.4) and the `ask_hint` payload wiring (§6.5).
-- Leaderboard persistence and display (§8.4).
-- Multi-door / multi-room chained escape sequences using `destinationTile` (§8.3).
-- **Team/Shared Mode**: a room-host toggle that pools the timer, solved puzzles, revealed items, and opened doors room-wide instead of per-visitor, for groups who want the classic synchronized physical-escape-room-team experience (§3.1, §8.1).
+- [ ] Trigger-revealed puzzles: `reveal_object` event type on `evaluate_area_enter` (§6.3).
+- [ ] `StoryEngine.talk`/`advance` reads `knowledge_check`/`completion_flag` and consults `PuzzleEngine.is_solved` before allowing gated progression (§6.4).
+- [ ] `room_builder.py: _interaction_payload`'s existing `ask_hint` stub branch calls `PuzzleEngine.request_hint` for an `ai_character` with `guardsPuzzleId` set and returns the next hint (§6.5).
+- [ ] Leaderboard persistence: `room_puzzles`, `room_escape_attempts`, `room_escape_progress` tables applied via `schema.sql` and read/written from the relevant engines (§13).
+- [ ] Multi-door / multi-room chained escape sequences using `destinationTile` (§8.3).
+- [ ] **Team/Shared Mode**: room-host toggle pooling the timer, solved puzzles, revealed items, and opened doors room-wide instead of per-visitor (§3.1, §8.1, §16 Q3).
+- [ ] Revisit the answer-storage split from §13 (`answer_hash` vs `answer_encrypted`) once persistence lands, including key-rotation handling for encrypted `"contains"`-mode answers.
 
 ### Phase 3
-- Puzzle template library (pre-built riddle/cipher/sequence puzzle types with built-in `match_mode` presets) so non-technical creators can drop in a puzzle without writing their own answer-matching logic.
-- Attempt analytics (which puzzles get the most wrong guesses / hint requests) to help creators tune difficulty, extending the same metrics spirit as §17 of [educational_rooms_feature_design.md](educational_rooms_feature_design.md).
+- [ ] Puzzle template library (pre-built riddle/cipher/sequence puzzle types with built-in `match_mode` presets).
+- [ ] Attempt analytics (wrong-guess / hint-request frequency per puzzle) to help creators tune difficulty, extending the metrics spirit of §17 of [educational_rooms_feature_design.md](educational_rooms_feature_design.md).
+- [ ] Cross-room global leaderboard, contingent on the alignment decision in §16 Q4.
 
 ## 15. Risks and Mitigations
 
@@ -393,8 +462,8 @@ CREATE TABLE IF NOT EXISTS room_escape_progress (
 
 ## 16. Alignment Questions for Product Direction
 
-1. Should MVP support only one escape door + one key per room, or multiple independent lock/key pairs from day one?
-2. Should a failed/expired attempt let a visitor immediately retry (reset their own inventory/puzzle-solved state), or require a room host to reset the room for everyone?
+1. Should MVP support only one escape door + one key per room, or multiple independent lock/key pairs from day one? *(Note: nothing in this design actually restricts a room to one door/item pair — any number of `escape_door`/`hidden_item`/puzzle combinations can already coexist, and §5.1 clarifies multiple unconfigured win-doors are OR-gated alternate exits. This question is really about authoring UX complexity — e.g., does the Phase 1 builder panel need a way to group puzzles into named "chains" per door — not a technical limitation.)*
+2. Should a failed/expired attempt let a visitor immediately retry (reset their own inventory/puzzle-solved state), or require a room host to reset the room for everyone? *(§8.1/§9 now specify a self-serve `room:escape:reset` for MVP, usable only from `won`/`expired` state; confirm this is the desired default rather than requiring host intervention.)*
 3. Is a shared, room-wide "team" timer (everyone in the room shares one clock, matching the physical escape-room genre most closely) a Phase 1 requirement, or is the per-user timer proposed here acceptable for MVP?
 4. Should the leaderboard be per-room only, or eventually cross-room (a global "fastest escapes" board) once persistence exists?
 5. Do we want a built-in puzzle-type library (cipher, sequence, sudoku, riddle) in Phase 1, or is free-text/numeric answer matching sufficient to start, with templates deferred to Phase 3?
