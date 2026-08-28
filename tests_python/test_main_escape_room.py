@@ -260,6 +260,87 @@ class TestObjectInteractEmitsWinEvent:
         assert not won_events
 
 
+class TestDoorDestinationTileWarp:
+    """design doc §8.3: opening an escape_door with a destinationTile
+    transitions the visitor to that tile via the same mechanism as a normal
+    edge crossing, instead of marking a win."""
+
+    async def test_opening_a_door_with_destination_tile_moves_the_player(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+        rooms.add_neighbor_tile("lobby", (0, 0), "right")
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        builder.get_object("door-1")["config"]["destinationTile"] = {"x": 1, "y": 0}
+
+        await main_module.room_object_interact(
+            "p1", {"objectId": "door-1", "interactionType": "attempt_open"},
+        )
+
+        assert rooms.get_player_tile("p1") == (1, 0)
+        room = rooms.get_room("lobby")
+        assert room.get_player("p1")["tile"] == {"x": 1, "y": 0}
+
+    async def test_opening_a_door_with_destination_tile_broadcasts_room_state(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+        rooms.add_neighbor_tile("lobby", (0, 0), "right")
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        builder.get_object("door-1")["config"]["destinationTile"] = {"x": 1, "y": 0}
+
+        await main_module.room_object_interact(
+            "p1", {"objectId": "door-1", "interactionType": "attempt_open"},
+        )
+
+        state_events = [e for e in fake_sio.emitted if e[0] == "room:state"]
+        assert state_events
+
+    async def test_opening_a_door_whose_destination_tile_does_not_exist_does_not_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        builder.get_object("door-1")["config"]["destinationTile"] = {"x": 9, "y": 9}
+
+        await main_module.room_object_interact(
+            "p1", {"objectId": "door-1", "interactionType": "attempt_open"},
+        )
+
+        assert rooms.get_player_tile("p1") == (0, 0)
+        assert not _errors(fake_sio)
+
+    async def test_reopening_an_already_open_destination_door_warps_again(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+        rooms.add_neighbor_tile("lobby", (0, 0), "right")
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        builder.get_object("door-1")["config"]["destinationTile"] = {"x": 1, "y": 0}
+        await main_module.room_object_interact(
+            "p1", {"objectId": "door-1", "interactionType": "attempt_open"},
+        )
+        rooms.player_tile["p1"] = (0, 0)
+
+        await main_module.room_object_interact(
+            "p1", {"objectId": "door-1", "interactionType": "attempt_open"},
+        )
+
+        assert rooms.get_player_tile("p1") == (1, 0)
+
+    async def test_door_with_no_destination_tile_does_not_warp(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+        builder = rooms.get_builder("lobby")
+        builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+
+        await main_module.room_object_interact(
+            "p1", {"objectId": "door-1", "interactionType": "attempt_open"},
+        )
+
+        assert rooms.get_player_tile("p1") == (0, 0)
+
+
 class TestTickEscapeSessions:
     async def test_tick_emits_expired_event_to_overdue_visitor(self, isolate_registry):
         rooms, fake_sio = isolate_registry

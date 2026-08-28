@@ -1251,6 +1251,28 @@ async def room_object_interact(sid, data):
             await sio.emit("room:escape:won", won_payload, room=sid)
             await sio.emit("room:escape:won", won_payload, room=room_channel(room_id), skip_sid=sid)
 
+    # A door with a `destinationTile` set instead transitions the visitor
+    # there via the same mechanism as a normal edge crossing (§8.3) --
+    # chained/multi-room escape sequences. Re-opening an already-open
+    # destination door still warps the visitor again (walking through a
+    # door repeatedly is expected), unlike the one-time win-trigger case
+    # above.
+    destination_tile = payload.get("destinationTile")
+    if (
+        result.get("objectType") == "escape_door"
+        and result.get("interactionType") == "attempt_open"
+        and payload.get("opened")
+        and destination_tile is not None
+    ):
+        transition = rooms.warp_player_to_tile(sid, room_id, (destination_tile["x"], destination_tile["y"]))
+        if transition:
+            room = rooms.get_room(room_id)
+            player = room.get_player(sid) if room else None
+            if player:
+                player["tile"] = transition["tile"]
+                room.update_player_position(sid, transition["position"])
+                await broadcast_room_state(room_id)
+
     return result
 
 

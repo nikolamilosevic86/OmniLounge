@@ -55,3 +55,44 @@ class TestRoomsRegistryTiles:
         )
         assert transition is None
         assert registry.get_player_tile("p1") == (2, 0)
+
+    def test_warp_player_to_tile_moves_to_a_non_adjacent_existing_tile(self):
+        # design doc feature_designs/escape_room_feature_design.md §8.3: an
+        # escape_door's destinationTile is a direct (non-edge-adjacent) jump,
+        # unlike transition_player_tile_if_needed which only ever crosses to
+        # a neighboring tile.
+        registry = RoomsRegistry()
+        room = registry.create_room(host_id="h1", name="Geo Room")
+        avatar = create_default_avatar("Alice")
+        registry.join_room("p1", avatar, room["id"])
+        registry.add_neighbor_tile(room["id"], (0, 0), "right")
+        registry.add_neighbor_tile(room["id"], (1, 0), "right")
+
+        result = registry.warp_player_to_tile("p1", room["id"], (2, 0))
+
+        assert result is not None
+        assert result["tile"] == {"x": 2, "y": 0}
+        assert registry.get_player_tile("p1") == (2, 0)
+
+    def test_warp_player_to_tile_returns_none_for_nonexistent_tile(self):
+        registry = RoomsRegistry()
+        room = registry.create_room(host_id="h1", name="Geo Room")
+        avatar = create_default_avatar("Alice")
+        registry.join_room("p1", avatar, room["id"])
+
+        result = registry.warp_player_to_tile("p1", room["id"], (1, 0))
+
+        assert result is None
+        assert registry.get_player_tile("p1") == (0, 0)
+
+    def test_warp_player_to_tile_returns_a_default_arrival_position(self):
+        registry = RoomsRegistry()
+        room = registry.create_room(host_id="h1", name="Geo Room")
+        avatar = create_default_avatar("Alice")
+        registry.join_room("p1", avatar, room["id"])
+        registry.add_neighbor_tile(room["id"], (0, 0), "right")
+
+        result = registry.warp_player_to_tile("p1", room["id"], (1, 0))
+
+        assert result["position"] == {"x": 400.0, "y": 300.0}
+

@@ -3,6 +3,7 @@ import time
 from typing import Any
 
 from server.game.moderation import ModerationState
+from server.game.movement import clamp_position, create_position
 from server.game.room import Room
 from server.game.room_builder import RoomBuilderState
 from server.game.room_styles import DEFAULT_ROOM_STYLE, resolve_room_style
@@ -306,6 +307,31 @@ class RoomsRegistry:
 
         self.player_tile[player_id] = next_tile_tuple
         return next_result
+
+    def warp_player_to_tile(
+        self,
+        player_id: str,
+        room_id: str,
+        destination_tile: tuple[int, int],
+    ) -> dict[str, Any] | None:
+        """Direct (non-adjacent) tile transition for an `escape_door`'s
+        `destinationTile` (design doc §8.3). Unlike
+        `transition_player_tile_if_needed`, the destination need not be an
+        edge-adjacent neighbor of the player's current tile -- a door can
+        link any two tiles the room author has placed. Returns the same
+        {"tile": ..., "position": ...} shape as `transition_to_neighbor` so
+        callers can treat both transition kinds identically; returns `None`
+        if the destination tile doesn't exist in this room (defensive
+        against a door authored with a stale/bad `destinationTile`)."""
+        room_tiles = self.room_tiles.get(room_id, {(0, 0)})
+        if destination_tile not in room_tiles:
+            return None
+
+        self.player_tile[player_id] = destination_tile
+        return {
+            "tile": {"x": destination_tile[0], "y": destination_tile[1]},
+            "position": clamp_position(create_position()),
+        }
 
     def join_room(
         self,
