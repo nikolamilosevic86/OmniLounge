@@ -345,7 +345,6 @@ const hiddenItemKindSelect = document.getElementById('hidden-item-kind-select');
 const hiddenItemSingleUseInput = document.getElementById('hidden-item-single-use-input');
 const hiddenItemConfigureBtn = document.getElementById('hidden-item-configure-btn');
 const puzzleModal = document.getElementById('puzzle-modal');
-const puzzleModalTitle = document.getElementById('puzzle-modal-title');
 const puzzleModalClose = document.getElementById('puzzle-modal-close');
 const puzzleModalPrompt = document.getElementById('puzzle-modal-prompt');
 const puzzleGuessForm = document.getElementById('puzzle-guess-form');

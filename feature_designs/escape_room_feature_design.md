@@ -444,7 +444,7 @@ This section is the authoritative, trackable task breakdown for building this fe
 ### Phase 2
 - [ ] Trigger-revealed puzzles: `reveal_object` event type on `evaluate_area_enter` (§6.3).
 - [ ] `StoryEngine.talk`/`advance` reads `knowledge_check`/`completion_flag` and consults `PuzzleEngine.is_solved` before allowing gated progression (§6.4).
-- [ ] `room_builder.py: _interaction_payload`'s existing `ask_hint` stub branch calls `PuzzleEngine.request_hint` for an `ai_character` with `guardsPuzzleId` set and returns the next hint (§6.5).
+- [x] `room_builder.py: _interaction_payload`'s existing `ask_hint` stub branch calls `PuzzleEngine.request_hint` for an `ai_character` with `guardsPuzzleId` set and returns the next hint (§6.5). This landed alongside the rest of Phase 1's interaction wiring (this checklist item was left stale/unchecked by mistake). See `TestAskHintGuardsPuzzle` in [tests_python/test_room_builder.py](../tests_python/test_room_builder.py).
 - [ ] Leaderboard persistence: `room_puzzles`, `room_escape_attempts`, `room_escape_progress` tables applied via `schema.sql` and read/written from the relevant engines (§13).
 - [ ] Multi-door / multi-room chained escape sequences using `destinationTile` (§8.3).
 - [ ] **Team/Shared Mode**: room-host toggle pooling the timer, solved puzzles, revealed items, and opened doors room-wide instead of per-visitor (§3.1, §8.1, §16 Q3).
