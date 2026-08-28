@@ -25,6 +25,7 @@ import {
 } from './npc-guide.js';
 import {
   escapeStatusLabel, formatCountdown, isLowTime, puzzleAttemptMessage, formatLeaderboardEntry, doorAttemptMessage,
+  formatGlobalLeaderboardEntry, puzzleTemplateFormValues, formatPuzzleAnalytics, puzzleDifficultySignal,
 } from './escape-room.js';
 
 const BUBBLE_DURATION = 6000;
@@ -126,6 +127,7 @@ const state = {
   escapeStatusSyncedAtMs: null,
   escapeInventory: [],
   puzzles: [],
+  puzzleTemplates: [],
   puzzleModalPuzzleId: null,
 };
 
@@ -330,7 +332,11 @@ const puzzleUnlockDoorSelect = document.getElementById('puzzle-unlock-door-selec
 const puzzleAddBtn = document.getElementById('puzzle-add-btn');
 const puzzleErrorEl = document.getElementById('puzzle-error');
 const puzzleListEl = document.getElementById('puzzle-list');
+const puzzleTemplateSelect = document.getElementById('puzzle-template-select');
+const puzzleAnalyticsBtn = document.getElementById('puzzle-analytics-btn');
+const puzzleAnalyticsListEl = document.getElementById('puzzle-analytics-list');
 const escapeLeaderboardBtn = document.getElementById('escape-leaderboard-btn');
+const escapeGlobalLeaderboardBtn = document.getElementById('escape-global-leaderboard-btn');
 const escapeLeaderboardListEl = document.getElementById('escape-leaderboard-list');
 const configureEscapeDoorSection = document.getElementById('configure-escape-door-section');
 const configureItemSection = document.getElementById('configure-item-section');
@@ -1314,18 +1320,29 @@ function initGame() {
     }, () => refreshEscapeStatus());
   });
 
+  puzzleTemplateSelect?.addEventListener('change', () => {
+    const template = state.puzzleTemplates.find((t) => t.templateId === puzzleTemplateSelect.value);
+    const values = puzzleTemplateFormValues(template);
+    if (puzzlePromptInput) puzzlePromptInput.value = values.prompt;
+    if (puzzleHintsInput) puzzleHintsInput.value = values.hints;
+    if (puzzleMatchModeSelect) puzzleMatchModeSelect.value = values.matchMode;
+    // Only a placeholder: the creator always authors their own answer.
+    if (puzzleAnswerInput) puzzleAnswerInput.placeholder = values.answerPlaceholder || 'a piano';
+  });
+
   puzzleAddBtn?.addEventListener('click', () => {
     const puzzleId = puzzleIdInput?.value?.trim();
     const prompt = puzzlePromptInput?.value?.trim();
     const answer = puzzleAnswerInput?.value?.trim();
-    if (!puzzleId || !prompt || !answer) {
+    const templateId = puzzleTemplateSelect?.value || undefined;
+    if (!puzzleId || !answer || (!prompt && !templateId)) {
       showPuzzleFormError('Puzzle ID, prompt, and answer are required.');
       return;
     }
     const hints = (puzzleHintsInput?.value || '').split('\n').map((h) => h.trim()).filter(Boolean);
     const maxAttemptsRaw = puzzleMaxAttemptsInput?.value;
     state.socket?.emit('room:puzzle:add', {
-      puzzleId, prompt, answer,
+      puzzleId, prompt: prompt || undefined, answer, templateId,
       hints: hints.length ? hints : undefined,
       matchMode: puzzleMatchModeSelect?.value || 'exact',
       maxAttempts: maxAttemptsRaw ? Number(maxAttemptsRaw) : undefined,
@@ -1339,6 +1356,7 @@ function initGame() {
       if (puzzleAnswerInput) puzzleAnswerInput.value = '';
       if (puzzleHintsInput) puzzleHintsInput.value = '';
       if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
+      if (puzzleTemplateSelect) puzzleTemplateSelect.value = '';
       refreshPuzzleList();
     });
   });
@@ -1357,6 +1375,18 @@ function initGame() {
   escapeLeaderboardBtn?.addEventListener('click', () => {
     state.socket?.emit('room:escape:leaderboard:list', {}, (entries) => {
       renderEscapeLeaderboard(entries || []);
+    });
+  });
+
+  escapeGlobalLeaderboardBtn?.addEventListener('click', () => {
+    state.socket?.emit('room:escape:leaderboard:global', {}, (entries) => {
+      renderEscapeLeaderboard(entries || [], { global: true });
+    });
+  });
+
+  puzzleAnalyticsBtn?.addEventListener('click', () => {
+    state.socket?.emit('room:puzzle:analytics', {}, (stats) => {
+      renderPuzzleAnalytics(stats || []);
     });
   });
 
@@ -1621,6 +1651,7 @@ function connectSocket() {
     refreshEscapeStatus();
     refreshInventory();
     refreshPuzzleList();
+    refreshPuzzleTemplates();
   }
 
   state.socket.on('room:joined', (payload) => {
@@ -2572,14 +2603,53 @@ function showPuzzleFormError(message) {
   puzzleErrorEl.classList.toggle('hidden', !message);
 }
 
-function renderEscapeLeaderboard(entries) {
+function renderEscapeLeaderboard(entries, { global = false } = {}) {
   if (!escapeLeaderboardListEl) return;
   if (entries.length === 0) {
     escapeLeaderboardListEl.innerHTML = '<li class="builder-empty-hint">No completions yet.</li>';
     return;
   }
+  const format = global ? formatGlobalLeaderboardEntry : formatLeaderboardEntry;
   escapeLeaderboardListEl.innerHTML = entries.map((entry, index) =>
-    `<li class="builder-object-row">${escapeHtml(formatLeaderboardEntry(entry, index + 1))}</li>`).join('');
+    `<li class="builder-object-row">${escapeHtml(format(entry, index + 1))}</li>`).join('');
+}
+
+// Attempt analytics (design doc §14 Phase 3). Host-only on the server; the
+// panel simply renders whatever the host is allowed to read.
+function renderPuzzleAnalytics(stats) {
+  if (!puzzleAnalyticsListEl) return;
+  if (!stats.length) {
+    puzzleAnalyticsListEl.innerHTML = '<li class="builder-empty-hint">No puzzles yet.</li>';
+    return;
+  }
+  puzzleAnalyticsListEl.innerHTML = stats.map((s) => {
+    const guesses = (s.commonWrongGuesses || [])
+      .map((g) => `${g.guess} (${g.count})`).join(', ');
+    return `
+    <li class="builder-object-row">
+      <div class="builder-object-row-header">
+        <span>${escapeHtml(s.puzzleId)}</span>
+        <span class="builder-object-row-meta">${escapeHtml(puzzleDifficultySignal(s))}</span>
+      </div>
+      <div class="builder-object-row-meta">${escapeHtml(formatPuzzleAnalytics(s))}</div>
+      ${guesses ? `<div class="builder-object-row-meta">Common wrong: ${escapeHtml(guesses)}</div>` : ''}
+    </li>`;
+  }).join('');
+}
+
+function refreshPuzzleTemplates() {
+  state.socket?.emit('room:puzzle:templates', {}, (templates) => {
+    state.puzzleTemplates = templates || [];
+    renderPuzzleTemplateSelect();
+  });
+}
+
+function renderPuzzleTemplateSelect() {
+  if (!puzzleTemplateSelect) return;
+  puzzleTemplateSelect.innerHTML = ['<option value="">Custom (blank)</option>']
+    .concat(state.puzzleTemplates.map((t) =>
+      `<option value="${escapeHtml(t.templateId)}">${escapeHtml(t.label)}</option>`))
+    .join('');
 }
 
 // Door/item "Configure" selects mirror renderBookShelfSelect: scoped to the

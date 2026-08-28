@@ -303,6 +303,12 @@
 
             <h5 class="builder-subheading">Puzzles</h5>
             <label class="builder-field">
+              <span>Start From Template</span>
+              <select id="puzzle-template-select">
+                <option value="">Custom (blank)</option>
+              </select>
+            </label>
+            <label class="builder-field">
               <span>Puzzle ID</span>
               <input type="text" id="puzzle-id-input" placeholder="puzzle-1" />
             </label>
@@ -346,8 +352,13 @@
             <p class="builder-error hidden" id="puzzle-error"></p>
             <ul id="puzzle-list" class="builder-object-list"></ul>
 
+            <h5 class="builder-subheading">Puzzle Analytics</h5>
+            <button type="button" id="puzzle-analytics-btn" class="builder-secondary-btn">Refresh Analytics</button>
+            <ul id="puzzle-analytics-list" class="builder-object-list"></ul>
+
             <h5 class="builder-subheading">Leaderboard</h5>
             <button type="button" id="escape-leaderboard-btn" class="builder-secondary-btn">View Leaderboard</button>
+            <button type="button" id="escape-global-leaderboard-btn" class="builder-secondary-btn">Global Fastest Escapes</button>
             <ul id="escape-leaderboard-list" class="builder-object-list"></ul>
           </section>
 

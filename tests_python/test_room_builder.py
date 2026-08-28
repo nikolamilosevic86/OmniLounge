@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from server.game.puzzle_templates import get_template
 from server.game.room_builder import RoomBuilderState
 from server.game.room_object_catalog import SIZE_PRESETS
 
@@ -1096,6 +1097,67 @@ class TestAddPuzzleOrchestrator:
         assert result["puzzleId"] == "riddle-1"
 
 
+class TestAddPuzzleFromTemplate:
+    """Phase 3 puzzle template library (design doc §14 Phase 3, §16 Q5):
+    `template_id` pre-fills prompt/hints/match_mode from
+    `puzzle_templates.py` so a creator only has to supply an id and an
+    answer, while every explicit field they DO supply still wins."""
+
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_template_supplies_prompt_hints_and_match_mode(self):
+        result = self.builder.add_puzzle("p1", None, "1234", template_id="number_lock")
+        assert result["matchMode"] == "numeric"
+        assert result["prompt"] == get_template("number_lock")["promptTemplate"]
+        assert result["hints"] == get_template("number_lock")["hints"]
+
+    def test_explicit_prompt_overrides_the_template(self):
+        result = self.builder.add_puzzle("p1", "My own prompt", "1234", template_id="number_lock")
+        assert result["prompt"] == "My own prompt"
+        assert result["matchMode"] == "numeric"  # preset still applied
+
+    def test_explicit_match_mode_overrides_the_template_preset(self):
+        result = self.builder.add_puzzle(
+            "p1", None, "1234", template_id="number_lock", match_mode="exact",
+        )
+        assert result["matchMode"] == "exact"
+
+    def test_templated_puzzle_is_solvable_with_its_preset_match_mode(self):
+        # End-to-end proof the preset is what makes this archetype work:
+        # "007" must match an authored answer of "7" under numeric matching.
+        self.builder.add_puzzle("p1", None, "7", template_id="number_lock")
+        result = self.builder.attempt_solve_puzzle("p1", requester_id="u1", guess="007", now_ms=0)
+        assert result["correct"] is True
+
+    def test_templated_puzzle_still_supports_reward_wiring(self):
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        self.builder.add_puzzle("p1", None, "1234", template_id="number_lock", unlock_door_id="door-1")
+        assert self.builder.get_object("door-1")["config"]["requiredPuzzleIds"] == ["p1"]
+
+    def test_unknown_template_raises_key_error(self):
+        with pytest.raises(KeyError):
+            self.builder.add_puzzle("p1", None, "1234", template_id="not-a-template")
+
+    def test_template_is_room_host_gated_like_any_other_puzzle_add(self):
+        with pytest.raises(PermissionError):
+            self.builder.add_puzzle(
+                "p1", None, "1234", template_id="number_lock",
+                requester_id="stranger", is_room_host=False,
+            )
+
+    def test_without_a_template_a_missing_prompt_still_raises(self):
+        # Back-compat: `prompt` only becomes optional when a template is
+        # given -- an untemplated puzzle must still require one.
+        with pytest.raises(ValueError):
+            self.builder.add_puzzle("p1", None, "1234")
+
+    def test_list_puzzle_templates_exposes_the_catalog(self):
+        templates = self.builder.list_puzzle_templates()
+        assert {t["templateId"] for t in templates} >= {"riddle", "cipher", "sequence"}
+        assert all("answer" not in t for t in templates)
+
+
 # ─── Escape room: solve_puzzle dynamic interaction (design doc §6.2) ───────
 
 class TestSolvePuzzleInteraction:
@@ -1485,6 +1547,48 @@ class TestPuzzleAuthoringWrappers:
         self.builder.add_puzzle("riddle-1", "2+2?", "4")
         with pytest.raises(PermissionError):
             self.builder.remove_puzzle("riddle-1", requester_id="p1", is_room_host=False)
+
+
+class TestPuzzleAnalyticsWrapper:
+    """Phase 3 attempt analytics (design doc §14 Phase 3). Room-host gated:
+    aggregate struggle data across a room's visitors is authoring
+    information, not something an ordinary visitor should be able to read
+    (and `commonWrongGuesses` would otherwise hand a player a free list of
+    answers other people already ruled out)."""
+
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", hints=["It's even."])
+
+    def test_returns_analytics_for_one_puzzle(self):
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="5", now_ms=0)
+        stats = self.builder.puzzle_analytics("riddle-1")
+        assert stats["puzzleId"] == "riddle-1"
+        assert stats["wrongAttempts"] == 1
+
+    def test_lists_analytics_for_every_puzzle(self):
+        self.builder.add_puzzle("riddle-2", "3+3?", "6")
+        assert {s["puzzleId"] for s in self.builder.list_puzzle_analytics()} == {"riddle-1", "riddle-2"}
+
+    def test_non_host_requester_is_rejected(self):
+        with pytest.raises(PermissionError):
+            self.builder.puzzle_analytics("riddle-1", requester_id="p1", is_room_host=False)
+
+    def test_list_by_non_host_requester_is_rejected(self):
+        with pytest.raises(PermissionError):
+            self.builder.list_puzzle_analytics(requester_id="p1", is_room_host=False)
+
+    def test_room_host_requester_is_allowed(self):
+        stats = self.builder.puzzle_analytics("riddle-1", requester_id="host-1", is_room_host=True)
+        assert stats["puzzleId"] == "riddle-1"
+
+    def test_unknown_puzzle_raises_key_error(self):
+        with pytest.raises(KeyError):
+            self.builder.puzzle_analytics("ghost")
+
+    def test_hint_requests_made_through_the_wrapper_are_counted(self):
+        self.builder.request_puzzle_hint("riddle-1", requester_id="p1", now_ms=0)
+        assert self.builder.puzzle_analytics("riddle-1")["hintsRequested"] == 1
 
 
 # ─── Escape room: session wrappers (§8, §9) ─────────────────────────────────

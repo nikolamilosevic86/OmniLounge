@@ -2487,6 +2487,35 @@ async def room_escape_leaderboard_list(sid, data):
     return builder.escape_leaderboard(limit)
 
 
+@sio.on("room:escape:leaderboard:global")
+async def room_escape_leaderboard_global(sid, data):
+    """Cross-room "fastest escapes" board (design doc §14 Phase 3, §16 Q4).
+    Room-scoped auth like every other handler -- you must be in the world
+    to read it -- but the data itself spans all rooms."""
+    room_id, _tile, _builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    limit = (data or {}).get("limit", 10)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        limit = 10
+    return rooms.global_escape_leaderboard(limit)
+
+
+@sio.on("room:puzzle:templates")
+async def room_puzzle_templates(sid, data):
+    """Pre-built puzzle types for the builder's authoring panel (design doc
+    §14 Phase 3, §16 Q5). Not host-gated: the catalog is static content
+    that exposes no room state."""
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    return builder.list_puzzle_templates()
+
+
 @sio.on("room:puzzle:add")
 async def room_puzzle_add(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)
@@ -2497,9 +2526,13 @@ async def room_puzzle_add(sid, data):
     data = data or {}
     try:
         puzzle = builder.add_puzzle(
-            data["puzzleId"], data["prompt"], data["answer"], hints=data.get("hints"),
+            data["puzzleId"], data.get("prompt"), data["answer"], hints=data.get("hints"),
             reveal_item_id=data.get("revealItemId"), unlock_door_id=data.get("unlockDoorId"),
-            match_mode=data.get("matchMode", "exact"), max_attempts=data.get("maxAttempts"),
+            # No "exact" default here: a template supplies its own matchMode
+            # preset, and a hard default would silently clobber it. The
+            # fallback lives in RoomBuilderState.add_puzzle instead.
+            match_mode=data.get("matchMode"), max_attempts=data.get("maxAttempts"),
+            template_id=data.get("templateId"),
             requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
     except (KeyError, PermissionError, ValueError) as exc:
@@ -2596,6 +2629,28 @@ async def room_puzzle_reset(sid, data):
         return
 
     return True
+
+
+@sio.on("room:puzzle:analytics")
+async def room_puzzle_analytics(sid, data):
+    """Wrong-guess / hint-request frequency per puzzle so a creator can tune
+    difficulty (design doc §14 Phase 3). Room-host gated in
+    `RoomBuilderState`; pass a `puzzleId` for one puzzle, omit it for all."""
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    puzzle_id = data.get("puzzleId")
+    is_host = _is_room_host(sid, room_id)
+    try:
+        if puzzle_id:
+            return builder.puzzle_analytics(puzzle_id, requester_id=sid, is_room_host=is_host)
+        return builder.list_puzzle_analytics(requester_id=sid, is_room_host=is_host)
+    except (KeyError, PermissionError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
 
 
 @sio.on("room:door:configure")

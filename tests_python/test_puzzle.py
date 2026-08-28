@@ -1,6 +1,10 @@
 import pytest
 
-from server.game.puzzle import ATTEMPT_RATE_LIMIT_MAX_REQUESTS, PuzzleEngine
+from server.game.puzzle import (
+    ATTEMPT_RATE_LIMIT_MAX_REQUESTS,
+    MAX_TRACKED_WRONG_GUESSES,
+    PuzzleEngine,
+)
 
 
 class TestAddPuzzle:
@@ -265,3 +269,179 @@ class TestRequestHint:
         engine = PuzzleEngine()
         with pytest.raises(KeyError):
             engine.request_hint("nope", "u1", now_ms=0.0)
+
+
+class TestAttemptAnalytics:
+    """Phase 3 attempt analytics (design doc §14 Phase 3): wrong-guess and
+    hint-request frequency per puzzle, so creators can tell a puzzle that is
+    "hard but fair" from one that is simply unsolvable as authored.
+
+    Aggregated per puzzle across all visitors -- never per named visitor --
+    so it stays a difficulty-tuning signal rather than surveillance of an
+    individual player's struggle (design doc §12 privacy discipline)."""
+
+    def _solved_puzzle_engine(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b", hints=["h1", "h2"])
+        return engine
+
+    def test_new_puzzle_starts_with_zeroed_analytics(self):
+        engine = self._solved_puzzle_engine()
+        stats = engine.puzzle_analytics("p1")
+        assert stats == {
+            "puzzleId": "p1",
+            "totalAttempts": 0,
+            "wrongAttempts": 0,
+            "solvedCount": 0,
+            "distinctSolvers": 0,
+            "hintsRequested": 0,
+            "lockedOutUsers": 0,
+            "successRate": None,
+            "commonWrongGuesses": [],
+        }
+
+    def test_counts_wrong_and_total_attempts(self):
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.attempt_solve("p1", "u1", "still nope", now_ms=1.0)
+        engine.attempt_solve("p1", "u1", "b", now_ms=2.0)
+        stats = engine.puzzle_analytics("p1")
+        assert stats["totalAttempts"] == 3
+        assert stats["wrongAttempts"] == 2
+        assert stats["solvedCount"] == 1
+
+    def test_success_rate_is_solved_over_total_attempts(self):
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.attempt_solve("p1", "u1", "b", now_ms=1.0)
+        assert engine.puzzle_analytics("p1")["successRate"] == 0.5
+
+    def test_success_rate_is_none_with_no_attempts_rather_than_dividing_by_zero(self):
+        engine = self._solved_puzzle_engine()
+        assert engine.puzzle_analytics("p1")["successRate"] is None
+
+    def test_counts_distinct_solvers_not_repeat_checks(self):
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "b", now_ms=0.0)
+        engine.attempt_solve("p1", "u1", "b", now_ms=1.0)  # already-solved re-check
+        engine.attempt_solve("p1", "u2", "b", now_ms=2.0)
+        assert engine.puzzle_analytics("p1")["distinctSolvers"] == 2
+
+    def test_already_solved_recheck_does_not_inflate_attempt_counts(self):
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "b", now_ms=0.0)
+        engine.attempt_solve("p1", "u1", "b", now_ms=1.0)
+        assert engine.puzzle_analytics("p1")["totalAttempts"] == 1
+
+    def test_rate_limited_attempts_are_not_counted(self):
+        # A throttled guess is never evaluated, so counting it would make a
+        # puzzle look far harder than it is.
+        engine = self._solved_puzzle_engine()
+        for i in range(ATTEMPT_RATE_LIMIT_MAX_REQUESTS + 5):
+            engine.attempt_solve("p1", "u1", "nope", now_ms=float(i))
+        assert engine.puzzle_analytics("p1")["totalAttempts"] == ATTEMPT_RATE_LIMIT_MAX_REQUESTS
+
+    def test_counts_hint_requests(self):
+        engine = self._solved_puzzle_engine()
+        engine.request_hint("p1", "u1", now_ms=0.0)
+        engine.request_hint("p1", "u2", now_ms=1.0)
+        assert engine.puzzle_analytics("p1")["hintsRequested"] == 2
+
+    def test_exhausted_hint_requests_are_not_counted(self):
+        # Asking again after the last hint returns nothing, so it is not a
+        # real hint consumption.
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b", hints=["only"])
+        engine.request_hint("p1", "u1", now_ms=0.0)
+        engine.request_hint("p1", "u1", now_ms=1.0)
+        assert engine.puzzle_analytics("p1")["hintsRequested"] == 1
+
+    def test_counts_locked_out_users(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b", max_attempts=1)
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.attempt_solve("p1", "u2", "nope", now_ms=1.0)
+        assert engine.puzzle_analytics("p1")["lockedOutUsers"] == 2
+
+    def test_reset_attempts_clears_that_users_lockout_from_analytics(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b", max_attempts=1)
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.reset_attempts("p1", "u1")
+        assert engine.puzzle_analytics("p1")["lockedOutUsers"] == 0
+
+    def test_reset_attempts_preserves_historical_attempt_totals(self):
+        # Analytics are a historical record for tuning difficulty; clearing
+        # one visitor's lockout must not rewrite what already happened.
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b", max_attempts=1)
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.reset_attempts("p1", "u1")
+        assert engine.puzzle_analytics("p1")["wrongAttempts"] == 1
+
+    def test_common_wrong_guesses_are_ranked_by_frequency(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b")
+        for user in ("u1", "u2", "u3"):
+            engine.attempt_solve("p1", user, "popular wrong answer", now_ms=0.0)
+        engine.attempt_solve("p1", "u4", "rare wrong answer", now_ms=0.0)
+
+        guesses = engine.puzzle_analytics("p1")["commonWrongGuesses"]
+        assert guesses[0] == {"guess": "popular wrong answer", "count": 3}
+        assert guesses[1] == {"guess": "rare wrong answer", "count": 1}
+
+    def test_common_wrong_guesses_are_normalized_so_casing_groups_together(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b")
+        engine.attempt_solve("p1", "u1", "Piano", now_ms=0.0)
+        engine.attempt_solve("p1", "u2", "  piano ", now_ms=0.0)
+        assert engine.puzzle_analytics("p1")["commonWrongGuesses"] == [{"guess": "piano", "count": 2}]
+
+    def test_common_wrong_guesses_is_capped_to_a_bounded_list(self):
+        # Unbounded growth would let a scripted brute-forcer balloon a
+        # room's memory with distinct junk guesses.
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b")
+        for i in range(MAX_TRACKED_WRONG_GUESSES * 3):
+            engine.attempt_solve("p1", f"u{i}", f"guess-{i}", now_ms=0.0)
+        assert len(engine._wrong_guesses["p1"]) <= MAX_TRACKED_WRONG_GUESSES
+
+    def test_correct_guesses_are_never_recorded_as_wrong_guesses(self):
+        # The analytics payload is shown to a room host, but must never
+        # become a backdoor that leaks the answer itself.
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "b", now_ms=0.0)
+        assert engine.puzzle_analytics("p1")["commonWrongGuesses"] == []
+
+    def test_analytics_never_include_the_answer_or_user_ids(self):
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.request_hint("p1", "u1", now_ms=0.0)
+        serialized = repr(engine.puzzle_analytics("p1"))
+        assert "u1" not in serialized
+        assert "'b'" not in serialized
+
+    def test_analytics_are_isolated_per_puzzle(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b")
+        engine.add_puzzle("p2", prompt="a", answer="b")
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        assert engine.puzzle_analytics("p2")["totalAttempts"] == 0
+
+    def test_removing_a_puzzle_discards_its_analytics(self):
+        engine = self._solved_puzzle_engine()
+        engine.attempt_solve("p1", "u1", "nope", now_ms=0.0)
+        engine.remove_puzzle("p1")
+        engine.add_puzzle("p1", prompt="a", answer="b")
+        assert engine.puzzle_analytics("p1")["totalAttempts"] == 0
+
+    def test_unknown_puzzle_raises_key_error(self):
+        engine = PuzzleEngine()
+        with pytest.raises(KeyError):
+            engine.puzzle_analytics("nope")
+
+    def test_list_analytics_covers_every_puzzle(self):
+        engine = PuzzleEngine()
+        engine.add_puzzle("p1", prompt="a", answer="b")
+        engine.add_puzzle("p2", prompt="a", answer="b")
+        assert {s["puzzleId"] for s in engine.list_analytics()} == {"p1", "p2"}

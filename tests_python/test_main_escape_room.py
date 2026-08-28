@@ -2,6 +2,7 @@ import pytest
 
 import server.main as main_module
 from server.game.avatar import create_default_avatar
+from server.game.puzzle_templates import PUZZLE_TEMPLATES, get_template
 
 
 class FakeSio:
@@ -183,6 +184,219 @@ class TestPuzzleHandlers:
 
         result = builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=2)
         assert result["correct"] is True
+
+
+# ─── Phase 3: puzzle templates, analytics, global leaderboard (§14) ────────
+
+class TestPuzzleTemplateHandlers:
+    async def test_templates_list_returns_the_catalog(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+
+        result = await main_module.room_puzzle_templates("p1", {})
+
+        assert {t["templateId"] for t in result} == set(PUZZLE_TEMPLATES)
+
+    async def test_templates_list_without_a_room_errors(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+
+        result = await main_module.room_puzzle_templates("ghost", {})
+
+        assert result is None
+        assert _errors(fake_sio)
+
+    async def test_add_from_template_applies_its_match_mode_preset(self, isolate_registry):
+        # Regression guard: the handler used to default matchMode to
+        # "exact", which silently clobbered a template's own preset.
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+
+        added = await main_module.room_puzzle_add(
+            "host-1",
+            {"puzzleId": "lock-1", "templateId": "number_lock", "answer": "1234"},
+        )
+
+        assert added["matchMode"] == "numeric"
+
+    async def test_add_from_template_fills_in_the_prompt(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+
+        added = await main_module.room_puzzle_add(
+            "host-1", {"puzzleId": "r-1", "templateId": "riddle", "answer": "a keyboard"},
+        )
+
+        assert added["prompt"] == get_template("riddle")["promptTemplate"]
+
+    async def test_explicit_match_mode_still_wins_over_the_template(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+
+        added = await main_module.room_puzzle_add(
+            "host-1",
+            {"puzzleId": "lock-1", "templateId": "number_lock", "answer": "1234",
+             "matchMode": "contains"},
+        )
+
+        assert added["matchMode"] == "contains"
+
+    async def test_add_without_a_template_still_defaults_to_exact(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+
+        added = await main_module.room_puzzle_add(
+            "host-1", {"puzzleId": "r-1", "prompt": "2+2?", "answer": "4"},
+        )
+
+        assert added["matchMode"] == "exact"
+
+    async def test_add_without_a_template_still_requires_a_prompt(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+
+        result = await main_module.room_puzzle_add(
+            "host-1", {"puzzleId": "r-1", "answer": "4"},
+        )
+
+        assert result is None
+        assert _errors(fake_sio)
+
+    async def test_unknown_template_emits_an_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+
+        result = await main_module.room_puzzle_add(
+            "host-1", {"puzzleId": "r-1", "templateId": "sudoku", "answer": "x"},
+        )
+
+        assert result is None
+        assert _errors(fake_sio)
+
+
+class TestPuzzleAnalyticsHandler:
+    async def _host_room_with_puzzle(self, rooms):
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        await _join(rooms, room["id"], "host-1", "Host")
+        builder = rooms.get_builder(room["id"])
+        builder.add_puzzle("riddle-1", "2+2?", "4", hints=["It's even."])
+        return room["id"], builder
+
+    async def test_room_host_sees_analytics_for_every_puzzle(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        _room_id, builder = await self._host_room_with_puzzle(rooms)
+        builder.attempt_solve_puzzle("riddle-1", requester_id="p2", guess="5", now_ms=1)
+
+        result = await main_module.room_puzzle_analytics("host-1", {})
+
+        assert result[0]["puzzleId"] == "riddle-1"
+        assert result[0]["wrongAttempts"] == 1
+
+    async def test_single_puzzle_analytics_by_id(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._host_room_with_puzzle(rooms)
+
+        result = await main_module.room_puzzle_analytics("host-1", {"puzzleId": "riddle-1"})
+
+        assert result["puzzleId"] == "riddle-1"
+
+    async def test_non_host_participant_is_rejected(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+        rooms.get_builder("lobby").add_puzzle("riddle-1", "2+2?", "4")
+
+        result = await main_module.room_puzzle_analytics("p1", {})
+
+        assert result is None
+        assert _errors(fake_sio)
+
+    async def test_unknown_puzzle_id_emits_an_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._host_room_with_puzzle(rooms)
+
+        result = await main_module.room_puzzle_analytics("host-1", {"puzzleId": "ghost"})
+
+        assert result is None
+        assert _errors(fake_sio)
+
+    async def test_without_a_room_errors(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+
+        result = await main_module.room_puzzle_analytics("ghost", {})
+
+        assert result is None
+        assert _errors(fake_sio)
+
+    async def test_analytics_never_expose_the_answer(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        _room_id, builder = await self._host_room_with_puzzle(rooms)
+        builder.attempt_solve_puzzle("riddle-1", requester_id="p2", guess="4", now_ms=1)
+
+        result = await main_module.room_puzzle_analytics("host-1", {})
+
+        assert "answer" not in result[0]
+        assert result[0]["commonWrongGuesses"] == []
+
+
+class TestGlobalEscapeLeaderboardHandler:
+    async def _room_with_win(self, rooms, name, player, elapsed_ms, host_id):
+        room = rooms.create_room(host_id=host_id, name=name)
+        builder = rooms.get_builder(room["id"])
+        builder.configure_escape_session(True, 600_000.0)
+        builder.start_escape_session(player, now_ms=0.0)
+        builder._escape.mark_won(player, player, now_ms=elapsed_ms)
+        return room["id"]
+
+    async def test_starts_empty(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms)
+
+        assert await main_module.room_escape_leaderboard_global("p1", {}) == []
+
+    async def test_aggregates_across_rooms_sorted_by_time(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._room_with_win(rooms, "Alpha", "Slow", 9_000.0, "h1")
+        await self._room_with_win(rooms, "Beta", "Fast", 1_000.0, "h2")
+        await _join(rooms)
+
+        board = await main_module.room_escape_leaderboard_global("p1", {})
+
+        assert [e["displayName"] for e in board] == ["Fast", "Slow"]
+        assert board[0]["roomName"] == "Beta"
+
+    async def test_respects_the_limit(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._room_with_win(rooms, "Alpha", "Slow", 9_000.0, "h1")
+        await self._room_with_win(rooms, "Beta", "Fast", 1_000.0, "h2")
+        await _join(rooms)
+
+        board = await main_module.room_escape_leaderboard_global("p1", {"limit": 1})
+
+        assert [e["displayName"] for e in board] == ["Fast"]
+
+    async def test_bad_limit_falls_back_to_the_default(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._room_with_win(rooms, "Alpha", "Alice", 5_000.0, "h1")
+        await _join(rooms)
+
+        board = await main_module.room_escape_leaderboard_global("p1", {"limit": "lots"})
+
+        assert len(board) == 1
+
+    async def test_without_a_room_errors(self, isolate_registry):
+        # Consistent with every other room-scoped handler: you have to be
+        # in the world to read the world's board.
+        rooms, fake_sio = isolate_registry
+
+        result = await main_module.room_escape_leaderboard_global("ghost", {})
+
+        assert result is None
+        assert _errors(fake_sio)
 
 
 class TestDoorItemConfigureAndInventory:

@@ -87,6 +87,35 @@ class RoomsRegistry:
     def get_moderation(self, room_id: str) -> ModerationState | None:
         return self.room_moderation.get(room_id)
 
+    def global_escape_leaderboard(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Fastest escapes across every live room (design doc §14 Phase 3,
+        resolving §16 Q4 in favour of a cross-room board).
+
+        The registry is the only object that can see all rooms at once, so
+        it owns the aggregation; each `EscapeSessionEngine` keeps knowing
+        only about its own room. Every entry is annotated with its source
+        room -- times from different rooms are not otherwise comparable.
+
+        Like all other gameplay state this is in-memory only: the board is
+        empty after a restart until new escapes are recorded. Persisting it
+        is blocked on the same decision as the rest of §16.
+
+        Iterates `self.rooms` (not `self.room_builders`) so a room removed
+        from the registry stops contributing immediately.
+        """
+        effective_limit = limit if limit > 0 else 10
+        entries: list[dict[str, Any]] = []
+        for room_id in self.rooms:
+            builder = self.room_builders.get(room_id)
+            if builder is None:
+                continue
+            meta = self.room_meta.get(room_id, {})
+            room_name = meta.get("name", room_id)
+            for entry in builder.escape_leaderboard(limit=effective_limit):
+                entries.append({**entry, "roomId": room_id, "roomName": room_name})
+        entries.sort(key=lambda entry: entry["elapsedMs"])
+        return entries[:effective_limit]
+
     def get_room_host_id(self, room_id: str) -> str | None:
         meta = self.room_meta.get(room_id)
         return meta.get("hostId") if meta else None

@@ -6,6 +6,10 @@ import {
   puzzleAttemptMessage,
   formatLeaderboardEntry,
   doorAttemptMessage,
+  formatGlobalLeaderboardEntry,
+  puzzleTemplateFormValues,
+  formatPuzzleAnalytics,
+  puzzleDifficultySignal,
 } from '../src/escape-room.js';
 
 describe('escapeStatusLabel', () => {
@@ -138,5 +142,112 @@ describe('doorAttemptMessage', () => {
     expect(doorAttemptMessage({ opened: false, alreadyOpen: false })).toBe(
       "It won't budge yet -- you're missing something.",
     );
+  });
+});
+
+// ── Phase 3: templates, analytics, global leaderboard (design doc §14) ──
+
+describe('formatGlobalLeaderboardEntry', () => {
+  it('names the source room, since times are not comparable across rooms', () => {
+    expect(formatGlobalLeaderboardEntry(
+      { displayName: 'Alice', elapsedMs: 135_000, roomName: 'The Vault' }, 1,
+    )).toBe('1. Alice — 02:15 · The Vault');
+  });
+
+  it('falls back to "Anonymous" when displayName is missing', () => {
+    expect(formatGlobalLeaderboardEntry({ elapsedMs: 60_000, roomName: 'Attic' }, 2))
+      .toBe('2. Anonymous — 01:00 · Attic');
+  });
+
+  it('omits the room suffix entirely when the room name is unknown', () => {
+    expect(formatGlobalLeaderboardEntry({ displayName: 'Bo', elapsedMs: 60_000 }, 1))
+      .toBe('1. Bo — 01:00');
+  });
+});
+
+describe('puzzleTemplateFormValues', () => {
+  const template = {
+    templateId: 'number_lock',
+    promptTemplate: 'Enter the 4-digit combination.',
+    answerPlaceholder: '1234',
+    matchMode: 'numeric',
+    hints: ['It is even.', 'It starts with 1.'],
+  };
+
+  it('maps a template onto the authoring form fields', () => {
+    expect(puzzleTemplateFormValues(template)).toEqual({
+      prompt: 'Enter the 4-digit combination.',
+      hints: 'It is even.\nIt starts with 1.',
+      matchMode: 'numeric',
+      answerPlaceholder: '1234',
+    });
+  });
+
+  it('joins hints with newlines to match the textarea format the form submits', () => {
+    expect(puzzleTemplateFormValues(template).hints).toBe('It is even.\nIt starts with 1.');
+  });
+
+  it('never prefills the answer, so a creator must author their own', () => {
+    expect(puzzleTemplateFormValues(template)).not.toHaveProperty('answer');
+  });
+
+  it('returns blank fields for a missing template so "custom" clears the form', () => {
+    expect(puzzleTemplateFormValues(null)).toEqual({
+      prompt: '', hints: '', matchMode: 'exact', answerPlaceholder: '',
+    });
+  });
+
+  it('tolerates a template with no hints', () => {
+    expect(puzzleTemplateFormValues({ promptTemplate: 'p', matchMode: 'exact' }).hints).toBe('');
+  });
+});
+
+describe('formatPuzzleAnalytics', () => {
+  it('summarises attempts, success rate, and hint usage', () => {
+    expect(formatPuzzleAnalytics({
+      totalAttempts: 8, wrongAttempts: 6, distinctSolvers: 2, hintsRequested: 3, successRate: 0.25,
+    })).toBe('8 attempts · 25% solved · 3 hints');
+  });
+
+  it('says so plainly when nobody has tried the puzzle yet', () => {
+    expect(formatPuzzleAnalytics({
+      totalAttempts: 0, wrongAttempts: 0, distinctSolvers: 0, hintsRequested: 0, successRate: null,
+    })).toBe('No attempts yet');
+  });
+
+  it('rounds the success rate to a whole percent', () => {
+    expect(formatPuzzleAnalytics({
+      totalAttempts: 3, wrongAttempts: 2, distinctSolvers: 1, hintsRequested: 0, successRate: 1 / 3,
+    })).toBe('3 attempts · 33% solved · 0 hints');
+  });
+
+  it('returns empty string for missing stats', () => {
+    expect(formatPuzzleAnalytics(null)).toBe('');
+  });
+});
+
+describe('puzzleDifficultySignal', () => {
+  it('reports "unplayed" before anyone attempts it', () => {
+    expect(puzzleDifficultySignal({ totalAttempts: 0, successRate: null })).toBe('unplayed');
+  });
+
+  it('reports "easy" when almost everyone gets it first try', () => {
+    expect(puzzleDifficultySignal({ totalAttempts: 10, successRate: 0.9 })).toBe('easy');
+  });
+
+  it('reports "balanced" in the middle band', () => {
+    expect(puzzleDifficultySignal({ totalAttempts: 10, successRate: 0.5 })).toBe('balanced');
+  });
+
+  it('reports "hard" when hardly anyone solves it', () => {
+    expect(puzzleDifficultySignal({ totalAttempts: 20, successRate: 0.05 })).toBe('hard');
+  });
+
+  it('stays "unplayed" on a tiny sample, so one unlucky guess is not called "hard"', () => {
+    expect(puzzleDifficultySignal({ totalAttempts: 2, successRate: 0 })).toBe('unplayed');
+  });
+
+  it('returns "unplayed" for missing stats', () => {
+    expect(puzzleDifficultySignal(null)).toBe('unplayed');
   });
 });

@@ -30,6 +30,15 @@ MATCH_MODES = {"exact", "numeric", "contains"}
 ATTEMPT_RATE_LIMIT_MAX_REQUESTS = 10
 ATTEMPT_RATE_LIMIT_WINDOW_MS = 60_000.0
 
+# Phase 3 attempt analytics (design doc §14 Phase 3): distinct wrong guesses
+# tracked per puzzle are capped so a scripted brute-forcer cannot balloon a
+# room's memory with junk, in the same bounded-growth spirit as
+# MAX_OBJECTS_PER_TILE (§15).
+MAX_TRACKED_WRONG_GUESSES = 50
+
+# How many of the most frequent wrong guesses `puzzle_analytics` reports.
+TOP_WRONG_GUESSES = 5
+
 
 def _normalize(text: str) -> str:
     return text.strip().casefold()
@@ -57,6 +66,13 @@ class PuzzleEngine:
         self._solved_by: dict[str, set[str]] = {}
         self._hints_used: dict[tuple[str, str], int] = {}
         self._attempt_counts: dict[tuple[str, str], int] = {}
+        # Phase 3 analytics counters, aggregated per puzzle across all
+        # visitors -- never per named visitor -- so they stay a
+        # difficulty-tuning signal rather than surveillance of one player.
+        self._total_attempts: dict[str, int] = {}
+        self._wrong_attempts: dict[str, int] = {}
+        self._hint_requests: dict[str, int] = {}
+        self._wrong_guesses: dict[str, dict[str, int]] = {}
         self._attempt_limiter = SlidingWindowRateLimiter(
             max_requests=ATTEMPT_RATE_LIMIT_MAX_REQUESTS, window_ms=ATTEMPT_RATE_LIMIT_WINDOW_MS,
         )
@@ -106,6 +122,10 @@ class PuzzleEngine:
             return False
         del self._puzzles[puzzle_id]
         self._solved_by.pop(puzzle_id, None)
+        self._total_attempts.pop(puzzle_id, None)
+        self._wrong_attempts.pop(puzzle_id, None)
+        self._hint_requests.pop(puzzle_id, None)
+        self._wrong_guesses.pop(puzzle_id, None)
         for key in [k for k in self._hints_used if k[0] == puzzle_id]:
             del self._hints_used[key]
         for key in [k for k in self._attempt_counts if k[0] == puzzle_id]:
@@ -159,6 +179,7 @@ class PuzzleEngine:
 
         if _answers_match(record["matchMode"], record["answer"], guess):
             self._solved_by.setdefault(puzzle_id, set()).add(user_id)
+            self._total_attempts[puzzle_id] = self._total_attempts.get(puzzle_id, 0) + 1
             return {
                 "correct": True,
                 "attemptsRemaining": self._attempts_remaining(record, count_key),
@@ -167,6 +188,9 @@ class PuzzleEngine:
             }
 
         self._attempt_counts[count_key] = self._attempt_counts.get(count_key, 0) + 1
+        self._total_attempts[puzzle_id] = self._total_attempts.get(puzzle_id, 0) + 1
+        self._wrong_attempts[puzzle_id] = self._wrong_attempts.get(puzzle_id, 0) + 1
+        self._record_wrong_guess(puzzle_id, guess)
         now_locked = max_attempts is not None and self._attempt_counts[count_key] >= max_attempts
         return {
             "correct": False,
@@ -193,4 +217,60 @@ class PuzzleEngine:
             return {"hint": None, "hintsUsed": used, "hintsRemaining": 0}
         hint = hints[used]
         self._hints_used[key] = used + 1
+        self._hint_requests[puzzle_id] = self._hint_requests.get(puzzle_id, 0) + 1
         return {"hint": hint, "hintsUsed": used + 1, "hintsRemaining": len(hints) - (used + 1)}
+
+    # ── Phase 3: attempt analytics (design doc §14 Phase 3) ──────────────
+
+    def _record_wrong_guess(self, puzzle_id: str, guess: str) -> None:
+        """Tally a normalized wrong guess so a creator can see *what* players
+        keep answering -- the single most useful signal for spotting a
+        prompt that is ambiguous rather than hard. Bounded by
+        `MAX_TRACKED_WRONG_GUESSES` distinct entries per puzzle: once full,
+        already-seen guesses still increment (the frequent ones, which are
+        the interesting ones) but new distinct junk is dropped."""
+        normalized = _normalize(guess)
+        if not normalized:
+            return
+        tally = self._wrong_guesses.setdefault(puzzle_id, {})
+        if normalized not in tally and len(tally) >= MAX_TRACKED_WRONG_GUESSES:
+            return
+        tally[normalized] = tally.get(normalized, 0) + 1
+
+    def puzzle_analytics(self, puzzle_id: str) -> dict[str, Any]:
+        """Aggregated difficulty signal for one puzzle (design doc §14
+        Phase 3). Deliberately contains no user ids and never the answer:
+        only counts, plus the most common *wrong* guesses (which by
+        definition are not the answer).
+
+        `successRate` is `None` rather than 0 when nobody has attempted the
+        puzzle yet, so a brand-new puzzle doesn't read as "0% success --
+        impossible" in the creator UI.
+        """
+        self._require_puzzle(puzzle_id)
+        record = self._puzzles[puzzle_id]
+        total = self._total_attempts.get(puzzle_id, 0)
+        solvers = self._solved_by.get(puzzle_id, set())
+        max_attempts = record["maxAttempts"]
+        locked_out = 0
+        if max_attempts is not None:
+            locked_out = sum(
+                1 for (pid, uid), used in self._attempt_counts.items()
+                if pid == puzzle_id and used >= max_attempts and uid not in solvers
+            )
+        tally = self._wrong_guesses.get(puzzle_id, {})
+        common = sorted(tally.items(), key=lambda item: (-item[1], item[0]))[:TOP_WRONG_GUESSES]
+        return {
+            "puzzleId": puzzle_id,
+            "totalAttempts": total,
+            "wrongAttempts": self._wrong_attempts.get(puzzle_id, 0),
+            "solvedCount": len(solvers),
+            "distinctSolvers": len(solvers),
+            "hintsRequested": self._hint_requests.get(puzzle_id, 0),
+            "lockedOutUsers": locked_out,
+            "successRate": (len(solvers) / total) if total else None,
+            "commonWrongGuesses": [{"guess": guess, "count": count} for guess, count in common],
+        }
+
+    def list_analytics(self) -> list[dict[str, Any]]:
+        return [self.puzzle_analytics(puzzle_id) for puzzle_id in self._puzzles]

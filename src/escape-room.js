@@ -56,3 +56,60 @@ export function doorAttemptMessage(payload) {
   if (payload.opened) return 'The door opens.';
   return "It won't budge yet -- you're missing something.";
 }
+
+// ── Phase 3: templates, analytics, global leaderboard (design doc §14) ──
+
+/**
+ * Formats one cross-room leaderboard entry as "1. Alice — 02:15 · The Vault".
+ * The room name matters here in a way it doesn't for a per-room board:
+ * escape times from different rooms aren't comparable without it.
+ */
+export function formatGlobalLeaderboardEntry(entry, rank) {
+  const base = formatLeaderboardEntry(entry, rank);
+  return entry?.roomName ? `${base} · ${entry.roomName}` : base;
+}
+
+/**
+ * Maps a puzzle template (from room:puzzle:templates) onto the authoring
+ * form's field values. Deliberately never returns an `answer`: the whole
+ * point of a template is to save typing on the *scaffolding*, while the
+ * creator still picks a secret of their own. `answerPlaceholder` is only a
+ * hint shown in the empty input.
+ *
+ * A null template means "custom", which blanks the form.
+ */
+export function puzzleTemplateFormValues(template) {
+  if (!template) return { prompt: '', hints: '', matchMode: 'exact', answerPlaceholder: '' };
+  return {
+    prompt: template.promptTemplate ?? '',
+    hints: (template.hints ?? []).join('\n'),
+    matchMode: template.matchMode ?? 'exact',
+    answerPlaceholder: template.answerPlaceholder ?? '',
+  };
+}
+
+/** One-line summary of a puzzle's attempt analytics for the builder panel. */
+export function formatPuzzleAnalytics(stats) {
+  if (!stats) return '';
+  if (!stats.totalAttempts) return 'No attempts yet';
+  const percent = Math.round((stats.successRate ?? 0) * 100);
+  const attempts = `${stats.totalAttempts} attempt${stats.totalAttempts === 1 ? '' : 's'}`;
+  const hints = `${stats.hintsRequested ?? 0} hint${stats.hintsRequested === 1 ? '' : 's'}`;
+  return `${attempts} · ${percent}% solved · ${hints}`;
+}
+
+/** Minimum attempts before a success rate is treated as meaningful. */
+export const DIFFICULTY_SAMPLE_THRESHOLD = 3;
+
+/**
+ * Coarse difficulty band for a puzzle, for the creator-facing panel.
+ * Below `DIFFICULTY_SAMPLE_THRESHOLD` attempts it stays 'unplayed' rather
+ * than branding a puzzle "hard" off one unlucky guess.
+ */
+export function puzzleDifficultySignal(stats) {
+  if (!stats || (stats.totalAttempts ?? 0) < DIFFICULTY_SAMPLE_THRESHOLD) return 'unplayed';
+  const rate = stats.successRate ?? 0;
+  if (rate >= 0.7) return 'easy';
+  if (rate >= 0.25) return 'balanced';
+  return 'hard';
+}

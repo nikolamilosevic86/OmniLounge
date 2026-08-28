@@ -15,6 +15,7 @@ from server.game.inventory import InventoryEngine
 from server.game.media import MediaLibrary
 from server.game.npc_guide import GuideEngine
 from server.game.puzzle import PuzzleEngine
+from server.game.puzzle_templates import build_puzzle_from_template, list_templates
 from server.game.room_builder_models import BoundsModel, RoomObjectPlacementModel
 from server.game.room_object_catalog import (
     COLOR_PRESETS,
@@ -1108,13 +1109,14 @@ class RoomBuilderState:
     def add_puzzle(
         self,
         puzzle_id: str,
-        prompt: str,
+        prompt: str | None,
         answer: str,
         hints: list[str] | None = None,
         reveal_item_id: str | None = None,
         unlock_door_id: str | None = None,
-        match_mode: str = "exact",
+        match_mode: str | None = None,
         max_attempts: int | None = None,
+        template_id: str | None = None,
         requester_id: str | None = None,
         is_room_host: bool = False,
     ) -> dict[str, Any]:
@@ -1124,18 +1126,36 @@ class RoomBuilderState:
         atomic, two-sided wiring between a puzzle and the door it unlocks
         instead. `unlock_door_id` is validated *before* creating the puzzle
         so a bad reference never leaves a dangling puzzle definition behind.
+
+        `template_id` (Phase 3, §14) pre-fills `prompt`/`hints`/`match_mode`
+        from the `puzzle_templates` catalog -- most importantly the
+        `match_mode` preset each archetype needs. Any of those three fields
+        the caller supplies explicitly still wins, so a template is a
+        starting point rather than a cage. Without a template the fields
+        behave exactly as before (`prompt` required, `match_mode` defaults
+        to "exact").
         """
         self._require_room_host(requester_id, is_room_host)
+        if template_id is not None:
+            fields = build_puzzle_from_template(
+                template_id, answer=answer, prompt=prompt, hints=hints, match_mode=match_mode,
+            )
+            prompt, hints, match_mode = fields["prompt"], fields["hints"], fields["match_mode"]
         if unlock_door_id is not None:
             self._require_object(unlock_door_id)
         result = self._puzzles.add_puzzle(
             puzzle_id, prompt, answer, hints=hints, reveal_item_id=reveal_item_id,
-            unlock_door_id=unlock_door_id, match_mode=match_mode, max_attempts=max_attempts,
+            unlock_door_id=unlock_door_id, match_mode=match_mode or "exact", max_attempts=max_attempts,
         )
         if unlock_door_id is not None:
             door_config = self._objects[unlock_door_id]["config"]
             door_config.setdefault("requiredPuzzleIds", []).append(puzzle_id)
         return result
+
+    def list_puzzle_templates(self) -> list[dict[str, Any]]:
+        """Read-only authoring catalog (Phase 3, §14). Not permission-gated:
+        it exposes no room state at all, only the static template list."""
+        return list_templates()
 
     def remove_puzzle(
         self, puzzle_id: str, requester_id: str | None = None, is_room_host: bool = False
@@ -1168,6 +1188,24 @@ class RoomBuilderState:
     ) -> None:
         self._require_room_host(requester_id, is_room_host)
         self._puzzles.reset_attempts(puzzle_id, user_id)
+
+    def puzzle_analytics(
+        self, puzzle_id: str, requester_id: str | None = None, is_room_host: bool = False
+    ) -> dict[str, Any]:
+        """Difficulty-tuning stats for one puzzle (design doc §14 Phase 3).
+
+        Room-host gated: it aggregates how a room's visitors struggled, and
+        `commonWrongGuesses` would otherwise hand a player a free list of
+        answers other people already ruled out.
+        """
+        self._require_room_host(requester_id, is_room_host)
+        return self._puzzles.puzzle_analytics(puzzle_id)
+
+    def list_puzzle_analytics(
+        self, requester_id: str | None = None, is_room_host: bool = False
+    ) -> list[dict[str, Any]]:
+        self._require_room_host(requester_id, is_room_host)
+        return self._puzzles.list_analytics()
 
     def configure_escape_session(
         self,
