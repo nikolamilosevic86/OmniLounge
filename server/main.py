@@ -1501,12 +1501,13 @@ async def room_media_sync_leave(sid, data):
 
     data = data or {}
     try:
-        builder.leave_watch_sync(data["objectId"], user_id=sid)
-    except ValueError as exc:
+        object_id = data["objectId"]
+        builder.leave_watch_sync(object_id, user_id=sid)
+    except (KeyError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)
         return
 
-    await _broadcast_sync_session(room_id, data["objectId"], time.time() * 1000)
+    await _broadcast_sync_session(room_id, object_id, time.time() * 1000)
     return True
 
 
@@ -2021,7 +2022,7 @@ async def room_object_delete(sid, data):
         deleted = builder.delete_object(
             data["objectId"], requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
-    except PermissionError as exc:
+    except (KeyError, PermissionError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)
         return
     if not deleted:

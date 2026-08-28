@@ -5,6 +5,9 @@ import {
   getVisibleMessages,
   filterMessagesForUser,
   canSendChatMessage,
+  whisperRecipientOptions,
+  recipientOptionsChanged,
+  resolveRecipientSelection,
 } from '../src/chat.js';
 
 describe('Chat', () => {
@@ -126,6 +129,97 @@ describe('Chat', () => {
 
     it('allows sending when the muted set is empty', () => {
       expect(canSendChatMessage(new Set(), 'u1')).toBe(true);
+    });
+  });
+});
+
+describe('whisper recipient list', () => {
+  const roster = (...entries) => new Map(
+    entries.map(([id, username]) => [id, { avatar: { username } }]),
+  );
+
+  describe('whisperRecipientOptions', () => {
+    it('lists every other player as an id/label pair', () => {
+      const options = whisperRecipientOptions(roster(['p1', 'Alice'], ['p2', 'Bob']), 'p1');
+      expect(options).toEqual([{ id: 'p2', label: 'Bob' }]);
+    });
+
+    it('excludes the viewer so you cannot whisper yourself', () => {
+      const options = whisperRecipientOptions(roster(['p1', 'Alice'], ['p2', 'Bob']), 'p1');
+      expect(options.some(o => o.id === 'p1')).toBe(false);
+    });
+
+    it('returns an empty list when the viewer is alone', () => {
+      expect(whisperRecipientOptions(roster(['p1', 'Alice']), 'p1')).toEqual([]);
+    });
+
+    it('falls back to the player id when a username is missing', () => {
+      const players = new Map([['p2', { avatar: {} }]]);
+      expect(whisperRecipientOptions(players, 'p1')).toEqual([{ id: 'p2', label: 'p2' }]);
+    });
+
+    it('tolerates a player record with no avatar at all', () => {
+      const players = new Map([['p2', {}]]);
+      expect(whisperRecipientOptions(players, 'p1')).toEqual([{ id: 'p2', label: 'p2' }]);
+    });
+  });
+
+  describe('recipientOptionsChanged', () => {
+    // The room:state broadcast fires on every tick in which anyone moved, so
+    // rebuilding the <select> unconditionally both churns the DOM and wipes
+    // the user's current selection mid-whisper.
+    it('is false for identical option lists', () => {
+      const a = [{ id: 'p2', label: 'Bob' }];
+      const b = [{ id: 'p2', label: 'Bob' }];
+      expect(recipientOptionsChanged(a, b)).toBe(false);
+    });
+
+    it('is true when a player joins', () => {
+      const a = [{ id: 'p2', label: 'Bob' }];
+      const b = [{ id: 'p2', label: 'Bob' }, { id: 'p3', label: 'Cara' }];
+      expect(recipientOptionsChanged(a, b)).toBe(true);
+    });
+
+    it('is true when a player leaves', () => {
+      const a = [{ id: 'p2', label: 'Bob' }, { id: 'p3', label: 'Cara' }];
+      const b = [{ id: 'p3', label: 'Cara' }];
+      expect(recipientOptionsChanged(a, b)).toBe(true);
+    });
+
+    it('is true when a player renames', () => {
+      const a = [{ id: 'p2', label: 'Bob' }];
+      const b = [{ id: 'p2', label: 'Bobby' }];
+      expect(recipientOptionsChanged(a, b)).toBe(true);
+    });
+
+    it('is true when order changes, since the rendered list would differ', () => {
+      const a = [{ id: 'p2', label: 'Bob' }, { id: 'p3', label: 'Cara' }];
+      const b = [{ id: 'p3', label: 'Cara' }, { id: 'p2', label: 'Bob' }];
+      expect(recipientOptionsChanged(a, b)).toBe(true);
+    });
+
+    it('is false for two empty lists', () => {
+      expect(recipientOptionsChanged([], [])).toBe(false);
+    });
+  });
+
+  describe('resolveRecipientSelection', () => {
+    it('keeps the current selection when that player is still present', () => {
+      const options = [{ id: 'p2', label: 'Bob' }, { id: 'p3', label: 'Cara' }];
+      expect(resolveRecipientSelection(options, 'p3')).toBe('p3');
+    });
+
+    it('clears the selection when that player has left', () => {
+      const options = [{ id: 'p2', label: 'Bob' }];
+      expect(resolveRecipientSelection(options, 'p3')).toBe('');
+    });
+
+    it('keeps an empty selection empty', () => {
+      expect(resolveRecipientSelection([{ id: 'p2', label: 'Bob' }], '')).toBe('');
+    });
+
+    it('clears the selection when nobody else is left', () => {
+      expect(resolveRecipientSelection([], 'p3')).toBe('');
     });
   });
 });

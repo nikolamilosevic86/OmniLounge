@@ -1159,6 +1159,19 @@ a:focus-visible,
   transition: background var(--md-duration-short) var(--md-easing-standard);
 }
 
+/* A pair of sibling actions that belong together (e.g. the room-scoped and
+   cross-room leaderboard toggles). .builder-section is a flex column, so
+   without this each button stretches to full width and the pairing reads as
+   two unrelated stacked actions. */
+.builder-btn-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.builder-btn-row > .builder-secondary-btn {
+  flex: 1;
+}
+
 .builder-secondary-btn:hover:not(:disabled) {
   background: var(--md-surface-container-highest);
 }

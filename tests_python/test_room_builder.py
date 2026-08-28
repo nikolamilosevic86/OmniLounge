@@ -1097,6 +1097,81 @@ class TestAddPuzzleOrchestrator:
         assert result["puzzleId"] == "riddle-1"
 
 
+class TestRemovePuzzleUnwiresDoors:
+    """A door's `requiredPuzzleIds` gate is AND-ed over puzzles that must be
+    *solved* (`_attempt_open_door`), and `PuzzleEngine.is_solved` returns
+    False for a puzzle that no longer exists. So a stale id left behind on a
+    door makes that door permanently unopenable for everyone -- exactly the
+    "creator builds an unsolvable room" risk called out in design doc §15.
+
+    `add_puzzle(unlock_door_id=...)` wires the link, so `remove_puzzle` owns
+    unwiring it again."""
+
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+
+    def _door_config(self):
+        return self.builder.get_object("door-1")["config"]
+
+    def test_removing_a_puzzle_strips_it_from_the_door_it_unlocked(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        self.builder.remove_puzzle("riddle-1")
+        assert self._door_config()["requiredPuzzleIds"] == []
+
+    def test_removing_one_puzzle_leaves_the_doors_other_requirements_intact(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        self.builder.add_puzzle("riddle-2", "3+3?", "6", unlock_door_id="door-1")
+        self.builder.remove_puzzle("riddle-1")
+        assert self._door_config()["requiredPuzzleIds"] == ["riddle-2"]
+
+    def test_door_becomes_openable_again_after_its_only_puzzle_is_removed(self):
+        # The regression this whole class exists for: before the fix the
+        # door stayed locked forever because is_solved("riddle-1", ...) is
+        # False for a puzzle that no longer exists.
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        self.builder.remove_puzzle("riddle-1")
+        result = self.builder.interact_with_object(
+            "door-1", "attempt_open", requester_id="p1", now_ms=0,
+        )
+        assert result["payload"]["opened"] is True
+
+    def test_removing_a_puzzle_bound_to_no_door_is_still_fine(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        assert self.builder.remove_puzzle("riddle-1") is True
+
+    def test_removing_an_unknown_puzzle_does_not_touch_door_config(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        assert self.builder.remove_puzzle("ghost") is False
+        assert self._door_config()["requiredPuzzleIds"] == ["riddle-1"]
+
+    def test_deleting_the_door_itself_cascades_the_puzzle_away(self):
+        # With no door left to gate, nothing references the puzzle, so
+        # delete_object's existing cascade should reclaim it.
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        self.builder.create_object(
+            "lever-1", "escape_door", (0, 0), x=90, y=90, width=20, height=20,
+            config={"puzzleId": "riddle-1"},
+        )
+        self.builder.delete_object("door-1")
+        self.builder.delete_object("lever-1")
+        assert self.builder.list_puzzles() == []
+
+    def test_a_puzzle_still_required_by_a_door_survives_object_deletion(self):
+        # A door's requiredPuzzleIds is a genuine reference: deleting some
+        # other object that happens to mention the puzzle must not delete a
+        # puzzle the door still gates on -- that would leave the door
+        # permanently unopenable.
+        self.builder.create_object(
+            "lever-1", "escape_door", (0, 0), x=90, y=90, width=20, height=20,
+            config={"puzzleId": "riddle-1"},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        self.builder.delete_object("lever-1")
+        assert [p["puzzleId"] for p in self.builder.list_puzzles()] == ["riddle-1"]
+        assert self._door_config()["requiredPuzzleIds"] == ["riddle-1"]
+
+
 class TestAddPuzzleFromTemplate:
     """Phase 3 puzzle template library (design doc §14 Phase 3, §16 Q5):
     `template_id` pre-fills prompt/hints/match_mode from

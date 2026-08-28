@@ -814,6 +814,38 @@ class TestRoomBuilderHandlers:
         assert len(full_objects) == 2
 
 
+class TestHandlersSurviveMissingObjectId:
+    """Socket payloads come straight off the wire, so a handler that indexes
+    `data["objectId"]` inside a `try` must list `KeyError` among the caught
+    exceptions. Otherwise a client sending `{}` raises out of the handler
+    instead of getting a clean `error` event back -- the rest of the file
+    already follows the `except (KeyError, ...)` convention."""
+
+    async def _join(self, rooms, player_id="p1"):
+        rooms.join_room(player_id, create_default_avatar("Alice"), "lobby")
+
+    async def test_object_delete_without_object_id_emits_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        assert await main_module.room_object_delete("p1", {}) is None
+        assert [e for e in fake_sio.emitted if e[0] == "error"]
+
+    async def test_media_sync_leave_without_object_id_emits_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        assert await main_module.room_media_sync_leave("p1", {}) is None
+        assert [e for e in fake_sio.emitted if e[0] == "error"]
+
+    async def test_media_sync_leave_with_unknown_object_id_emits_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        assert await main_module.room_media_sync_leave("p1", {"objectId": "ghost"}) is None
+        assert [e for e in fake_sio.emitted if e[0] == "error"]
+
+
 # Captured at import time, before the autouse `isolate_registry` fixture
 # monkeypatches `main_module.sio` to a fake for the rest of the test suite.
 # `@sio.on(...)` decorators register on this real server object at import

@@ -1090,7 +1090,26 @@ class RoomBuilderState:
                 return True
             if other["objectType"] == "ai_character" and other["config"].get("guardsPuzzleId") == puzzle_id:
                 return True
+            # A door's requiredPuzzleIds is a genuine reference too: cascading
+            # the puzzle away while a door still gates on it would leave that
+            # door permanently unopenable, since `is_solved` is False for a
+            # puzzle that no longer exists (the §15 "unsolvable room" risk).
+            if puzzle_id in (other["config"].get("requiredPuzzleIds") or []):
+                return True
         return False
+
+    def _unwire_puzzle_from_doors(self, puzzle_id: str) -> None:
+        """Drop `puzzle_id` from every door that required it.
+
+        `add_puzzle(unlock_door_id=...)` wires the link, so removal owns
+        unwiring it. Without this a removed puzzle leaves a stale id behind
+        and `_attempt_open_door`'s AND-gate can never be satisfied again --
+        the door is dead for every visitor (§15).
+        """
+        for record in self._objects.values():
+            required = record["config"].get("requiredPuzzleIds")
+            if required and puzzle_id in required:
+                record["config"]["requiredPuzzleIds"] = [p for p in required if p != puzzle_id]
 
     # ── Escape room orchestration (design doc §6.1, §8) ──────────────────
 
@@ -1161,7 +1180,10 @@ class RoomBuilderState:
         self, puzzle_id: str, requester_id: str | None = None, is_room_host: bool = False
     ) -> bool:
         self._require_room_host(requester_id, is_room_host)
-        return self._puzzles.remove_puzzle(puzzle_id)
+        removed = self._puzzles.remove_puzzle(puzzle_id)
+        if removed:
+            self._unwire_puzzle_from_doors(puzzle_id)
+        return removed
 
     def list_puzzles(self) -> list[dict[str, Any]]:
         return self._puzzles.list_puzzles()

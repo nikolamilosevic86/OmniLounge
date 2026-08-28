@@ -17,7 +17,12 @@ import {
   validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
   MAX_KNOWLEDGE_DOCUMENTS, isKnowledgeBaseFull,
 } from './story.js';
-import { canSendChatMessage } from './chat.js';
+import {
+  canSendChatMessage,
+  whisperRecipientOptions,
+  recipientOptionsChanged,
+  resolveRecipientSelection,
+} from './chat.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement } from './focus-trap.js';
 import {
@@ -2101,7 +2106,8 @@ function renderPlayers() {
     }
     if (talking)              newSvgEl.classList.add('is-talking');
     if (isHit && !stunned)    newSvgEl.classList.add('avatar-hit');
-    if (stunned)              newSvgEl.classList.add('avatar-ko-pose');
+    // No `avatar-ko-pose` class here: the KO look is driven entirely by the
+    // parent's `.room-player.is-ko`, which already styles `.avatar-svg`.
 
     if (svgEl) {
       el.replaceChild(newSvgEl, svgEl);
@@ -2213,15 +2219,27 @@ function updateOnlineCount() {
   onlineCount.textContent = `${state.players.size} online`;
 }
 
+// Options currently rendered into #recipient-dropdown, so we can tell a real
+// roster change from the many no-op refreshes driven by movement ticks.
+let renderedRecipientOptions = [];
+
 function updateRecipientList() {
+  const options = whisperRecipientOptions(state.players, state.playerId);
+  if (!recipientOptionsChanged(renderedRecipientOptions, options)) return;
+  renderedRecipientOptions = options;
+
+  // `room:state` fires on every tick in which anyone moved, so blowing the
+  // <select> away here used to clear the user's chosen recipient mid-whisper
+  // -- sendMessage() then bailed on the empty value and the message vanished.
+  const previousValue = recipientDropdown.value;
   recipientDropdown.innerHTML = '<option value="">Select player...</option>';
-  for (const [id, player] of state.players) {
-    if (id === state.playerId) continue;
+  for (const { id, label } of options) {
     const opt = document.createElement('option');
     opt.value = id;
-    opt.textContent = player.avatar.username;
+    opt.textContent = label;
     recipientDropdown.appendChild(opt);
   }
+  recipientDropdown.value = resolveRecipientSelection(options, previousValue);
 }
 
 function clearSceneStateForRoomSwitch() {
