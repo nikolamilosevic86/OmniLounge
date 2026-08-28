@@ -2294,7 +2294,8 @@ async def room_escape_status(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
-    return builder.get_escape_status(sid, now_ms=time.time() * 1000)
+    status = builder.get_escape_status(sid, now_ms=time.time() * 1000)
+    return {**status, "briefing": builder.get_escape_briefing()}
 
 
 @sio.on("room:escape:reset")

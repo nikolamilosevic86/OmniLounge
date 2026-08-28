@@ -38,6 +38,9 @@ class EscapeSessionEngine:
         self._time_limit_ms = time_limit_ms
         self._briefing = briefing
 
+    def get_briefing(self) -> str | None:
+        return self._briefing
+
     def _require_enabled(self) -> None:
         if not self._enabled:
             raise PermissionError("escape mode is not enabled for this room")

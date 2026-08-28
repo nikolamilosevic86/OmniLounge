@@ -71,6 +71,19 @@ class TestEscapeSessionHandlers:
 
         assert status["state"] == "in_progress"
 
+    async def test_status_includes_briefing_text(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        room_id = room["id"]
+        await _join(rooms, room_id, "host-1", "Host")
+        await main_module.room_escape_configure(
+            "host-1", {"enabled": True, "timeLimitMs": 60_000, "briefing": "Find the key."},
+        )
+
+        status = await main_module.room_escape_status("host-1", {})
+
+        assert status["briefing"] == "Find the key."
+
     async def test_reset_while_in_progress_is_rejected(self, isolate_registry):
         rooms, fake_sio = isolate_registry
         room = rooms.create_room(host_id="host-1", name="Test Room")

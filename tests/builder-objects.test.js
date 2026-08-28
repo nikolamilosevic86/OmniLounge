@@ -53,7 +53,10 @@ describe('resolveObjectColor', () => {
 
 describe('objectTypeIcon', () => {
   it('returns a distinct icon for each known object type', () => {
-    const types = ['table', 'chair', 'bar', 'sofa', 'bookshelf', 'tv', 'music_player', 'ai_character'];
+    const types = [
+      'table', 'chair', 'bar', 'sofa', 'bookshelf', 'tv', 'music_player', 'ai_character',
+      'escape_door', 'hidden_item',
+    ];
     const icons = types.map(objectTypeIcon);
     expect(new Set(icons).size).toBe(types.length);
     expect(objectTypeIcon('ai_character')).not.toBe(objectTypeIcon('unknown-thing'));
@@ -83,5 +86,17 @@ describe('buildInteractionActions', () => {
     }
     expect(actions[0].interactionType).toBe('sit');
     expect(actions[0].label).toBe('Sit down');
+  });
+
+  it('maps escape room interaction types to an icon', () => {
+    const interactions = [
+      { interactionType: 'attempt_open', label: 'Open Door', actionState: null },
+      { interactionType: 'pick_up', label: 'Pick Up', actionState: null },
+      { interactionType: 'solve_puzzle', label: 'Solve Puzzle', actionState: null },
+    ];
+    const actions = buildInteractionActions(interactions);
+    for (const action of actions) {
+      expect(action.icon).toBeTruthy();
+    }
   });
 });

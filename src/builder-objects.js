@@ -27,6 +27,8 @@ const TYPE_ICONS = {
   tv: '📺',
   music_player: '🎵',
   ai_character: '🧑‍🏫',
+  escape_door: '🚪',
+  hidden_item: '🗝️',
 };
 
 const DEFAULT_TYPE_ICON = '🧩';
@@ -44,6 +46,9 @@ const INTERACTION_ICONS = {
   talk: '💬',
   ask_hint: '❓',
   start_mission: '🚀',
+  attempt_open: '🚪',
+  pick_up: '🖐️',
+  solve_puzzle: '🧩',
 };
 
 const DEFAULT_INTERACTION_ICON = '✨';

@@ -1183,6 +1183,9 @@ class RoomBuilderState:
     def get_escape_status(self, requester_id: str, now_ms: float) -> dict[str, Any]:
         return self._escape.status(requester_id, now_ms)
 
+    def get_escape_briefing(self) -> str | None:
+        return self._escape.get_briefing()
+
     def reset_escape_session(self, requester_id: str) -> None:
         """Self-serve retry (room:escape:reset, §9): a visitor may only ever
         reset their own session, so no room-host gate is needed here --

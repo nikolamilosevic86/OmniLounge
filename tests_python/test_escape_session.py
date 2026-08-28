@@ -20,6 +20,14 @@ class TestConfigure:
         status = engine.status("u1", now_ms=0.0)
         assert status == {"state": "not_started", "remainingMs": None}
 
+    def test_get_briefing_returns_configured_text(self):
+        engine = make_engine(briefing="Find the key before time runs out.")
+        assert engine.get_briefing() == "Find the key before time runs out."
+
+    def test_get_briefing_defaults_to_none(self):
+        engine = EscapeSessionEngine()
+        assert engine.get_briefing() is None
+
 
 class TestStart:
     def test_start_requires_enabled_configuration(self):

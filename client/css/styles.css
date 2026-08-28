@@ -920,8 +920,16 @@ a:focus-visible,
 
 .tile-pill,
 .build-mode-pill,
-.minimap-pill {
+.minimap-pill,
+.escape-timer-pill,
+.escape-inventory-pill {
   width: fit-content;
+}
+
+.escape-timer-pill.low-time {
+  background: var(--md-error-container);
+  color: var(--md-on-error-container);
+  border-color: transparent;
 }
 
 .tile-pill::before {
@@ -1428,6 +1436,13 @@ canvas.waypoint-picking {
   font-size: 0.65rem;
   color: var(--text-muted);
   text-transform: capitalize;
+}
+
+.builder-object-chip.hidden-item-badge {
+  background: var(--md-warning-container);
+  color: var(--md-on-warning-container);
+  border-color: transparent;
+  text-transform: none;
 }
 
 .builder-object-row-fields label {
@@ -2338,6 +2353,14 @@ canvas.waypoint-picking {
   border-radius: var(--md-shape-xl);
   box-shadow: var(--md-elevation-3);
   padding: 1.5rem;
+}
+
+.escape-win-card {
+  border-color: var(--md-success);
+}
+
+.escape-win-card .reader-modal-header h3 {
+  color: var(--md-success);
 }
 
 .reader-modal-header {

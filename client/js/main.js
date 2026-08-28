@@ -23,6 +23,9 @@ import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement 
 import {
   NPC_BUBBLE_DURATION_MS, applyNpcMove, formatTourStatus, normalizeWaypointLabel, tourButtonState,
 } from './npc-guide.js';
+import {
+  escapeStatusLabel, formatCountdown, isLowTime, puzzleAttemptMessage, formatLeaderboardEntry, doorAttemptMessage,
+} from './escape-room.js';
 
 const BUBBLE_DURATION = 6000;
 const HOST_TOKENS_STORAGE_KEY = 'hobboverse-host-tokens';
@@ -118,6 +121,12 @@ const state = {
   socket: null,
   keys: { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false },
   gameLoopId: null,
+  // Escape room (design doc feature_designs/escape_room_feature_design.md).
+  escapeStatus: { state: 'not_started', remainingMs: null, briefing: null },
+  escapeStatusSyncedAtMs: null,
+  escapeInventory: [],
+  puzzles: [],
+  puzzleModalPuzzleId: null,
 };
 
 const creatorScreen = document.getElementById('creator-screen');
@@ -300,6 +309,61 @@ const waypointHereBtn = document.getElementById('waypoint-here-btn');
 const waypointPickHint = document.getElementById('waypoint-pick-hint');
 const waypointListEl = document.getElementById('waypoint-list');
 const waypointClearBtn = document.getElementById('waypoint-clear-btn');
+
+// ── Escape room ─────────────────────────────────────────────────────────
+const escapeTimerPill = document.getElementById('escape-timer-pill');
+const escapeTimerLabel = document.getElementById('escape-timer-label');
+const escapeInventoryPill = document.getElementById('escape-inventory-pill');
+const escapeInventoryLabel = document.getElementById('escape-inventory-label');
+const escapeEnabledInput = document.getElementById('escape-enabled-input');
+const escapeTimeLimitInput = document.getElementById('escape-time-limit-input');
+const escapeBriefingInput = document.getElementById('escape-briefing-input');
+const escapeSettingsSaveBtn = document.getElementById('escape-settings-save-btn');
+const puzzleIdInput = document.getElementById('puzzle-id-input');
+const puzzlePromptInput = document.getElementById('puzzle-prompt-input');
+const puzzleAnswerInput = document.getElementById('puzzle-answer-input');
+const puzzleMatchModeSelect = document.getElementById('puzzle-match-mode-select');
+const puzzleHintsInput = document.getElementById('puzzle-hints-input');
+const puzzleMaxAttemptsInput = document.getElementById('puzzle-max-attempts-input');
+const puzzleRevealItemSelect = document.getElementById('puzzle-reveal-item-select');
+const puzzleUnlockDoorSelect = document.getElementById('puzzle-unlock-door-select');
+const puzzleAddBtn = document.getElementById('puzzle-add-btn');
+const puzzleErrorEl = document.getElementById('puzzle-error');
+const puzzleListEl = document.getElementById('puzzle-list');
+const escapeLeaderboardBtn = document.getElementById('escape-leaderboard-btn');
+const escapeLeaderboardListEl = document.getElementById('escape-leaderboard-list');
+const configureEscapeDoorSection = document.getElementById('configure-escape-door-section');
+const configureItemSection = document.getElementById('configure-item-section');
+const escapeDoorSelect = document.getElementById('escape-door-select');
+const escapeDoorRequiredItemSelect = document.getElementById('escape-door-required-item-select');
+const escapeDoorRequiredPuzzlesSelect = document.getElementById('escape-door-required-puzzles-select');
+const escapeDoorDestXInput = document.getElementById('escape-door-dest-x-input');
+const escapeDoorDestYInput = document.getElementById('escape-door-dest-y-input');
+const escapeDoorConfigureBtn = document.getElementById('escape-door-configure-btn');
+const hiddenItemSelect = document.getElementById('hidden-item-select');
+const hiddenItemKindSelect = document.getElementById('hidden-item-kind-select');
+const hiddenItemSingleUseInput = document.getElementById('hidden-item-single-use-input');
+const hiddenItemConfigureBtn = document.getElementById('hidden-item-configure-btn');
+const puzzleModal = document.getElementById('puzzle-modal');
+const puzzleModalTitle = document.getElementById('puzzle-modal-title');
+const puzzleModalClose = document.getElementById('puzzle-modal-close');
+const puzzleModalPrompt = document.getElementById('puzzle-modal-prompt');
+const puzzleGuessForm = document.getElementById('puzzle-guess-form');
+const puzzleGuessInput = document.getElementById('puzzle-guess-input');
+const puzzleModalFeedback = document.getElementById('puzzle-modal-feedback');
+const puzzleHintBtn = document.getElementById('puzzle-hint-btn');
+const puzzleModalHint = document.getElementById('puzzle-modal-hint');
+const escapeBriefingModal = document.getElementById('escape-briefing-modal');
+const escapeBriefingClose = document.getElementById('escape-briefing-close');
+const escapeBriefingText = document.getElementById('escape-briefing-text');
+const escapeBriefingStartBtn = document.getElementById('escape-briefing-start-btn');
+const escapeWinModal = document.getElementById('escape-win-modal');
+const escapeWinClose = document.getElementById('escape-win-close');
+const escapeWinText = document.getElementById('escape-win-text');
+const escapeWinResetBtn = document.getElementById('escape-win-reset-btn');
+const escapeExpiredModal = document.getElementById('escape-expired-modal');
+const escapeExpiredClose = document.getElementById('escape-expired-close');
+const escapeExpiredResetBtn = document.getElementById('escape-expired-reset-btn');
 
 function initCreator() {
   buildColorSwatches();
@@ -1234,7 +1298,162 @@ function initGame() {
     });
   });
 
+  // ── Escape room ──────────────────────────────────────────────────────
+  escapeSettingsSaveBtn?.addEventListener('click', () => {
+    const minutes = Number(escapeTimeLimitInput?.value || 0);
+    if (!minutes || minutes <= 0) {
+      addSystemMessage('Enter a positive time limit in minutes.');
+      return;
+    }
+    state.socket?.emit('room:escape:configure', {
+      enabled: !!escapeEnabledInput?.checked,
+      timeLimitMs: minutes * 60_000,
+      briefing: escapeBriefingInput?.value || undefined,
+    }, () => refreshEscapeStatus());
+  });
+
+  puzzleAddBtn?.addEventListener('click', () => {
+    const puzzleId = puzzleIdInput?.value?.trim();
+    const prompt = puzzlePromptInput?.value?.trim();
+    const answer = puzzleAnswerInput?.value?.trim();
+    if (!puzzleId || !prompt || !answer) {
+      showPuzzleFormError('Puzzle ID, prompt, and answer are required.');
+      return;
+    }
+    const hints = (puzzleHintsInput?.value || '').split('\n').map((h) => h.trim()).filter(Boolean);
+    const maxAttemptsRaw = puzzleMaxAttemptsInput?.value;
+    state.socket?.emit('room:puzzle:add', {
+      puzzleId, prompt, answer,
+      hints: hints.length ? hints : undefined,
+      matchMode: puzzleMatchModeSelect?.value || 'exact',
+      maxAttempts: maxAttemptsRaw ? Number(maxAttemptsRaw) : undefined,
+      revealItemId: puzzleRevealItemSelect?.value || undefined,
+      unlockDoorId: puzzleUnlockDoorSelect?.value || undefined,
+    }, (puzzle) => {
+      if (!puzzle) return;
+      showPuzzleFormError('');
+      if (puzzleIdInput) puzzleIdInput.value = '';
+      if (puzzlePromptInput) puzzlePromptInput.value = '';
+      if (puzzleAnswerInput) puzzleAnswerInput.value = '';
+      if (puzzleHintsInput) puzzleHintsInput.value = '';
+      if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
+      refreshPuzzleList();
+    });
+  });
+
+  puzzleListEl?.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('button[data-action="remove-puzzle"]');
+    if (!btn) return;
+    const puzzleId = btn.getAttribute('data-puzzle-id');
+    if (!puzzleId) return;
+    state.socket?.emit('room:puzzle:remove', { puzzleId }, (removed) => {
+      if (!removed) return;
+      refreshPuzzleList();
+    });
+  });
+
+  escapeLeaderboardBtn?.addEventListener('click', () => {
+    state.socket?.emit('room:escape:leaderboard:list', {}, (entries) => {
+      renderEscapeLeaderboard(entries || []);
+    });
+  });
+
+  escapeDoorSelect?.addEventListener('change', renderEscapeDoorFields);
+
+  escapeDoorConfigureBtn?.addEventListener('click', () => {
+    const objectId = escapeDoorSelect?.value;
+    if (!objectId) return;
+    const destX = escapeDoorDestXInput?.value;
+    const destY = escapeDoorDestYInput?.value;
+    const requiredPuzzleIds = escapeDoorRequiredPuzzlesSelect
+      ? Array.from(escapeDoorRequiredPuzzlesSelect.selectedOptions).map((opt) => opt.value)
+      : [];
+    state.socket?.emit('room:door:configure', {
+      objectId,
+      requiredItemId: escapeDoorRequiredItemSelect?.value || undefined,
+      requiredPuzzleIds,
+      destinationTile: destX !== '' && destY !== '' && destX != null && destY != null
+        ? { x: Number(destX), y: Number(destY) } : undefined,
+    }, (door) => {
+      if (!door) return;
+      addSystemMessage('Door settings saved.');
+    });
+  });
+
+  hiddenItemSelect?.addEventListener('change', renderItemFields);
+
+  hiddenItemConfigureBtn?.addEventListener('click', () => {
+    const objectId = hiddenItemSelect?.value;
+    if (!objectId) return;
+    state.socket?.emit('room:item:configure', {
+      objectId,
+      itemKind: hiddenItemKindSelect?.value || undefined,
+      singleUse: !!hiddenItemSingleUseInput?.checked,
+    }, (item) => {
+      if (!item) return;
+      addSystemMessage('Item settings saved.');
+    });
+  });
+
+  escapeTimerPill?.addEventListener('click', () => {
+    if (state.escapeStatus.state === 'not_started') openEscapeBriefingModal();
+  });
+
+  escapeBriefingClose?.addEventListener('click', closeEscapeBriefingModal);
+  escapeBriefingStartBtn?.addEventListener('click', () => {
+    state.socket?.emit('room:escape:start', {}, (status) => {
+      if (!status) return;
+      applyEscapeStatus(status);
+      closeEscapeBriefingModal();
+      addSystemMessage('Escape started! Good luck.');
+    });
+  });
+
+  escapeWinClose?.addEventListener('click', closeEscapeWinModal);
+  escapeWinResetBtn?.addEventListener('click', () => {
+    state.socket?.emit('room:escape:reset', {}, (ok) => {
+      if (!ok) return;
+      closeEscapeWinModal();
+      refreshEscapeStatus();
+    });
+  });
+
+  escapeExpiredClose?.addEventListener('click', closeEscapeExpiredModal);
+  escapeExpiredResetBtn?.addEventListener('click', () => {
+    state.socket?.emit('room:escape:reset', {}, (ok) => {
+      if (!ok) return;
+      closeEscapeExpiredModal();
+      refreshEscapeStatus();
+    });
+  });
+
+  puzzleModalClose?.addEventListener('click', closePuzzleModal);
+  puzzleGuessForm?.addEventListener('submit', (evt) => {
+    evt.preventDefault();
+    const puzzleId = state.puzzleModalPuzzleId;
+    const guess = puzzleGuessInput?.value?.trim();
+    if (!puzzleId || !guess) return;
+    state.socket?.emit('room:puzzle:attempt', { puzzleId, guess }, (result) => {
+      if (!result) return;
+      if (puzzleModalFeedback) puzzleModalFeedback.textContent = puzzleAttemptMessage(result);
+      if (result.correct) refreshInventory();
+    });
+    if (puzzleGuessInput) puzzleGuessInput.value = '';
+  });
+
+  puzzleHintBtn?.addEventListener('click', () => {
+    const puzzleId = state.puzzleModalPuzzleId;
+    if (!puzzleId) return;
+    state.socket?.emit('room:puzzle:hint', { puzzleId }, (result) => {
+      if (!result) return;
+      if (puzzleModalHint) {
+        puzzleModalHint.textContent = result.hint ? `Hint: ${result.hint}` : 'No more hints available.';
+      }
+    });
+  });
+
   let progressSaveTimer = null;
+
   readerBookContent?.addEventListener('scroll', () => {
     if (!state.readerModalObjectId || !state.readerCurrentBook || !readerBookContent) return;
     state.readerCurrentProgress = computeScrollProgress(
@@ -1253,6 +1472,7 @@ function initGame() {
   state.gameLoopId = setInterval(() => {
     renderPlayers();
     pruneExpiredBubbles();
+    updateEscapeHud();
   }, 33);
 }
 
@@ -1396,6 +1616,9 @@ function connectSocket() {
     updateCurrentTileLabel();
     refreshCanvasBuilderObjects();
     renderModerationPanel();
+    refreshEscapeStatus();
+    refreshInventory();
+    refreshPuzzleList();
   }
 
   state.socket.on('room:joined', (payload) => {
@@ -1455,6 +1678,9 @@ function connectSocket() {
     renderCharacterConfigFields();
     renderWaypointList();
     updateDialogueTourButtons();
+    renderEscapeDoorSelect();
+    renderHiddenItemSelect();
+    renderPuzzleAuthoringSelects();
   });
 
   // Guided tours move an AI character every game tick. That arrives on its
@@ -1491,6 +1717,17 @@ function connectSocket() {
 
   state.socket.on('room:object:interacted', (payload) => {
     handleObjectInteractionResult(payload);
+  });
+
+  state.socket.on('room:escape:won', (payload) => {
+    applyEscapeStatus({ state: 'won', remainingMs: state.escapeStatus.remainingMs });
+    openEscapeWinModal(payload?.displayName);
+    refreshInventory();
+  });
+
+  state.socket.on('room:escape:expired', () => {
+    applyEscapeStatus({ state: 'expired', remainingMs: 0 });
+    openEscapeExpiredModal();
   });
 
   state.socket.on('room:media:sync:updated', (payload) => {
@@ -2029,6 +2266,8 @@ function resetConfigureControlsSelection() {
   configureTvSection?.classList.add('hidden');
   configureMusicSection?.classList.add('hidden');
   configureCharacterSection?.classList.add('hidden');
+  configureEscapeDoorSection?.classList.add('hidden');
+  configureItemSection?.classList.add('hidden');
   configureControls?.classList.add('hidden');
 }
 
@@ -2042,6 +2281,8 @@ function selectBuilderObjectForConfiguration(obj) {
     tv: { select: videoTvSelect, section: configureTvSection, refresh: renderVideoTvSelect },
     music_player: { select: trackPlayerSelect, section: configureMusicSection, refresh: renderTrackPlayerSelect },
     ai_character: { select: characterNpcSelect, section: configureCharacterSection, refresh: renderCharacterNpcSelect },
+    escape_door: { select: escapeDoorSelect, section: configureEscapeDoorSection, refresh: renderEscapeDoorSelect },
+    hidden_item: { select: hiddenItemSelect, section: configureItemSection, refresh: renderHiddenItemSelect },
   };
   const config = configByType[obj.objectType];
   if (!config || !config.select) return false;
@@ -2194,6 +2435,7 @@ function renderBuilderObjectList() {
           ${obj.sizePreset ? `<span class="builder-object-chip">${escapeHtml(obj.sizePreset)}</span>` : ''}
           ${obj.color ? `<span class="builder-object-chip">${escapeHtml(obj.color)}</span>` : ''}
           ${obj.material ? `<span class="builder-object-chip">${escapeHtml(obj.material)}</span>` : ''}
+          ${obj.objectType === 'hidden_item' ? '<span class="builder-object-chip hidden-item-badge">Hidden until revealed</span>' : ''}
           <label class="builder-checkbox-field">
             <input type="checkbox" data-field="editPermission" ${obj.editPermission === 'anyone' ? 'checked' : ''} />
             <span>Anyone can edit</span>
@@ -2247,6 +2489,221 @@ function renderBuilderBookList() {
         </div>
       </div>
     </li>`).join('');
+}
+
+// ─── Escape room ────────────────────────────────────────────────────────
+
+function refreshEscapeStatus() {
+  state.socket?.emit('room:escape:status', {}, (status) => {
+    if (!status) return;
+    applyEscapeStatus(status);
+  });
+}
+
+function applyEscapeStatus(status) {
+  // room:escape:start/won/expired responses don't repeat the briefing text
+  // (only room:escape:status does), so keep whatever briefing we already
+  // know about instead of losing it on the next status update.
+  state.escapeStatus = { briefing: state.escapeStatus.briefing, ...status };
+  state.escapeStatusSyncedAtMs = performance.now();
+  updateEscapeHud();
+}
+
+// Called every game-loop tick (33ms) so the countdown reads smoothly between
+// the periodic authoritative `room:escape:status` syncs, mirroring how
+// `renderPlayers()` interpolates between `room:state` syncs.
+function updateEscapeHud() {
+  const configured = state.escapeStatus.remainingMs != null;
+  escapeTimerPill?.classList.toggle('hidden', !configured);
+  escapeInventoryPill?.classList.toggle('hidden', !configured);
+  if (!configured) return;
+  let remainingMs = state.escapeStatus.remainingMs;
+  if (state.escapeStatus.state === 'in_progress' && state.escapeStatusSyncedAtMs != null) {
+    remainingMs = Math.max(0, state.escapeStatus.remainingMs - (performance.now() - state.escapeStatusSyncedAtMs));
+  }
+  if (escapeTimerLabel) escapeTimerLabel.textContent = formatCountdown(remainingMs);
+  escapeTimerPill?.classList.toggle('low-time', isLowTime(remainingMs));
+}
+
+function refreshInventory() {
+  state.socket?.emit('room:inventory:list', {}, (items) => {
+    state.escapeInventory = items || [];
+    if (escapeInventoryLabel) {
+      const count = state.escapeInventory.length;
+      escapeInventoryLabel.textContent = `${count} item${count === 1 ? '' : 's'}`;
+    }
+  });
+}
+
+function refreshPuzzleList() {
+  state.socket?.emit('room:puzzle:list', {}, (puzzles) => {
+    state.puzzles = puzzles || [];
+    renderPuzzleList();
+    renderPuzzleAuthoringSelects();
+    renderEscapeDoorFields();
+  });
+}
+
+function renderPuzzleList() {
+  if (!puzzleListEl) return;
+  if (state.puzzles.length === 0) {
+    puzzleListEl.innerHTML = '<li class="builder-empty-hint">No puzzles yet.</li>';
+    return;
+  }
+  puzzleListEl.innerHTML = state.puzzles.map((p) => `
+    <li class="builder-object-row">
+      <div class="builder-object-row-header">
+        <span>${escapeHtml(p.puzzleId)}</span>
+        <div class="builder-object-row-actions">
+          <button type="button" class="builder-icon-btn" data-action="remove-puzzle" data-puzzle-id="${escapeHtml(p.puzzleId)}" aria-label="Remove puzzle" title="Remove puzzle">
+            <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+          </button>
+        </div>
+      </div>
+      <div class="builder-object-row-meta">${escapeHtml(p.prompt)}</div>
+    </li>`).join('');
+}
+
+function showPuzzleFormError(message) {
+  if (!puzzleErrorEl) return;
+  puzzleErrorEl.textContent = message;
+  puzzleErrorEl.classList.toggle('hidden', !message);
+}
+
+function renderEscapeLeaderboard(entries) {
+  if (!escapeLeaderboardListEl) return;
+  if (entries.length === 0) {
+    escapeLeaderboardListEl.innerHTML = '<li class="builder-empty-hint">No completions yet.</li>';
+    return;
+  }
+  escapeLeaderboardListEl.innerHTML = entries.map((entry, index) =>
+    `<li class="builder-object-row">${escapeHtml(formatLeaderboardEntry(entry, index + 1))}</li>`).join('');
+}
+
+// Door/item "Configure" selects mirror renderBookShelfSelect: scoped to the
+// current tile, matching the existing per-object-type config panel pattern.
+function renderEscapeDoorSelect() {
+  if (!escapeDoorSelect) return;
+  const currentKey = tileKey(state.currentTile);
+  const doors = state.builderState.objects.filter(
+    (obj) => tileKey(obj.tile) === currentKey && obj.objectType === 'escape_door',
+  );
+  const previousValue = escapeDoorSelect.value;
+  escapeDoorSelect.innerHTML = doors.length
+    ? doors.map((d) => `<option value="${escapeHtml(d.objectId)}">${escapeHtml(d.objectId)}</option>`).join('')
+    : '<option value="">No escape doors on this tile</option>';
+  if (doors.some((d) => d.objectId === previousValue)) escapeDoorSelect.value = previousValue;
+  renderEscapeDoorFields();
+}
+
+function renderEscapeDoorFields() {
+  const obj = findBuilderObject(escapeDoorSelect?.value);
+  const config = obj?.config || {};
+  if (escapeDoorRequiredItemSelect) {
+    const items = state.builderState.objects.filter((o) => o.objectType === 'hidden_item');
+    escapeDoorRequiredItemSelect.innerHTML = '<option value="">None</option>'
+      + items.map((i) => `<option value="${escapeHtml(i.objectId)}">${escapeHtml(i.objectId)}</option>`).join('');
+    escapeDoorRequiredItemSelect.value = config.requiredItemId || '';
+  }
+  if (escapeDoorRequiredPuzzlesSelect) {
+    escapeDoorRequiredPuzzlesSelect.innerHTML = state.puzzles
+      .map((p) => `<option value="${escapeHtml(p.puzzleId)}">${escapeHtml(p.puzzleId)}</option>`).join('');
+    const required = new Set(config.requiredPuzzleIds || []);
+    Array.from(escapeDoorRequiredPuzzlesSelect.options).forEach((opt) => { opt.selected = required.has(opt.value); });
+  }
+  if (escapeDoorDestXInput) escapeDoorDestXInput.value = config.destinationTile?.x ?? '';
+  if (escapeDoorDestYInput) escapeDoorDestYInput.value = config.destinationTile?.y ?? '';
+}
+
+function renderHiddenItemSelect() {
+  if (!hiddenItemSelect) return;
+  const currentKey = tileKey(state.currentTile);
+  const items = state.builderState.objects.filter(
+    (obj) => tileKey(obj.tile) === currentKey && obj.objectType === 'hidden_item',
+  );
+  const previousValue = hiddenItemSelect.value;
+  hiddenItemSelect.innerHTML = items.length
+    ? items.map((i) => `<option value="${escapeHtml(i.objectId)}">${escapeHtml(i.objectId)}</option>`).join('')
+    : '<option value="">No hidden items on this tile</option>';
+  if (items.some((i) => i.objectId === previousValue)) hiddenItemSelect.value = previousValue;
+  renderItemFields();
+}
+
+function renderItemFields() {
+  const obj = findBuilderObject(hiddenItemSelect?.value);
+  const config = obj?.config || {};
+  if (hiddenItemKindSelect) hiddenItemKindSelect.value = config.itemKind || 'key';
+  if (hiddenItemSingleUseInput) hiddenItemSingleUseInput.checked = config.singleUse !== false;
+}
+
+// Puzzle authoring's reveal-item/unlock-door pickers are room-wide (a puzzle
+// may unlock a door on a different tile), unlike the per-tile door/item
+// config selects above.
+function renderPuzzleAuthoringSelects() {
+  if (puzzleRevealItemSelect) {
+    const items = state.builderState.objects.filter((o) => o.objectType === 'hidden_item');
+    const previous = puzzleRevealItemSelect.value;
+    puzzleRevealItemSelect.innerHTML = '<option value="">None</option>'
+      + items.map((i) => `<option value="${escapeHtml(i.objectId)}">${escapeHtml(i.objectId)}</option>`).join('');
+    if (items.some((i) => i.objectId === previous)) puzzleRevealItemSelect.value = previous;
+  }
+  if (puzzleUnlockDoorSelect) {
+    const doors = state.builderState.objects.filter((o) => o.objectType === 'escape_door');
+    const previous = puzzleUnlockDoorSelect.value;
+    puzzleUnlockDoorSelect.innerHTML = '<option value="">None</option>'
+      + doors.map((d) => `<option value="${escapeHtml(d.objectId)}">${escapeHtml(d.objectId)}</option>`).join('');
+    if (doors.some((d) => d.objectId === previous)) puzzleUnlockDoorSelect.value = previous;
+  }
+}
+
+function openEscapeBriefingModal() {
+  if (escapeBriefingText) {
+    escapeBriefingText.textContent = state.escapeStatus.briefing || 'Find your way out before time runs out!';
+  }
+  escapeBriefingModal?.classList.remove('hidden');
+  if (escapeBriefingModal) activateModal(escapeBriefingModal, closeEscapeBriefingModal);
+}
+
+function closeEscapeBriefingModal() {
+  escapeBriefingModal?.classList.add('hidden');
+  if (escapeBriefingModal) deactivateModal(escapeBriefingModal);
+}
+
+function openEscapeWinModal(displayName) {
+  if (escapeWinText) escapeWinText.textContent = `${displayName || 'You'} escaped the room!`;
+  escapeWinModal?.classList.remove('hidden');
+  if (escapeWinModal) activateModal(escapeWinModal, closeEscapeWinModal);
+}
+
+function closeEscapeWinModal() {
+  escapeWinModal?.classList.add('hidden');
+  if (escapeWinModal) deactivateModal(escapeWinModal);
+}
+
+function openEscapeExpiredModal() {
+  escapeExpiredModal?.classList.remove('hidden');
+  if (escapeExpiredModal) activateModal(escapeExpiredModal, closeEscapeExpiredModal);
+}
+
+function closeEscapeExpiredModal() {
+  escapeExpiredModal?.classList.add('hidden');
+  if (escapeExpiredModal) deactivateModal(escapeExpiredModal);
+}
+
+function openPuzzleModal(puzzle) {
+  state.puzzleModalPuzzleId = puzzle?.puzzleId || null;
+  if (puzzleModalPrompt) puzzleModalPrompt.textContent = puzzle?.prompt || '';
+  if (puzzleModalFeedback) puzzleModalFeedback.textContent = '';
+  if (puzzleModalHint) puzzleModalHint.textContent = '';
+  if (puzzleGuessInput) puzzleGuessInput.value = '';
+  puzzleModal?.classList.remove('hidden');
+  if (puzzleModal) activateModal(puzzleModal, closePuzzleModal);
+}
+
+function closePuzzleModal() {
+  puzzleModal?.classList.add('hidden');
+  state.puzzleModalPuzzleId = null;
+  if (puzzleModal) deactivateModal(puzzleModal);
 }
 
 // ─── Modal accessibility: focus trap + Escape-to-close ─────────────────────
@@ -2888,6 +3345,20 @@ function handleObjectInteractionResult(result) {
   }
   if (result.interactionType === 'ask_hint') {
     openDialogueModal(result.objectId, result.payload.character, null, resolveCharacterMode(result.payload.character));
+    return;
+  }
+  if (result.interactionType === 'attempt_open') {
+    addSystemMessage(doorAttemptMessage(result.payload));
+    if (result.payload?.opened) refreshEscapeStatus();
+    return;
+  }
+  if (result.interactionType === 'pick_up') {
+    addSystemMessage(result.payload?.granted ? 'Picked up an item!' : 'Could not pick that up.');
+    if (result.payload?.granted) refreshInventory();
+    return;
+  }
+  if (result.interactionType === 'solve_puzzle') {
+    openPuzzleModal(result.payload.puzzle);
     return;
   }
   addSystemMessage(`${result.label || 'Interaction'} triggered.`);
