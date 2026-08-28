@@ -15,6 +15,17 @@ Users create avatars, move through rooms, chat in real time, and interact with w
 - Explore AI bot interactions and game-like room behavior
 - Add AI story characters with editable appearance, scripted conversations, a document-based knowledge base, optional LLM-backed generative answers, and guided tours that walk visitors between waypoints (see [docs/08-ai-characters.md](docs/08-ai-characters.md))
 
+## Educational and Learning-Experience Use Cases
+
+Because rooms, objects, and AI characters are all authorable rather than hardcoded, OmniLaunge works as a general-purpose engine for interactive learning spaces, not just a social lounge. A room author places furniture and characters, wires up knowledge and conversation flows, and gets a persistent multiplayer space that learners can walk into together. Some concrete ways this fits:
+
+- **Virtual classrooms and office hours.** A teacher builds a room per topic or unit, places one or more AI characters as subject-matter guides, and loads each one's knowledge base with the course material (lecture notes, definitions, reference links). Students explore at their own pace, ask the character free-form questions grounded in that material, or follow the scripted conversation graph for a guided walkthrough. Because progress is tracked per user, a class of students can be at different points in the same conversation at the same time.
+- **Escape rooms and puzzle-based learning.** The scripted conversation graph's branching choices map naturally onto escape-room logic: a character only reveals the next clue (or the next `nextNodeId`) once a learner has picked the correct choice, and `completion_flag`/`knowledge_check` fields on a node can gate progress on demonstrated understanding. Multiple characters placed around a room can each hold one piece of a larger puzzle, encouraging learners to explore the whole space and piece information together instead of receiving it all from one source.
+- **Guided tours and onboarding.** The guided-tour system lets an author drop waypoints around a room and have a character physically walk a learner between them — a museum-style tour through a virtual exhibit, a new-employee walkthrough of a virtual office, or a campus orientation, narrated stop by stop rather than delivered as a wall of text up front. Because starting a tour is a learner action (not permission-gated), any visitor can request "follow me" from a character without needing edit rights to the room.
+- **Subject-matter Q&A with citations you control.** Generative mode lets an author connect a character to any OpenAI-compatible endpoint, but every answer is grounded in the documents the author explicitly added to that character's knowledge base — so a character can be scoped to answer only from a specific reading list, policy document, or FAQ rather than the open internet, and it degrades gracefully (falling back to a predefined answer) if the connected model is unavailable, misconfigured, or rate-limited.
+- **Language practice and role-play.** A historical-persona or mentor-role character with a curated knowledge base and a branching conversation graph gives learners a low-stakes, repeatable conversation partner — useful for practicing a language, rehearsing a difficult conversation, or exploring a historical scenario from a first-person perspective.
+- **Multi-room curricula.** Because rooms are independently created and joined, a course or training program can be structured as a sequence of rooms (one per module or level), each with its own characters, knowledge, and tour, letting an author build a self-paced curriculum without any code changes.
+
 ## Tech Stack
 
 - Frontend: Vite, vanilla JavaScript, SVG avatar renderer, Socket.IO client
@@ -184,4 +195,4 @@ Contributions are welcome. Please follow this workflow:
 
 ## License
 
-Add your preferred license file (for example MIT) if this repository will be public.
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for the full text.
