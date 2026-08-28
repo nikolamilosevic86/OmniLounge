@@ -6,7 +6,7 @@ If you are new to the project, start with the user journey document and then mov
 
 ## Reading Paths
 
-The first path is for product and UX understanding. Read [01-user-experience.md](01-user-experience.md), then [02-room-interactions.md](02-room-interactions.md), and then [03-combat-and-ai.md](03-combat-and-ai.md).
+The first path is for product and UX understanding. Read [01-user-experience.md](01-user-experience.md), then [02-room-interactions.md](02-room-interactions.md), then [03-combat-and-ai.md](03-combat-and-ai.md), and then [08-ai-characters.md](08-ai-characters.md).
 
 The second path is for technical implementation and contribution work. Read [04-system-architecture.md](04-system-architecture.md), then [05-backend-runtime.md](05-backend-runtime.md), and then [06-data-events-and-storage.md](06-data-events-and-storage.md).
 
@@ -21,6 +21,7 @@ The third path is for quality and operations work. Read [07-testing-operations-a
 - [05-backend-runtime.md](05-backend-runtime.md)
 - [06-data-events-and-storage.md](06-data-events-and-storage.md)
 - [07-testing-operations-and-release.md](07-testing-operations-and-release.md)
+- [08-ai-characters.md](08-ai-characters.md)
 
 ## Scope Note
 
@@ -33,3 +34,5 @@ Phase A foundation is now in place in the data layer: schema tables for rooms/ti
 Runtime movement/state broadcast is now room-aware instead of lobby-only, which fixes the issue where users could still perform combat actions but not move after switching out of lobby contexts. Phase C foundational tile-navigation utilities are also implemented and tested (edge detection, neighbor transitions, and 5x5 world bounds enforcement).
 
 Phase C is now visible in the player HUD through a current tile indicator and mini-map. Phase D has started with a build-mode toggle and directional tile-add controls, backed by server events and room tile graph updates.
+
+AI story characters (`ai_character` room objects) are implemented as a full authoring-and-runtime system: editable avatar-style appearance, a scripted conversation graph, a multi-document knowledge base, optional LLM-backed generative answers over that knowledge (base URL + API key configured per character, SSRF-guarded, rate-limited), and guided tours where a character walks a learner between authored waypoints and narrates each stop. See [08-ai-characters.md](08-ai-characters.md) for the full design.

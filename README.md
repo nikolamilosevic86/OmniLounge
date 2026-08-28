@@ -3,6 +3,8 @@
 OmniLaunge is a real-time virtual lounge app inspired by social metaverse spaces.
 Users create avatars, move through rooms, chat in real time, and interact with world objects.
 
+![OmniLaunge lounge room screenshot](docs/screenshots/app-screenshot.png)
+
 ## What You Can Do
 
 - Create a custom avatar (skin, hair, beard, glasses, clothes, accessories)
@@ -11,6 +13,7 @@ Users create avatars, move through rooms, chat in real time, and interact with w
 - Interact with room objects and radial menus
 - Use combat controls (punch, kick, block) with stamina/KO systems
 - Explore AI bot interactions and game-like room behavior
+- Add AI story characters with editable appearance, scripted conversations, a document-based knowledge base, optional LLM-backed generative answers, and guided tours that walk visitors between waypoints (see [docs/08-ai-characters.md](docs/08-ai-characters.md))
 
 ## Tech Stack
 
