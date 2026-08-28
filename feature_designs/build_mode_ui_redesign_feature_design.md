@@ -83,7 +83,7 @@ The app also already standardizes on the **Material Symbols Outlined** icon font
 Every control in this design sits at exactly one of three visibility tiers, and nothing is promoted to a higher tier than it needs:
 - **Tier 1 — always visible:** the room canvas itself, the tab strip (§6.1), and the catalog grid's default (unfiltered, all-categories) view.
 - **Tier 2 — visible when contextually relevant:** the on-canvas selection toolbar (only while an object is selected, §8.1), catalog filter chips and search (only meaningfully useful once the grid has more than a handful of cards, §7.1), the Add-Tile hotspot on a closed rail (only where there's no neighbor tile yet, §10.4).
-- **Tier 3 — one click away, collapsed by default:** the Advanced accordion sections (Puzzles & Zones, Room Admin, Versions — §6.1), and per-type non-spatial editing ("Edit Details…", only for object types that actually have non-spatial config, §8.4).
+- **Tier 3 — one click away, collapsed by default:** the "More" accordion's five sections (Zones, Triggers, Escape Room, Room Admin, Versions — §6.1), and per-type non-spatial editing ("Edit Details…", only for object types that actually have non-spatial config, §8.4).
 
 ## 5. Reuse Map
 
@@ -95,7 +95,7 @@ Every control in this design sits at exactly one of three visibility tiers, and 
 | Resizing / rotating | `room:object:resize` / `room:object:rotate` ([server/main.py:1140](../server/main.py#L1140), [:1161](../server/main.py#L1161)) | Emitted from on-canvas resize/rotate handles |
 | Recoloring / re-material-ing | `room:object:style` ([server/main.py:1182](../server/main.py#L1182)) | Emitted from an on-canvas swatch popover instead of the configure panel's dropdowns |
 | Deleting | `room:object:delete` ([server/main.py:2013](../server/main.py#L2013)) | Emitted from a handle on the selection box or the Delete key |
-| Deep per-type editing (books, playlists, dialogue, puzzle wiring) | The existing `#configure-controls` type-specific sections ([client/js/main.js:2329](../client/js/main.js#L2329)) | Unchanged — opened from the new floating inspector's "Edit Details…" action |
+| Deep per-type editing (books, playlists, dialogue, puzzle wiring) | The existing `#configure-controls` type-specific sections ([client/js/main.js:2329](../client/js/main.js#L2329)) | Unchanged — opened from the on-canvas selection toolbar's "Edit Details…" (`tune`) action, §8.4 |
 | Tile add/clone/delete | `room:tile:add/clone/delete` ([client/js/main.js:628-637](../client/js/main.js#L628-L637)) | Unchanged |
 | Knowing which tiles exist | `state.roomTiles` / `state.currentTile`, already populated by the `room:tiles` handler ([client/js/main.js:1693](../client/js/main.js#L1693)) and already consumed by `buildMiniMapCells` ([src/world-map.js:11](../src/world-map.js#L11)) | A new pure helper deriving per-edge neighbor booleans from the same data (§10.2) |
 | Tile-to-tile movement physics | `detect_edge_transition` / `transition_player_tile_if_needed` ([tile_navigation.py:35](../server/game/tile_navigation.py#L35), [rooms_registry.py:313](../server/game/rooms_registry.py#L313)) | **Unchanged.** Doorway graphics are cosmetic; they render where a transition already works, they never gate one |
@@ -132,13 +132,13 @@ Every new panel element maps to a specific M3 component, not a generic styled `<
 | Catalog category selection (§7.1) | Filter chips | New primitive, built from `--md-shape-full` + `--md-secondary-container`; not the existing `.builder-checkbox-field` |
 | Catalog cards (§7.1, §9) | Elevated cards | `--md-surface-container` + `--md-elevation-1`, `--md-elevation-2` on hover/drag |
 | On-canvas selection toolbar (§8.1) | Icon button row on a small elevated surface | `--md-elevation-2`, `--md-shape-full` pill, each icon button needs a visible tooltip + `aria-label` (§13) |
-| Snap-to-grid control (§12) | Icon button (toggle/pressed state), not a checkbox | Single glyph (`grid_on`/`grid_off`), lives in the canvas header, not inside a tab (see §12) |
+| Snap-to-grid control (§12) | Icon button (toggle/pressed state), not a checkbox | Single glyph (`grid_on`/`grid_off`), lives as a new `.hud-pill` next to `#build-mode-toggle`, not inside a tab (see §12) |
 | Room Style swatches (§11) | Elevated cards, same shape as catalog cards | Reuses the §9 thumbnail-rendering approach |
 
 ## 7. Furniture Catalog & Drag-to-Place
 
 ### 7.1 Catalog grid
-Replace the `object-type-select` + preset dropdowns with a scrollable grid of catalog cards, one per `(objectType, colorPreset)` combination most commonly placed (default color per type shown; color/material become an on-canvas swatch choice after placement, §8.3, so the palette doesn't need a combinatorial explosion of cards). Each card:
+Replace the `object-type-select` + preset dropdowns with a scrollable grid of catalog cards, **one card per `objectType`** shown in its catalog default color/material (color/material become an on-canvas swatch choice after placement, §8.3, so the palette doesn't need a combinatorial explosion of cards per color — see §17 Q3 for the deferred alternative). Each card:
 ```
 ┌──────────────┐
 │  [thumbnail] │  ← canvas-rendered preview (§9), matches in-room look exactly
@@ -228,7 +228,7 @@ A **Room Style** section, living inside the Room & Doors tab (§6.1) rather than
 
 ## 12. Grid Snapping & Alignment
 
-Snapping affects both palette drag-to-place (§7.2) *and* on-canvas dragging of already-placed objects (§8.2) — it is a canvas-wide behavior, not something specific to one tab's content. It is therefore a single toggleable **icon button** (`grid_on`/`grid_off`, default on) living in the canvas header alongside the existing Build Mode toggle, not a checkbox buried inside the Furniture tab where switching to the Room & Doors tab would hide it while a drag is still canvas-wide. When enabled, drop/move positions round to the nearest point on a light 20px grid (matching `EDGE_EPSILON`'s existing 20px unit, [tile_navigation.py:15](../server/game/tile_navigation.py#L15), so snapped positions never fight the edge-transition threshold). When disabled, placement is pixel-precise, matching today's numeric-input behavior. This is purely a client-side rounding step before the same `room:object:create`/`move` payloads are emitted — no server change.
+Snapping affects both palette drag-to-place (§7.2) *and* on-canvas dragging of already-placed objects (§8.2) — it is a canvas-wide behavior, not something specific to one tab's content. It is therefore a single toggleable **icon button** (`grid_on`/`grid_off`, default on), added as a new `.hud-pill` in the existing `.room-hud` row ([client/index.html:133-135](../client/index.html#L133-L135)) right next to the `build-mode-pill`/`#build-mode-toggle` it only matters alongside — not a checkbox buried inside the Furniture tab where switching to the Room & Doors tab would hide it while a drag is still canvas-wide. When enabled, drop/move positions round to the nearest point on a light 20px grid (matching `EDGE_EPSILON`'s existing 20px unit, [tile_navigation.py:15](../server/game/tile_navigation.py#L15), so snapped positions never fight the edge-transition threshold). When disabled, placement is pixel-precise, matching today's numeric-input behavior. This is purely a client-side rounding step before the same `room:object:create`/`move` payloads are emitted — no server change. The pill only needs to render while Build Mode is on (mirroring how `#build-controls` itself is `hidden` until then), so it introduces no new always-visible chrome for ordinary visitors.
 
 ## 13. Accessibility & Fallback Paths
 
@@ -288,7 +288,7 @@ No other new socket events are needed — everything else in this design is clie
 - [ ] Room Style swatch cards inside the Room & Doors tab (§6.1, §11), wired to the new event.
 
 ### Phase 5 — Polish
-- [ ] Grid snapping icon toggle in the canvas header (§12).
+- [ ] Grid snapping icon toggle as a new `.hud-pill` beside `#build-mode-toggle` (§12).
 - [ ] Build-mode doorway/rail click shortcuts (§10.4).
 - [ ] Catalog filter chips + search field (§7.1).
 
