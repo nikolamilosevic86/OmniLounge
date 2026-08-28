@@ -145,3 +145,18 @@ class EscapeSessionEngine:
 
     def has_opened(self, user_id: str, object_id: str) -> bool:
         return object_id in self._opened.get(user_id, set())
+
+    def clear_revealed_for_object(self, object_id: str) -> None:
+        """Remove `object_id` from every visitor's revealed set. Used when
+        the `hidden_item` object is deleted (§5.3), so a recycled object id
+        doesn't inherit a stale "already revealed" flag from before it was
+        deleted."""
+        for revealed in self._revealed.values():
+            revealed.discard(object_id)
+
+    def clear_opened_for_object(self, object_id: str) -> None:
+        """Remove `object_id` from every visitor's opened set. Used when the
+        `escape_door` object is deleted (§5.3), for the same reason as
+        `clear_revealed_for_object`."""
+        for opened in self._opened.values():
+            opened.discard(object_id)

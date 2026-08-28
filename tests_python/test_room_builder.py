@@ -1016,3 +1016,320 @@ class TestAiCharacterIntegration:
         blocked = self.builder.ask_character("npc-1", requester_id="p1", user_message="hint?", caller=caller, now_ms=5)
         assert blocked["mode"] == "rate_limited"
 
+
+# ─── Escape room: add_puzzle orchestrator (design doc §6.1) ────────────────
+
+class TestAddPuzzleOrchestrator:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_add_puzzle_returns_public_puzzle_without_answer(self):
+        result = self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        assert result["puzzleId"] == "riddle-1"
+        assert "answer" not in result
+
+    def test_add_puzzle_with_unlock_door_id_appends_to_door_required_puzzle_ids(self):
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        door = self.builder.get_object("door-1")
+        assert door["config"]["requiredPuzzleIds"] == ["riddle-1"]
+
+    def test_add_puzzle_with_unlock_door_id_creates_required_puzzle_ids_list_if_absent(self):
+        # config starts with no requiredPuzzleIds key at all -- the
+        # orchestrator must create the list rather than assuming it exists.
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20, config={},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        assert self.builder.get_object("door-1")["config"]["requiredPuzzleIds"] == ["riddle-1"]
+
+    def test_add_puzzle_with_unlock_door_id_appends_to_existing_required_puzzle_ids(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredPuzzleIds": ["earlier-riddle"]},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="door-1")
+        assert self.builder.get_object("door-1")["config"]["requiredPuzzleIds"] == [
+            "earlier-riddle", "riddle-1",
+        ]
+
+    def test_add_puzzle_with_unknown_unlock_door_id_raises_key_error(self):
+        with pytest.raises(KeyError):
+            self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="ghost-door")
+
+    def test_add_puzzle_with_unknown_unlock_door_id_does_not_leave_a_dangling_puzzle(self):
+        with pytest.raises(KeyError):
+            self.builder.add_puzzle("riddle-1", "2+2?", "4", unlock_door_id="ghost-door")
+        # Retrying with the same puzzle_id (and no bad door reference) must
+        # succeed -- proving the failed call above never created the puzzle.
+        result = self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        assert result["puzzleId"] == "riddle-1"
+
+
+# ─── Escape room: solve_puzzle dynamic interaction (design doc §6.2) ───────
+
+class TestSolvePuzzleInteraction:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_object_bound_to_a_puzzle_gains_solve_puzzle_interaction(self):
+        self.builder.create_object(
+            "desk-1", "table", (0, 0), x=10, y=10, width=20, height=20, config={"puzzleId": "riddle-1"},
+        )
+        interactions = self.builder.get_object("desk-1")["interactions"]
+        assert any(item["interactionType"] == "solve_puzzle" for item in interactions)
+
+    def test_object_not_bound_to_a_puzzle_has_no_solve_puzzle_interaction(self):
+        self.builder.create_object("desk-1", "table", (0, 0), x=10, y=10, width=20, height=20)
+        interactions = self.builder.get_object("desk-1")["interactions"]
+        assert all(item["interactionType"] != "solve_puzzle" for item in interactions)
+
+    def test_interact_with_object_solve_puzzle_returns_prompt_without_answer(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.create_object(
+            "desk-1", "table", (0, 0), x=10, y=10, width=20, height=20, config={"puzzleId": "riddle-1"},
+        )
+        result = self.builder.interact_with_object("desk-1", "solve_puzzle", requester_id="p1", now_ms=1000)
+        assert result["payload"]["puzzle"]["prompt"] == "2+2?"
+        assert "answer" not in result["payload"]["puzzle"]
+
+    def test_interact_with_object_solve_puzzle_raises_value_error_when_object_has_no_bound_puzzle(self):
+        self.builder.create_object("desk-1", "table", (0, 0), x=10, y=10, width=20, height=20)
+        with pytest.raises(ValueError):
+            self.builder.interact_with_object("desk-1", "solve_puzzle", requester_id="p1", now_ms=1000)
+
+
+# ─── Escape room: escape_door attempt_open interaction (design doc §5.1, §8.3)
+
+class TestEscapeDoorInteraction:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_attempt_open_with_no_gate_configured_opens_unconditionally(self):
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+        assert result["payload"]["opened"] is True
+
+    def test_attempt_open_is_blocked_without_the_required_item(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredItemId": "key-1"},
+        )
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+        assert result["payload"]["opened"] is False
+
+    def test_attempt_open_succeeds_once_the_required_item_is_held(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredItemId": "key-1"},
+        )
+        self.builder.create_object(
+            "key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10,
+        )
+        # Reveal + pick up the key for this visitor first.
+        self.builder._escape.reveal_item("p1", "key-1")
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=500)
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+        assert result["payload"]["opened"] is True
+
+    def test_attempt_open_is_blocked_until_all_required_puzzles_are_solved(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredPuzzleIds": ["riddle-1", "riddle-2"]},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.add_puzzle("riddle-2", "3+3?", "6")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+        assert result["payload"]["opened"] is False
+
+        self.builder.attempt_solve_puzzle("riddle-2", requester_id="p1", guess="6", now_ms=2)
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1001)
+        assert result["payload"]["opened"] is True
+
+    def test_attempt_open_does_not_gate_other_visitors_who_have_not_solved_it(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredPuzzleIds": ["riddle-1"]},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+
+        other = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p2", now_ms=1000)
+        assert other["payload"]["opened"] is False
+
+    def test_attempt_open_is_idempotent_once_already_opened_by_that_visitor(self):
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        first = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+        second = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=2000)
+        assert first["payload"]["opened"] is True
+        assert second["payload"]["alreadyOpen"] is True
+
+    def test_attempt_open_with_no_destination_tile_marks_escape_session_won(self):
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        self.builder.configure_escape_session(enabled=True, time_limit_ms=60_000)
+        self.builder.start_escape_session("p1", now_ms=0)
+        self.builder.interact_with_object(
+            "door-1", "attempt_open", requester_id="p1", now_ms=1000, display_name="Alice",
+        )
+        status = self.builder.get_escape_status("p1", now_ms=1000)
+        assert status["state"] == "won"
+
+    def test_attempt_open_with_destination_tile_does_not_mark_won(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"destinationTile": {"x": 1, "y": 0}},
+        )
+        self.builder.configure_escape_session(enabled=True, time_limit_ms=60_000)
+        self.builder.start_escape_session("p1", now_ms=0)
+        self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+        status = self.builder.get_escape_status("p1", now_ms=1000)
+        assert status["state"] == "in_progress"
+
+
+# ─── Escape room: hidden_item pick_up interaction (design doc §5.2, §7) ────
+
+class TestHiddenItemInteraction:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+    def test_pick_up_raises_permission_error_when_not_revealed(self):
+        with pytest.raises(PermissionError):
+            self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=1000)
+
+    def test_pick_up_succeeds_once_revealed_and_grants_inventory(self):
+        self.builder._escape.reveal_item("p1", "key-1")
+        result = self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=1000)
+        assert result["payload"]["granted"] is True
+
+    def test_pick_up_is_per_visitor(self):
+        self.builder._escape.reveal_item("p1", "key-1")
+        with pytest.raises(PermissionError):
+            self.builder.interact_with_object("key-1", "pick_up", requester_id="p2", now_ms=1000)
+
+
+# ─── Escape room: ai_character ask_hint via guardsPuzzleId (design doc §6.5)
+
+class TestAskHintGuardsPuzzle:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_ask_hint_without_guards_puzzle_id_returns_character_only(self):
+        self.builder.create_object("npc-1", "ai_character", (0, 0), x=10, y=10, width=20, height=20)
+        result = self.builder.interact_with_object("npc-1", "ask_hint", requester_id="p1", now_ms=1000)
+        assert "hint" not in result["payload"]
+
+    def test_ask_hint_with_guards_puzzle_id_returns_next_hint(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", hints=["Think addition.", "It's four."])
+        self.builder.create_object(
+            "npc-1", "ai_character", (0, 0), x=10, y=10, width=20, height=20,
+            config={"guardsPuzzleId": "riddle-1"},
+        )
+        result = self.builder.interact_with_object("npc-1", "ask_hint", requester_id="p1", now_ms=1000)
+        assert result["payload"]["hint"] == "Think addition."
+        assert result["payload"]["hintsUsed"] == 1
+
+
+# ─── Escape room: object deletion cleanup (design doc §5.3) ───────────────
+
+class TestEscapeRoomDeletionCleanup:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_deleting_a_hidden_item_clears_inventory_and_reveal_state(self):
+        self.builder.create_object(
+            "key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10, created_by="alice",
+        )
+        self.builder._escape.reveal_item("p1", "key-1")
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=1000)
+
+        self.builder.delete_object("key-1", requester_id="alice")
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+        assert self.builder._inventory.has("p1", "key-1") is False
+        assert self.builder._escape.has_revealed("p1", "key-1") is False
+
+    def test_deleting_an_escape_door_clears_opened_state(self):
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20, created_by="alice",
+        )
+        self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+
+        self.builder.delete_object("door-1", requester_id="alice")
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+
+        assert self.builder._escape.has_opened("p1", "door-1") is False
+
+    def test_deleting_the_only_object_bound_to_a_puzzle_removes_the_puzzle(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.create_object(
+            "desk-1", "table", (0, 0), x=10, y=10, width=20, height=20,
+            config={"puzzleId": "riddle-1"}, created_by="alice",
+        )
+        self.builder.delete_object("desk-1", requester_id="alice")
+        # Re-adding a puzzle with the same id must succeed -- proving the
+        # dangling definition was actually removed, not merely orphaned.
+        result = self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        assert result["puzzleId"] == "riddle-1"
+
+    def test_deleting_one_of_two_objects_bound_to_the_same_puzzle_keeps_the_puzzle(self):
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.create_object(
+            "desk-1", "table", (0, 0), x=10, y=10, width=20, height=20,
+            config={"puzzleId": "riddle-1"}, created_by="alice",
+        )
+        self.builder.create_object(
+            "npc-1", "ai_character", (0, 0), x=30, y=30, width=20, height=20,
+            config={"guardsPuzzleId": "riddle-1"},
+        )
+        self.builder.delete_object("desk-1", requester_id="alice")
+        with pytest.raises(ValueError):
+            # Still referenced by npc-1's guardsPuzzleId, so it must survive
+            # and duplicate-id creation is still rejected.
+            self.builder.add_puzzle("riddle-1", "2+2?", "4")
+
+
+# ─── Escape room: hidden_item visibility filtering (design doc §5.2) ───────
+
+class TestHiddenItemVisibility:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+    def test_unrevealed_hidden_item_is_omitted_for_a_normal_visitor(self):
+        objects = self.builder.list_objects(requester_id="p1", is_room_host=False)
+        assert all(o["objectId"] != "key-1" for o in objects)
+
+    def test_unrevealed_hidden_item_is_included_for_room_host(self):
+        objects = self.builder.list_objects(requester_id="alice", is_room_host=True)
+        assert any(o["objectId"] == "key-1" for o in objects)
+
+    def test_revealed_hidden_item_is_included_for_that_visitor(self):
+        self.builder._escape.reveal_item("p1", "key-1")
+        objects = self.builder.list_objects(requester_id="p1", is_room_host=False)
+        assert any(o["objectId"] == "key-1" for o in objects)
+
+    def test_revealed_hidden_item_is_still_hidden_for_a_different_visitor(self):
+        self.builder._escape.reveal_item("p1", "key-1")
+        objects = self.builder.list_objects(requester_id="p2", is_room_host=False)
+        assert all(o["objectId"] != "key-1" for o in objects)
+
+    def test_picked_up_hidden_item_disappears_from_that_visitors_view(self):
+        self.builder._escape.reveal_item("p1", "key-1")
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=1000)
+        objects = self.builder.list_objects(requester_id="p1", is_room_host=False)
+        assert all(o["objectId"] != "key-1" for o in objects)
+
+    def test_list_objects_for_tiles_applies_the_same_filter(self):
+        objects = self.builder.list_objects_for_tiles({(0, 0)}, requester_id="p1", is_room_host=False)
+        assert all(o["objectId"] != "key-1" for o in objects)
+
+    def test_list_objects_without_requester_id_shows_everything_for_backward_compatibility(self):
+        # Internal/trusted callers (existing tests, server-side migrations)
+        # that don't pass requester_id must keep seeing everything, matching
+        # the same "no requester means trusted" convention `_can_edit` uses.
+        objects = self.builder.list_objects()
+        assert any(o["objectId"] == "key-1" for o in objects)
+

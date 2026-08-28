@@ -193,3 +193,43 @@ class TestRevealAndOpenProgress:
         engine.open_door("u1", "door-1")
         assert engine.has_revealed("u1", "item-1") is True
         assert engine.has_opened("u1", "door-1") is True
+
+
+class TestClearForDeletedObject:
+    # §5.3: deleting a hidden_item/escape_door must clear its reveal/open
+    # state for every visitor, not just the one who deleted it -- otherwise
+    # a recycled object id would inherit a stale, orphaned reveal/open flag.
+    def test_clear_revealed_for_object_removes_it_for_every_user(self):
+        engine = EscapeSessionEngine()
+        engine.reveal_item("u1", "item-1")
+        engine.reveal_item("u2", "item-1")
+        engine.clear_revealed_for_object("item-1")
+        assert engine.has_revealed("u1", "item-1") is False
+        assert engine.has_revealed("u2", "item-1") is False
+
+    def test_clear_revealed_for_object_does_not_affect_other_items(self):
+        engine = EscapeSessionEngine()
+        engine.reveal_item("u1", "item-1")
+        engine.reveal_item("u1", "item-2")
+        engine.clear_revealed_for_object("item-1")
+        assert engine.has_revealed("u1", "item-2") is True
+
+    def test_clear_opened_for_object_removes_it_for_every_user(self):
+        engine = EscapeSessionEngine()
+        engine.open_door("u1", "door-1")
+        engine.open_door("u2", "door-1")
+        engine.clear_opened_for_object("door-1")
+        assert engine.has_opened("u1", "door-1") is False
+        assert engine.has_opened("u2", "door-1") is False
+
+    def test_clear_opened_for_object_does_not_affect_other_doors(self):
+        engine = EscapeSessionEngine()
+        engine.open_door("u1", "door-1")
+        engine.open_door("u1", "door-2")
+        engine.clear_opened_for_object("door-1")
+        assert engine.has_opened("u1", "door-2") is True
+
+    def test_clear_for_never_revealed_or_opened_object_is_a_no_op(self):
+        engine = EscapeSessionEngine()
+        engine.clear_revealed_for_object("never-revealed")  # must not raise
+        engine.clear_opened_for_object("never-opened")  # must not raise

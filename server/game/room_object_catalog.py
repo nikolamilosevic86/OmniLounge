@@ -108,6 +108,29 @@ OBJECT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
             {"interactionType": "start_mission", "label": "Start Mission", "actionState": None},
         ],
     },
+    # Escape room feature (design doc §5.1): the door itself is purely a
+    # static catalog entry + config blueprint. Live per-visitor open/closed
+    # state is never stored on the object -- it lives in EscapeSessionEngine
+    # (see room_builder.py's `_escape` engine), so this entry only needs the
+    # single unconditional "attempt_open" interaction.
+    "escape_door": {
+        "category": "interactive",
+        "defaultSizePreset": "M",
+        "interactions": [
+            {"interactionType": "attempt_open", "label": "Try the Door", "actionState": None},
+        ],
+    },
+    # Escape room feature (design doc §5.2): whether the item is currently
+    # revealed/held is per-visitor runtime state on EscapeSessionEngine /
+    # InventoryEngine, never stored here -- this entry only needs the single
+    # "pick_up" interaction.
+    "hidden_item": {
+        "category": "interactive",
+        "defaultSizePreset": "S",
+        "interactions": [
+            {"interactionType": "pick_up", "label": "Pick Up", "actionState": None},
+        ],
+    },
 }
 
 

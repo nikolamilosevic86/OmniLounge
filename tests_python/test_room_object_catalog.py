@@ -87,3 +87,33 @@ class TestStylePresets:
     def test_color_and_material_presets_are_non_empty(self):
         assert len(COLOR_PRESETS) > 0
         assert len(MATERIAL_PRESETS) > 0
+
+
+class TestEscapeDoorCatalogEntry:
+    def test_is_interactive_medium_with_attempt_open(self):
+        entry = get_catalog_entry("escape_door")
+        assert entry["category"] == "interactive"
+        assert entry["defaultSizePreset"] == "M"
+        types = {i["interactionType"] for i in entry["interactions"]}
+        assert types == {"attempt_open"}
+
+    def test_resolves_size_presets_like_ordinary_furniture(self):
+        assert resolve_size_preset("escape_door", "M") == SIZE_PRESETS["M"]
+
+    def test_is_a_valid_object_type(self):
+        assert is_valid_object_type("escape_door") is True
+
+
+class TestHiddenItemCatalogEntry:
+    def test_is_interactive_small_with_pick_up(self):
+        entry = get_catalog_entry("hidden_item")
+        assert entry["category"] == "interactive"
+        assert entry["defaultSizePreset"] == "S"
+        types = {i["interactionType"] for i in entry["interactions"]}
+        assert types == {"pick_up"}
+
+    def test_resolves_size_presets_like_ordinary_furniture(self):
+        assert resolve_size_preset("hidden_item", "S") == SIZE_PRESETS["S"]
+
+    def test_is_a_valid_object_type(self):
+        assert is_valid_object_type("hidden_item") is True

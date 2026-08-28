@@ -10,8 +10,11 @@ tested without a database.
 from typing import Any, Literal
 
 from server.game.bookshelf import BookshelfLibrary
+from server.game.escape_session import EscapeSessionEngine
+from server.game.inventory import InventoryEngine
 from server.game.media import MediaLibrary
 from server.game.npc_guide import GuideEngine
+from server.game.puzzle import PuzzleEngine
 from server.game.room_builder_models import BoundsModel, RoomObjectPlacementModel
 from server.game.room_object_catalog import (
     COLOR_PRESETS,
@@ -70,6 +73,12 @@ class RoomBuilderState:
         self._media = MediaLibrary()
         self._story = StoryEngine()
         self._guide = GuideEngine()
+        # Escape room feature (feature_designs/escape_room_feature_design.md
+        # §14): one instance per room, owned exactly like every other
+        # per-room engine above.
+        self._puzzles = PuzzleEngine()
+        self._inventory = InventoryEngine()
+        self._escape = EscapeSessionEngine()
         self._versions: list[dict[str, Any]] = []
         self._active_version: int | None = None
         self._next_version = 1
@@ -264,7 +273,13 @@ class RoomBuilderState:
     def _interactions_for(self, record: dict[str, Any]) -> list[dict[str, Any]]:
         if not record["isInteractable"]:
             return []
-        return get_interaction_menu(record["objectType"])
+        menu = get_interaction_menu(record["objectType"])
+        if record["config"].get("puzzleId"):
+            # Any object type can double as a puzzle prop (design doc §6.2)
+            # -- appended onto (not instead of) the type's static menu, and
+            # only for instances actually bound to a puzzle.
+            menu.append({"interactionType": "solve_puzzle", "label": "Solve", "actionState": None})
+        return menu
 
     def _decorate_object(self, record: dict[str, Any]) -> dict[str, Any]:
         decorated = {**record, "interactions": self._interactions_for(record)}
@@ -287,18 +302,46 @@ class RoomBuilderState:
             return None
         return self._decorate_object(record)
 
-    def list_objects(self, tile: tuple[int, int] | None = None) -> list[dict[str, Any]]:
+    def list_objects(
+        self, tile: tuple[int, int] | None = None,
+        requester_id: str | None = None, is_room_host: bool = False,
+    ) -> list[dict[str, Any]]:
         objects = self._objects.values()
         if tile is not None:
             objects = [o for o in objects if o["tile"] == tile]
+        objects = [o for o in objects if self._is_visible_to(o, requester_id, is_room_host)]
         return [self._decorate_object(o) for o in sorted(objects, key=lambda o: o["zIndex"])]
 
-    def list_objects_for_tiles(self, tiles: set[tuple[int, int]]) -> list[dict[str, Any]]:
+    def list_objects_for_tiles(
+        self, tiles: set[tuple[int, int]],
+        requester_id: str | None = None, is_room_host: bool = False,
+    ) -> list[dict[str, Any]]:
         """Like `list_objects`, but scoped to any tile in `tiles`. Used to
         lazily load only the objects near a client instead of the whole
         room, which matters once a room has many tiles/objects."""
         objects = [o for o in self._objects.values() if o["tile"] in tiles]
+        objects = [o for o in objects if self._is_visible_to(o, requester_id, is_room_host)]
         return [self._decorate_object(o) for o in sorted(objects, key=lambda o: o["zIndex"])]
+
+    def _is_visible_to(
+        self, record: dict[str, Any], requester_id: str | None, is_room_host: bool
+    ) -> bool:
+        """An unrevealed `hidden_item` must never be sent to a visitor's
+        client at all (design doc §5.2) -- not filtered client-side, since a
+        visitor could otherwise discover its position from network traffic
+        before solving anything. Every other object type is always visible.
+        `is_room_host` (build-mode) always sees everything so authors can
+        find and edit hidden items. `requester_id is None` means a trusted
+        internal caller (server-side migrations, tests) with no specific
+        visitor in mind, matching the same convention `_can_edit` uses."""
+        if is_room_host or requester_id is None:
+            return True
+        if record["objectType"] != "hidden_item":
+            return True
+        object_id = record["objectId"]
+        if self._inventory.has(requester_id, object_id):
+            return False  # already picked up -- would look duplicated in their own view
+        return self._escape.has_revealed(requester_id, object_id)
 
     def _require_object(self, object_id: str) -> dict[str, Any]:
         record = self._objects.get(object_id)
@@ -820,14 +863,15 @@ class RoomBuilderState:
         return results
 
     def interact_with_object(
-        self, object_id: str, interaction_type: str, requester_id: str, now_ms: float
+        self, object_id: str, interaction_type: str, requester_id: str, now_ms: float,
+        display_name: str | None = None,
     ) -> dict[str, Any]:
         record = self._require_object(object_id)
         if not record["isInteractable"]:
             raise PermissionError(f"object {object_id} is not interactable")
 
         menu_entry = next(
-            (item for item in get_interaction_menu(record["objectType"]) if item["interactionType"] == interaction_type),
+            (item for item in self._interactions_for(record) if item["interactionType"] == interaction_type),
             None,
         )
         if menu_entry is None:
@@ -841,7 +885,7 @@ class RoomBuilderState:
                 raise PermissionError("interaction is on cooldown")
             self._interaction_last_ms[key] = now_ms
 
-        payload = self._interaction_payload(record, interaction_type, requester_id, now_ms)
+        payload = self._interaction_payload(record, interaction_type, requester_id, now_ms, display_name)
 
         return {
             "objectId": object_id,
@@ -853,9 +897,23 @@ class RoomBuilderState:
         }
 
     def _interaction_payload(
-        self, record: dict[str, Any], interaction_type: str, requester_id: str, now_ms: float
+        self, record: dict[str, Any], interaction_type: str, requester_id: str, now_ms: float,
+        display_name: str | None = None,
     ) -> dict[str, Any]:
         object_id = record["objectId"]
+        if interaction_type == "solve_puzzle":
+            # Reachable from any object type bound to a puzzle (design doc
+            # §6.2), so this is checked before the per-type dispatch below.
+            puzzle_id = record["config"].get("puzzleId")
+            if puzzle_id is None:
+                raise ValueError(f"object {object_id} has no bound puzzle")
+            return {"puzzle": self._puzzles.get_puzzle_public(puzzle_id)}
+        if record["objectType"] == "escape_door":
+            if interaction_type == "attempt_open":
+                return self._attempt_open_door(record, requester_id, now_ms, display_name)
+        if record["objectType"] == "hidden_item":
+            if interaction_type == "pick_up":
+                return self._pick_up_item(record, requester_id)
         if record["objectType"] == "bookshelf":
             if interaction_type == "browse_books":
                 books = []
@@ -891,8 +949,53 @@ class RoomBuilderState:
                 story_result = self._story.restart_story(object_id, object_id, user_id=requester_id)
                 return {"character": character, **story_result}
             if interaction_type == "ask_hint":
-                return {"character": character}
+                # An ai_character optionally "guards" a puzzle (design doc
+                # §6.5): if configured, ask_hint dispenses that puzzle's next
+                # hint instead of just returning the character with no
+                # content, reusing 100% of the existing interaction plumbing.
+                guards_puzzle_id = record["config"].get("guardsPuzzleId")
+                if guards_puzzle_id is None:
+                    return {"character": character}
+                hint_result = self._puzzles.request_hint(guards_puzzle_id, requester_id, now_ms)
+                return {"character": character, **hint_result}
         return dict(record["config"])
+
+    def _attempt_open_door(
+        self, record: dict[str, Any], requester_id: str, now_ms: float, display_name: str | None,
+    ) -> dict[str, Any]:
+        """Design doc §5.1/§8.3: opens for `requester_id` once the authored
+        gate (required item AND all required puzzles) is satisfied. A door
+        with no gate configured at all opens unconditionally on first
+        attempt. Idempotent once already open for that visitor."""
+        object_id = record["objectId"]
+        config = record["config"]
+        destination_tile = config.get("destinationTile")
+        if self._escape.has_opened(requester_id, object_id):
+            return {"opened": True, "alreadyOpen": True, "destinationTile": destination_tile}
+
+        required_item_id = config.get("requiredItemId")
+        required_puzzle_ids = config.get("requiredPuzzleIds") or []
+        has_item = required_item_id is None or self._inventory.has(requester_id, required_item_id)
+        puzzles_solved = all(self._puzzles.is_solved(pid, requester_id) for pid in required_puzzle_ids)
+        if not (has_item and puzzles_solved):
+            return {"opened": False, "alreadyOpen": False}
+
+        self._escape.open_door(requester_id, object_id)
+        if destination_tile is None:
+            # No destination tile means this door is a win trigger (§5.1,
+            # §8.3); multiple win-doors are OR-gated, and mark_won is a no-op
+            # unless the visitor's session is currently in_progress.
+            self._escape.mark_won(requester_id, display_name or requester_id, now_ms)
+        return {"opened": True, "alreadyOpen": False, "destinationTile": destination_tile}
+
+    def _pick_up_item(self, record: dict[str, Any], requester_id: str) -> dict[str, Any]:
+        """Design doc §5.2/§7: a visitor cannot pick up an item they haven't
+        personally uncovered yet."""
+        object_id = record["objectId"]
+        if not self._escape.has_revealed(requester_id, object_id):
+            raise PermissionError(f"item {object_id} has not been revealed for this user")
+        self._inventory.grant(requester_id, object_id)
+        return {"granted": True, "itemId": object_id}
 
     @staticmethod
     def _pick_default_media_item(
@@ -960,7 +1063,75 @@ class RoomBuilderState:
             # would inherit the old character's tour and profile.
             self._guide.discard(object_id)
             self._story.remove_character(object_id, object_id)
+        if record["objectType"] == "hidden_item":
+            # Otherwise a recycled object id would inherit a phantom held
+            # item / stale reveal flag from before it was deleted (§5.3).
+            self._inventory.revoke_all_for_object(object_id)
+            self._escape.clear_revealed_for_object(object_id)
+        if record["objectType"] == "escape_door":
+            self._escape.clear_opened_for_object(object_id)
+        puzzle_id = record["config"].get("puzzleId")
+        if puzzle_id is not None and not self._puzzle_id_still_referenced(puzzle_id):
+            # No dangling puzzle definition left behind once nothing else
+            # (another bound object, or an ai_character's guardsPuzzleId)
+            # still references it (§5.3).
+            self._puzzles.remove_puzzle(puzzle_id)
         return True
+
+    def _puzzle_id_still_referenced(self, puzzle_id: str) -> bool:
+        for other in self._objects.values():
+            if other["config"].get("puzzleId") == puzzle_id:
+                return True
+            if other["objectType"] == "ai_character" and other["config"].get("guardsPuzzleId") == puzzle_id:
+                return True
+        return False
+
+    # ── Escape room orchestration (design doc §6.1, §8) ──────────────────
+
+    def add_puzzle(
+        self,
+        puzzle_id: str,
+        prompt: str,
+        answer: str,
+        hints: list[str] | None = None,
+        reveal_item_id: str | None = None,
+        unlock_door_id: str | None = None,
+        match_mode: str = "exact",
+        max_attempts: int | None = None,
+    ) -> dict[str, Any]:
+        """Thin orchestrator (design doc §6.1): `PuzzleEngine` has no
+        reference to room objects and must not reach into `self._objects`
+        to stay independently testable, so `RoomBuilderState` owns the
+        atomic, two-sided wiring between a puzzle and the door it unlocks
+        instead. `unlock_door_id` is validated *before* creating the puzzle
+        so a bad reference never leaves a dangling puzzle definition behind.
+        """
+        if unlock_door_id is not None:
+            self._require_object(unlock_door_id)
+        result = self._puzzles.add_puzzle(
+            puzzle_id, prompt, answer, hints=hints, reveal_item_id=reveal_item_id,
+            unlock_door_id=unlock_door_id, match_mode=match_mode, max_attempts=max_attempts,
+        )
+        if unlock_door_id is not None:
+            door_config = self._objects[unlock_door_id]["config"]
+            door_config.setdefault("requiredPuzzleIds", []).append(puzzle_id)
+        return result
+
+    def attempt_solve_puzzle(
+        self, puzzle_id: str, requester_id: str, guess: str, now_ms: float
+    ) -> dict[str, Any]:
+        return self._puzzles.attempt_solve(puzzle_id, requester_id, guess, now_ms)
+
+    def configure_escape_session(
+        self, enabled: bool, time_limit_ms: float, briefing: str | None = None
+    ) -> None:
+        self._escape.configure(enabled, time_limit_ms, briefing)
+
+    def start_escape_session(self, requester_id: str, now_ms: float) -> dict[str, Any]:
+        return self._escape.start(requester_id, now_ms)
+
+    def get_escape_status(self, requester_id: str, now_ms: float) -> dict[str, Any]:
+        return self._escape.status(requester_id, now_ms)
 
     # ── Collision / interaction zone editor ──────────────────────────────
 
