@@ -1214,6 +1214,14 @@ class RoomBuilderState:
         cross-module caller already follows."""
         return self._escape.has_opened(requester_id, object_id)
 
+    def reveal_item(self, requester_id: str, object_id: str) -> None:
+        """Thin accessor for a fired `reveal_object` trigger (design doc
+        feature_designs/escape_room_feature_design.md \u00a76.3) so
+        `server/main.py`'s game loop can mark a hidden_item revealed for the
+        triggering visitor without reaching into the private `_escape`
+        engine directly. Idempotent like the puzzle-solve reveal path."""
+        self._escape.reveal_item(requester_id, object_id)
+
     def configure_door(
         self,
         object_id: str,

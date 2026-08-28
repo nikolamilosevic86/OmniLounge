@@ -1210,6 +1210,24 @@ class TestHiddenItemInteraction:
             self.builder.interact_with_object("key-1", "pick_up", requester_id="p2", now_ms=1000)
 
 
+# ─── Escape room: reveal_item public accessor for fired triggers (§6.3) ────
+
+class TestRevealItemAccessor:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+    def test_reveal_item_makes_it_visible_to_that_requester(self):
+        self.builder.reveal_item("p1", "key-1")
+        objects = self.builder.list_objects(requester_id="p1")
+        assert any(o["objectId"] == "key-1" for o in objects)
+
+    def test_reveal_item_does_not_affect_other_visitors(self):
+        self.builder.reveal_item("p1", "key-1")
+        objects = self.builder.list_objects(requester_id="p2")
+        assert all(o["objectId"] != "key-1" for o in objects)
+
+
 # ─── Escape room: ai_character ask_hint via guardsPuzzleId (design doc §6.5)
 
 class TestAskHintGuardsPuzzle:

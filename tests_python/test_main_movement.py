@@ -355,3 +355,71 @@ class TestEscapeDoorCollisionIsPerVisitor:
             main_module.apply_player_movement(room, "lobby", p2, now_ms=0)
 
         assert p2["position"]["x"] < 340.0
+
+
+class TestAreaEnterTriggersFireDuringMovement:
+    """`RoomBuilderState.evaluate_area_enter` (scripted trigger editor) was
+    fully implemented but never actually driven by live gameplay -- a
+    trigger could be authored and would just never fire for a real visitor.
+    `apply_player_movement` gains an optional `fired_triggers` output list
+    (design doc feature_designs/escape_room_feature_design.md §6.3), mirroring
+    how `_tile_collision_obstacles`/`requester_id` was threaded through for
+    escape_door collision, so `server/main.py`'s game loop can react to
+    triggers firing without every existing caller having to change."""
+
+    def _make_zone_and_trigger(self, rooms, event_type="dialogue", payload=None, **trigger_kwargs):
+        builder = rooms.get_builder("lobby")
+        builder.create_zone("z1", (0, 0), "interaction", min_x=280, min_y=280, max_x=320, max_y=320)
+        builder.create_trigger(
+            "t1", (0, 0), zone_id="z1", event_type=event_type, payload=payload or {}, **trigger_kwargs,
+        )
+        return builder
+
+    async def test_walking_into_a_trigger_zone_fires_it_when_an_output_list_is_given(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = {"x": 250.0, "y": 300.0}
+        self._make_zone_and_trigger(rooms)
+
+        player["direction"] = {"x": 1, "y": 0}
+        fired_triggers: list[dict] = []
+        for _ in range(40):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0, fired_triggers=fired_triggers)
+            if fired_triggers:
+                break
+
+        assert len(fired_triggers) == 1
+        assert fired_triggers[0]["triggerId"] == "t1"
+        assert fired_triggers[0]["playerId"] == "p1"
+
+    async def test_omitting_the_output_list_does_not_fire_anything_or_error(self, isolate_registry):
+        # Every pre-existing caller of apply_player_movement omits
+        # fired_triggers entirely, so this must stay a safe no-op default.
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = {"x": 250.0, "y": 300.0}
+        self._make_zone_and_trigger(rooms)
+
+        player["direction"] = {"x": 1, "y": 0}
+        for _ in range(40):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+
+        assert player["position"]["x"] > 280.0  # movement itself still worked fine
+
+    async def test_standing_still_never_fires_a_trigger(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = {"x": 300.0, "y": 300.0}  # already inside the zone, but not moving
+        self._make_zone_and_trigger(rooms)
+
+        fired_triggers: list[dict] = []
+        moved = main_module.apply_player_movement(room, "lobby", player, now_ms=0, fired_triggers=fired_triggers)
+
+        assert moved is False
+        assert fired_triggers == []

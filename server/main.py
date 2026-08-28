@@ -166,12 +166,41 @@ def _tile_collision_obstacles(room_id: str, tile: Any, requester_id: str | None 
     return obstacles
 
 
-def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float) -> bool:
+def _evaluate_area_triggers(
+    room_id: str,
+    player_id: str,
+    tile: Any,
+    position: dict[str, float],
+    now_ms: float,
+    fired_triggers: list[dict] | None,
+) -> None:
+    """Drive `RoomBuilderState.evaluate_area_enter` for one player's new
+    position (design doc feature_designs/escape_room_feature_design.md §6.3).
+    A no-op unless the caller opts in with an output list, so every
+    pre-existing caller of `apply_player_movement` is unaffected."""
+    if fired_triggers is None:
+        return
+    builder = rooms.get_builder(room_id)
+    if builder is None:
+        return
+    tile_coord = (tile.get("x", 0), tile.get("y", 0)) if isinstance(tile, dict) else tile
+    for fired in builder.evaluate_area_enter(player_id, tile_coord, position["x"], position["y"], now_ms):
+        fired_triggers.append({"playerId": player_id, **fired})
+
+
+def apply_player_movement(
+    room: Room, room_id: str, player: dict, now_ms: float, fired_triggers: list[dict] | None = None,
+) -> bool:
     """Apply direction or click-target movement (and tile transitions) for a
     single player. Returns True if the player's position/tile changed this tick.
 
     This must run for every player in the room, including the AI bot: only
     stamina regeneration is bot-exempt, not movement processing.
+
+    `fired_triggers` (design doc §6.3) is an optional output list: when
+    given, any scripted trigger whose zone the player just entered is
+    appended to it, so the game loop can react (e.g. `reveal_object`)
+    without every other caller of this function having to change.
     """
     extra_obstacles = _tile_collision_obstacles(room_id, player.get("tile"), requester_id=player.get("id"))
 
@@ -182,8 +211,12 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
         if transition:
             player["tile"] = transition["tile"]
             room.update_player_position(player["id"], transition["position"])
+            _evaluate_area_triggers(
+                room_id, player["id"], transition["tile"], transition["position"], now_ms, fired_triggers,
+            )
         else:
             room.update_player_position(player["id"], new_pos)
+            _evaluate_area_triggers(room_id, player["id"], player.get("tile"), new_pos, now_ms, fired_triggers)
         return True
 
     target = player.get("targetPosition")
@@ -193,6 +226,9 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
         if transition:
             player["tile"] = transition["tile"]
             room.update_player_position(player["id"], transition["position"])
+            _evaluate_area_triggers(
+                room_id, player["id"], transition["tile"], transition["position"], now_ms, fired_triggers,
+            )
             player["targetPosition"] = None
             if player.get("pendingAction") is not None:
                 player["actionState"] = player["pendingAction"]
@@ -200,6 +236,7 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
             return True
 
         room.update_player_position(player["id"], new_pos)
+        _evaluate_area_triggers(room_id, player["id"], player.get("tile"), new_pos, now_ms, fired_triggers)
         if new_pos["x"] == target["x"] and new_pos["y"] == target["y"]:
             player["targetPosition"] = None
             if player.get("pendingAction") is not None:
@@ -252,6 +289,48 @@ async def tick_guided_tours(room_id: str, now_ms: float) -> None:
             }, room=room_channel(room_id))
 
 
+async def handle_fired_trigger(room_id: str, fired: dict) -> None:
+    """React to one scripted trigger firing for one visitor (design doc
+    feature_designs/escape_room_feature_design.md §6.3). Every fired
+    trigger is echoed to that visitor as a generic event first (useful for
+    build-mode/tour-style triggers with client-side behavior); `reveal_object`
+    is the one eventType with server-side behavior today -- it marks a
+    hidden_item revealed for that visitor and pushes them a personalized
+    builder-state refresh, the same targeted-broadcast pattern already used
+    for `room:npc:moved`, rather than a full-room rebroadcast that would
+    leak the reveal to every other visitor."""
+    player_id = fired["playerId"]
+    await sio.emit(
+        "room:trigger:fired",
+        {
+            "roomId": room_id,
+            "triggerId": fired["triggerId"],
+            "eventType": fired["eventType"],
+            "payload": fired["payload"],
+        },
+        room=player_id,
+    )
+    if fired["eventType"] != "reveal_object":
+        return
+    object_id = fired["payload"].get("objectId")
+    if not object_id:
+        return
+    builder = rooms.get_builder(room_id)
+    if builder is None:
+        return
+    builder.reveal_item(player_id, object_id)
+    await sio.emit(
+        "room:builder:state",
+        {
+            "roomId": room_id,
+            **builder_state_payload(
+                room_id, requester_id=player_id, is_room_host=_is_room_host(player_id, room_id),
+            ),
+        },
+        room=player_id,
+    )
+
+
 async def game_loop() -> None:
     interval  = 1.0 / TICK_RATE
     last_time = time.time()
@@ -265,6 +344,7 @@ async def game_loop() -> None:
 
         for room_id, room in rooms.rooms.items():
             moved = False
+            fired_triggers: list[dict] = []
             for player in room.get_all_players():
                 # Regen stamina for everyone except AI bot (managed by its own tick)
                 if player["id"] != BOT_ID:
@@ -274,10 +354,12 @@ async def game_loop() -> None:
                 if now_ms < player.get("stunnedUntil", 0):
                     continue
 
-                if apply_player_movement(room, room_id, player, now_ms):
+                if apply_player_movement(room, room_id, player, now_ms, fired_triggers=fired_triggers):
                     moved = True
 
             moved_by_room[room_id] = moved
+            for fired in fired_triggers:
+                await handle_fired_trigger(room_id, fired)
             await tick_guided_tours(room_id, now_ms)
             await tick_escape_sessions(room_id, now_ms)
 
@@ -416,7 +498,7 @@ async def player_join(sid, data):
     await sio.emit("room:state", {"players": all_players_payload("lobby")}, room=sid)
     await sio.emit(
         "room:builder:state",
-        {"roomId": "lobby", **builder_state_payload("lobby")},
+        {"roomId": "lobby", **builder_state_payload("lobby", requester_id=sid, is_room_host=_is_room_host(sid, "lobby"))},
         room=sid,
     )
 
@@ -813,11 +895,18 @@ async def room_tile_add(sid, data):
     )
 
 
-def builder_state_payload(room_id: str, tiles: set[tuple[int, int]] | None = None) -> dict:
+def builder_state_payload(
+    room_id: str, tiles: set[tuple[int, int]] | None = None,
+    requester_id: str | None = None, is_room_host: bool = False,
+) -> dict:
     builder = rooms.get_builder(room_id)
     if not builder:
         return {"tiles": [], "objects": [], "zones": [], "triggers": []}
-    objects = builder.list_objects_for_tiles(tiles) if tiles is not None else builder.list_objects()
+    objects = (
+        builder.list_objects_for_tiles(tiles, requester_id=requester_id, is_room_host=is_room_host)
+        if tiles is not None
+        else builder.list_objects(requester_id=requester_id, is_room_host=is_room_host)
+    )
     return {
         "tiles": builder.list_tiles(),
         "objects": objects,
@@ -827,11 +916,34 @@ def builder_state_payload(room_id: str, tiles: set[tuple[int, int]] | None = Non
 
 
 async def broadcast_builder_state(room_id: str) -> None:
-    await sio.emit(
-        "room:builder:state",
-        {"roomId": room_id, **builder_state_payload(room_id)},
-        room=room_channel(room_id),
-    )
+    """Unlike most other room-wide broadcasts, this cannot be a single
+    `room=room_channel(room_id)` emit: unrevealed `hidden_item` objects must
+    never reach a visitor's client at all (design doc
+    feature_designs/escape_room_feature_design.md §5.2/§12), and that
+    filtering is per-visitor (`RoomBuilderState.list_objects`'s
+    `requester_id`). So every connected player in the room gets their own
+    personalized payload, targeted at their own sid, mirroring the
+    per-caller pattern already used by `room_builder_request`."""
+    room = rooms.get_room(room_id)
+    if room is None:
+        await sio.emit(
+            "room:builder:state",
+            {"roomId": room_id, **builder_state_payload(room_id)},
+            room=room_channel(room_id),
+        )
+        return
+    for player in room.get_all_players():
+        player_id = player["id"]
+        await sio.emit(
+            "room:builder:state",
+            {
+                "roomId": room_id,
+                **builder_state_payload(
+                    room_id, requester_id=player_id, is_room_host=_is_room_host(player_id, room_id),
+                ),
+            },
+            room=player_id,
+        )
 
 
 def _current_room_and_builder(sid):
@@ -869,7 +981,12 @@ async def room_builder_request(sid, data):
 
     await sio.emit(
         "room:builder:state",
-        {"roomId": room_id, **builder_state_payload(room_id, tiles)},
+        {
+            "roomId": room_id,
+            **builder_state_payload(
+                room_id, tiles, requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+            ),
+        },
         room=sid,
     )
     await sio.emit(
@@ -2125,7 +2242,12 @@ async def _remove_player_from_room(target_id: str, room_id: str, reason: str) ->
         await sio.emit("chat:history", visible, room=target_id)
         await sio.emit(
             "room:builder:state",
-            {"roomId": new_room_id, **builder_state_payload(new_room_id)},
+            {
+                "roomId": new_room_id,
+                **builder_state_payload(
+                    new_room_id, requester_id=target_id, is_room_host=_is_room_host(target_id, new_room_id),
+                ),
+            },
             room=target_id,
         )
         await broadcast_room_state(new_room_id)

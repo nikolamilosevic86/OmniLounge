@@ -272,3 +272,134 @@ class TestTickEscapeSessions:
 
         expired_events = [e for e in fake_sio.emitted if e[0] == "room:escape:expired"]
         assert expired_events and expired_events[-1][2] == "p1"
+
+
+# ─── Escape room: hidden_item visibility must hold over the wire (§5.2/§12) ─
+#
+# `RoomBuilderState.list_objects`/`list_objects_for_tiles` already filter
+# unrevealed hidden_items by requester_id (see TestHiddenItemVisibility in
+# test_room_builder.py), but that filtering is only real if the socket layer
+# actually threads each recipient's own id through. These tests exercise the
+# `room:builder:state` broadcast produced by `server/main.py` itself, not the
+# engine directly, to guard against exactly that gap.
+
+class TestHiddenItemVisibilityOverTheWire:
+    async def test_broadcast_omits_unrevealed_hidden_item_from_a_normal_visitor(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        room_id = room["id"]
+        await _join(rooms, room_id, "host-1", "Host")
+        await _join(rooms, room_id, "p1", "Alice")
+        builder = rooms.get_builder(room_id)
+        builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+        # Any builder-mutating handler triggers `broadcast_builder_state`;
+        # escape-session configure is a convenient one already covered above.
+        await main_module.room_escape_configure(
+            "host-1", {"enabled": True, "timeLimitMs": 60_000}, )
+
+        p1_events = [e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "p1"]
+        assert p1_events, "expected a builder-state broadcast targeted at p1"
+        object_ids = {o["objectId"] for o in p1_events[-1][1]["objects"]}
+        assert "key-1" not in object_ids
+
+    async def test_broadcast_still_includes_unrevealed_hidden_item_for_the_room_host(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        room_id = room["id"]
+        await _join(rooms, room_id, "host-1", "Host")
+        await _join(rooms, room_id, "p1", "Alice")
+        builder = rooms.get_builder(room_id)
+        builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+        await main_module.room_escape_configure(
+            "host-1", {"enabled": True, "timeLimitMs": 60_000}, )
+
+        host_events = [e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "host-1"]
+        assert host_events, "expected a builder-state broadcast targeted at the host"
+        object_ids = {o["objectId"] for o in host_events[-1][1]["objects"]}
+        assert "key-1" in object_ids
+
+    async def test_broadcast_includes_hidden_item_only_for_the_visitor_who_revealed_it(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        room_id = room["id"]
+        await _join(rooms, room_id, "host-1", "Host")
+        await _join(rooms, room_id, "p1", "Alice")
+        await _join(rooms, room_id, "p2", "Bob")
+        builder = rooms.get_builder(room_id)
+        builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+        builder._escape.reveal_item("p1", "key-1")
+
+        await main_module.room_escape_configure(
+            "host-1", {"enabled": True, "timeLimitMs": 60_000}, )
+
+        p1_events = [e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "p1"]
+        p2_events = [e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "p2"]
+        assert "key-1" in {o["objectId"] for o in p1_events[-1][1]["objects"]}
+        assert "key-1" not in {o["objectId"] for o in p2_events[-1][1]["objects"]}
+
+
+# ─── Trigger-revealed puzzles: reveal_object event type (§6.3) ─────────────
+
+class TestHandleFiredTrigger:
+    """`server/main.py: handle_fired_trigger` is what the game loop calls
+    for each trigger `apply_player_movement` reports as fired (§6.3).
+    Exercised directly since the game loop itself is an infinite loop."""
+
+    async def test_reveal_object_marks_the_item_revealed_for_that_visitor_only(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms, player_id="p1", name="Alice")
+        await _join(rooms, player_id="p2", name="Bob")
+        builder = rooms.get_builder("lobby")
+        builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+        await main_module.handle_fired_trigger("lobby", {
+            "playerId": "p1", "triggerId": "t1", "eventType": "reveal_object",
+            "payload": {"objectId": "key-1"},
+        })
+
+        p1_objects = builder.list_objects(requester_id="p1")
+        p2_objects = builder.list_objects(requester_id="p2")
+        assert any(o["objectId"] == "key-1" for o in p1_objects)
+        assert all(o["objectId"] != "key-1" for o in p2_objects)
+
+    async def test_reveal_object_pushes_a_personalized_builder_state_to_that_visitor(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms, player_id="p1", name="Alice")
+        builder = rooms.get_builder("lobby")
+        builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+
+        await main_module.handle_fired_trigger("lobby", {
+            "playerId": "p1", "triggerId": "t1", "eventType": "reveal_object",
+            "payload": {"objectId": "key-1"},
+        })
+
+        state_events = [e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "p1"]
+        assert state_events
+        assert any(o["objectId"] == "key-1" for o in state_events[-1][1]["objects"])
+
+    async def test_every_fired_trigger_is_echoed_to_that_visitor_generically(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms, player_id="p1", name="Alice")
+
+        await main_module.handle_fired_trigger("lobby", {
+            "playerId": "p1", "triggerId": "t1", "eventType": "dialogue",
+            "payload": {"nodeId": "intro-1"},
+        })
+
+        fired_events = [e for e in fake_sio.emitted if e[0] == "room:trigger:fired" and e[2] == "p1"]
+        assert fired_events
+        assert fired_events[-1][1]["eventType"] == "dialogue"
+        assert fired_events[-1][1]["payload"] == {"nodeId": "intro-1"}
+
+    async def test_reveal_object_with_missing_object_id_does_not_error(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await _join(rooms, player_id="p1", name="Alice")
+
+        await main_module.handle_fired_trigger("lobby", {
+            "playerId": "p1", "triggerId": "t1", "eventType": "reveal_object", "payload": {},
+        })
+
+        state_events = [e for e in fake_sio.emitted if e[0] == "room:builder:state" and e[2] == "p1"]
+        assert not state_events  # no valid objectId -> no reveal, no extra broadcast
