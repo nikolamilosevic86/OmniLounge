@@ -770,7 +770,10 @@ class RoomBuilderState:
         self, object_id: str, requester_id: str, choice_index: int | None = None,
     ) -> dict[str, Any]:
         self._require_ai_character(object_id)
-        return self._story.talk(object_id, object_id, user_id=requester_id, choice_index=choice_index)
+        return self._story.talk(
+            object_id, object_id, user_id=requester_id, choice_index=choice_index,
+            is_solved=self._puzzles.is_solved,
+        )
 
     def restart_character_story(self, object_id: str, requester_id: str) -> dict[str, Any]:
         self._require_ai_character(object_id)

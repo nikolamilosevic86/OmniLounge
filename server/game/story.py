@@ -344,7 +344,19 @@ class StoryEngine:
 
     def talk(
         self, object_id: str, character_id: str, user_id: str, choice_index: int | None = None,
+        is_solved: Callable[[str, str], bool] | None = None,
     ) -> dict[str, Any]:
+        """`is_solved` (design doc feature_designs/escape_room_feature_design.md
+        §6.4) is an optional `(puzzle_id, user_id) -> bool` callback, mirroring
+        `ask_generative`'s existing `caller` callback-injection pattern, since
+        `StoryEngine` has no direct dependency on `PuzzleEngine`. When the
+        current node's `knowledgeCheck` is set and a choice is being made,
+        the callback is consulted; if it returns False the choice is blocked
+        (progress does not advance) and the response is flagged
+        `knowledgeCheckPassed: False` instead of moving to the next node.
+        Omitting the callback (e.g. a node with no puzzle-gating configured
+        anywhere in the room) never blocks progression, for backward
+        compatibility with every pre-existing caller."""
         record = self._require_character(object_id, character_id)
         nodes = self._nodes.get((object_id, character_id), {})
         progress_key = (object_id, character_id, user_id)
@@ -354,6 +366,15 @@ class StoryEngine:
             raise KeyError(f"story has no node: {current_node_id}")
 
         if choice_index is not None:
+            knowledge_check = current_node.get("knowledgeCheck")
+            if knowledge_check is not None and is_solved is not None and not is_solved(knowledge_check, user_id):
+                return {
+                    "characterId": character_id,
+                    "node": dict(current_node),
+                    "mode": "generative" if record["generativeEnabled"] else "predefined",
+                    "knowledgeCheckPassed": False,
+                }
+
             choices = current_node["choices"]
             if choice_index < 0 or choice_index >= len(choices):
                 raise ValueError("invalid choice index")

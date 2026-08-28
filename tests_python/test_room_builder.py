@@ -950,6 +950,36 @@ class TestAiCharacterIntegration:
         result = self.builder.talk_to_character("npc-1", requester_id="p1", choice_index=0)
         assert result["node"]["nodeId"] == "node-2"
 
+    def test_talk_to_character_blocks_choice_gated_on_unsolved_puzzle(self):
+        # design doc §6.4: a node's knowledgeCheck gates progression on
+        # RoomBuilderState's own PuzzleEngine.is_solved.
+        self.builder.add_puzzle("riddle-1", prompt="2+2?", answer="4", requester_id="alice", is_room_host=True)
+        self.builder.configure_character("npc-1", name="Archivist", role="quiz_master", start_node_id="node-1", requester_id="alice")
+        self.builder.add_story_node(
+            "npc-1", "node-1", character_line="Solve my riddle first.",
+            choices=[{"text": "I solved it", "nextNodeId": "node-2"}],
+            knowledge_check="riddle-1", requester_id="alice",
+        )
+        self.builder.add_story_node("npc-1", "node-2", character_line="Well done!", requester_id="alice")
+        self.builder.talk_to_character("npc-1", requester_id="p1")
+        result = self.builder.talk_to_character("npc-1", requester_id="p1", choice_index=0)
+        assert result["node"]["nodeId"] == "node-1"
+        assert result["knowledgeCheckPassed"] is False
+
+    def test_talk_to_character_allows_choice_once_puzzle_is_solved(self):
+        self.builder.add_puzzle("riddle-1", prompt="2+2?", answer="4", requester_id="alice", is_room_host=True)
+        self.builder.configure_character("npc-1", name="Archivist", role="quiz_master", start_node_id="node-1", requester_id="alice")
+        self.builder.add_story_node(
+            "npc-1", "node-1", character_line="Solve my riddle first.",
+            choices=[{"text": "I solved it", "nextNodeId": "node-2"}],
+            knowledge_check="riddle-1", requester_id="alice",
+        )
+        self.builder.add_story_node("npc-1", "node-2", character_line="Well done!", requester_id="alice")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1000)
+        self.builder.talk_to_character("npc-1", requester_id="p1")
+        result = self.builder.talk_to_character("npc-1", requester_id="p1", choice_index=0)
+        assert result["node"]["nodeId"] == "node-2"
+
     def test_interact_start_mission_resets_story_progress(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")
         self.builder.add_story_node(

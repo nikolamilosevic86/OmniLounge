@@ -472,6 +472,70 @@ class TestTalkProgression:
         assert result["node"]["nodeId"] == "node-1"
 
 
+class TestKnowledgeCheckGatesProgression:
+    """design doc feature_designs/escape_room_feature_design.md §6.4: a node's
+    `knowledge_check` (a puzzle_id) gates the choice that leads past it on
+    `is_solved(puzzle_id, user_id)`, injected as a callback (mirroring
+    `ask_generative`'s existing `caller` callback-injection pattern) since
+    StoryEngine has no direct dependency on PuzzleEngine."""
+
+    def setup_method(self):
+        self.engine = StoryEngine()
+        self.engine.add_character("npc-1", "char-1", name="Archivist", role="quiz_master", start_node_id="node-1")
+        self.engine.add_story_node(
+            "npc-1", "char-1", "node-1", character_line="Solve my riddle first.",
+            choices=[{"text": "I solved it", "nextNodeId": "node-2"}],
+            knowledge_check="riddle-1",
+        )
+        self.engine.add_story_node(
+            "npc-1", "char-1", "node-2", character_line="Well done!", completion_flag=True,
+        )
+
+    def test_choice_is_blocked_when_puzzle_is_unsolved(self):
+        result = self.engine.talk(
+            "npc-1", "char-1", user_id="p1", choice_index=0, is_solved=lambda puzzle_id, user_id: False,
+        )
+        assert result["node"]["nodeId"] == "node-1"
+        assert result["knowledgeCheckPassed"] is False
+
+    def test_progress_does_not_advance_when_blocked(self):
+        self.engine.talk("npc-1", "char-1", user_id="p1", choice_index=0, is_solved=lambda p, u: False)
+        result = self.engine.talk("npc-1", "char-1", user_id="p1")
+        assert result["node"]["nodeId"] == "node-1"
+
+    def test_choice_advances_when_puzzle_is_solved(self):
+        result = self.engine.talk(
+            "npc-1", "char-1", user_id="p1", choice_index=0, is_solved=lambda puzzle_id, user_id: True,
+        )
+        assert result["node"]["nodeId"] == "node-2"
+        assert "knowledgeCheckPassed" not in result
+
+    def test_is_solved_receives_the_knowledge_check_puzzle_id_and_user_id(self):
+        seen = {}
+
+        def fake_is_solved(puzzle_id, user_id):
+            seen["puzzle_id"] = puzzle_id
+            seen["user_id"] = user_id
+            return True
+
+        self.engine.talk("npc-1", "char-1", user_id="p1", choice_index=0, is_solved=fake_is_solved)
+        assert seen == {"puzzle_id": "riddle-1", "user_id": "p1"}
+
+    def test_omitting_is_solved_callback_does_not_gate_progression(self):
+        # Backward compatible: a node with knowledge_check but no injected
+        # is_solved callback must not block existing callers/tests.
+        result = self.engine.talk("npc-1", "char-1", user_id="p1", choice_index=0)
+        assert result["node"]["nodeId"] == "node-2"
+
+    def test_nodes_without_knowledge_check_are_unaffected(self):
+        result = self.engine.talk(
+            "npc-1", "char-1", user_id="p1", choice_index=0, is_solved=lambda p, u: True,
+        )
+        result2 = self.engine.talk("npc-1", "char-1", user_id="p1")
+        assert result2["node"]["nodeId"] == "node-2"
+        assert "knowledgeCheckPassed" not in result
+
+
 class TestGenerativeAnswer:
     def setup_method(self):
         self.engine = StoryEngine()

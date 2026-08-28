@@ -1244,6 +1244,9 @@ function initGame() {
       objectId: state.dialogueModalObjectId, choiceIndex,
     }, (result) => {
       if (!result) return;
+      if (result.knowledgeCheckPassed === false) {
+        addSystemMessage("You haven't figured that out yet.");
+      }
       renderDialogueNode(result.node, result.mode);
     });
   });
