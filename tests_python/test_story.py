@@ -63,6 +63,58 @@ class TestListAndRemoveCharacter:
         assert self.engine.remove_character("npc-1", "unknown") is False
 
 
+class TestSetCharacterProfile:
+    def setup_method(self):
+        self.engine = StoryEngine()
+        self.engine.add_character("npc-1", "char-1", name="Owl", role="guide", start_node_id="node-1")
+
+    def test_updates_profile_fields(self):
+        updated = self.engine.set_character_profile(
+            "npc-1", "char-1", name="Wise Owl", role="mentor", start_node_id="node-2",
+            portrait_url="https://example.com/owl.png",
+        )
+        assert updated["name"] == "Wise Owl"
+        assert updated["role"] == "mentor"
+        assert updated["startNodeId"] == "node-2"
+        assert updated["portraitUrl"] == "https://example.com/owl.png"
+
+    def test_preserves_appearance_and_knowledge_base(self):
+        self.engine.set_character_appearance("npc-1", "char-1", {"hair": "curly"})
+        self.engine.set_knowledge_base_title("npc-1", "char-1", "Owl Facts")
+        updated = self.engine.set_character_profile(
+            "npc-1", "char-1", name="Wise Owl", role="mentor", start_node_id="node-2",
+        )
+        assert updated["appearance"]["hair"] == "curly"
+        assert updated["knowledgeBase"]["title"] == "Owl Facts"
+
+    def test_never_leaks_api_key(self):
+        self.engine.configure_generative_mode(
+            "npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret",
+        )
+        updated = self.engine.set_character_profile(
+            "npc-1", "char-1", name="Wise Owl", role="mentor", start_node_id="node-2",
+        )
+        assert "apiKey" not in updated
+
+    def test_rejects_invalid_role(self):
+        with pytest.raises(ValueError):
+            self.engine.set_character_profile(
+                "npc-1", "char-1", name="Owl", role="dragon", start_node_id="node-1",
+            )
+
+    def test_rejects_blank_name(self):
+        with pytest.raises(ValueError):
+            self.engine.set_character_profile(
+                "npc-1", "char-1", name="   ", role="guide", start_node_id="node-1",
+            )
+
+    def test_rejects_unknown_character(self):
+        with pytest.raises(KeyError):
+            self.engine.set_character_profile(
+                "npc-1", "ghost", name="Owl", role="guide", start_node_id="node-1",
+            )
+
+
 class TestCharacterAppearance:
     """AI characters should render in the same avatar shape as players and
     be customizable (skin color, body type/gender, hair, etc), reusing the

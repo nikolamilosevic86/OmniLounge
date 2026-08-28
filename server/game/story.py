@@ -19,6 +19,14 @@ from server.game.url_safety import is_safe_external_url
 
 ALLOWED_ROLES = {"guide", "quiz_master", "narrator", "historical_persona", "mentor"}
 
+# An `ai_character` room object is provisioned with this placeholder profile
+# the moment it is placed, so that appearance/knowledge/generative editing
+# works immediately instead of failing until the author happens to press
+# "Save Character" first.
+DEFAULT_CHARACTER_NAME = "New Character"
+DEFAULT_CHARACTER_ROLE = "guide"
+DEFAULT_CHARACTER_START_NODE_ID = "start"
+
 _FALLBACK_ANSWER = "I'm not sure about that yet, but let's continue our story."
 _RATE_LIMITED_ANSWER = "You're asking questions a bit too fast — please wait a moment and try again."
 
@@ -108,6 +116,25 @@ class StoryEngine:
             "apiKey": None,
         }
         characters[character_id] = record
+        return self._public_character(record)
+
+    def set_character_profile(
+        self, object_id: str, character_id: str, name: str, role: str, start_node_id: str,
+        portrait_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Updates an existing character's authored profile in place. Unlike
+        `add_character` this preserves everything the author configured
+        separately -- appearance, knowledge base, and generative settings --
+        so renaming a character never silently resets its look or content."""
+        record = self._require_character(object_id, character_id)
+        if role not in ALLOWED_ROLES:
+            raise ValueError(f"invalid role: {role}")
+        if not name or not name.strip():
+            raise ValueError("name is required")
+        record["name"] = name
+        record["role"] = role
+        record["startNodeId"] = start_node_id
+        record["portraitUrl"] = portrait_url
         return self._public_character(record)
 
     def set_character_appearance(

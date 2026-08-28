@@ -815,6 +815,85 @@ a:focus-visible,
   pointer-events: none;
 }
 
+/* Plays a brief directional "swoosh" wipe across the room whenever a player
+   crosses into a newly built neighbor tile, so the otherwise-instant server
+   teleport (old edge -> opposite edge of the new tile) reads as intentional
+   travel to another room instead of a jarring jump/glitch. */
+.tile-transition-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 800px;
+  height: 600px;
+  pointer-events: none;
+  /* Must stay above every .room-player, whose z-index is set inline to
+     Math.round(position.y) (up to ROOM_BOUNDS.height = 600), otherwise the
+     overlay renders behind avatars and the wipe becomes nearly invisible
+     since .room-frame/.players-layer never establish their own stacking
+     context (no z-index of their own), so z-index values compare directly
+     across the whole room-frame subtree. */
+  z-index: 1000;
+  opacity: 0;
+  background: linear-gradient(
+    var(--tile-transition-gradient-angle, 0deg),
+    transparent 0%,
+    rgba(184, 149, 237, 0.5) 42%,
+    rgba(226, 210, 255, 0.92) 50%,
+    rgba(184, 149, 237, 0.5) 58%,
+    transparent 100%
+  );
+}
+
+.tile-transition-overlay.direction-top,
+.tile-transition-overlay.direction-bottom {
+  --tile-transition-gradient-angle: 0deg;
+}
+
+.tile-transition-overlay.direction-left,
+.tile-transition-overlay.direction-right {
+  --tile-transition-gradient-angle: 90deg;
+}
+
+.tile-transition-overlay.direction-top {
+  animation: tileWipeTop 420ms ease-in-out;
+}
+
+.tile-transition-overlay.direction-bottom {
+  animation: tileWipeBottom 420ms ease-in-out;
+}
+
+.tile-transition-overlay.direction-left {
+  animation: tileWipeLeft 420ms ease-in-out;
+}
+
+.tile-transition-overlay.direction-right {
+  animation: tileWipeRight 420ms ease-in-out;
+}
+
+@keyframes tileWipeTop {
+  0%   { opacity: 0; transform: translateY(100%); }
+  50%  { opacity: 1; transform: translateY(0%); }
+  100% { opacity: 0; transform: translateY(-100%); }
+}
+
+@keyframes tileWipeBottom {
+  0%   { opacity: 0; transform: translateY(-100%); }
+  50%  { opacity: 1; transform: translateY(0%); }
+  100% { opacity: 0; transform: translateY(100%); }
+}
+
+@keyframes tileWipeLeft {
+  0%   { opacity: 0; transform: translateX(100%); }
+  50%  { opacity: 1; transform: translateX(0%); }
+  100% { opacity: 0; transform: translateX(-100%); }
+}
+
+@keyframes tileWipeRight {
+  0%   { opacity: 0; transform: translateX(-100%); }
+  50%  { opacity: 1; transform: translateX(0%); }
+  100% { opacity: 0; transform: translateX(100%); }
+}
+
 .room-hud {
   position: absolute;
   top: 1.5rem;
@@ -1032,6 +1111,164 @@ a:focus-visible,
   display: none;
 }
 
+.character-avatar-preview-panel {
+  display: flex;
+  justify-content: center;
+  padding: 0.35rem 0 0.15rem;
+}
+
+.character-avatar-preview {
+  width: 108px;
+  height: 144px;
+  background: var(--md-surface-container-highest);
+  border-radius: var(--md-shape-lg);
+  border: 1px solid var(--md-outline-variant);
+  box-shadow: var(--md-elevation-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.character-avatar-preview .avatar-svg {
+  width: 72px;
+  height: 108px;
+  overflow: visible;
+}
+
+/* Secondary builder action: same shape as .builder-primary-btn but visually
+   subordinate, for the "other" option in a pair of buttons. */
+.builder-secondary-btn {
+  border: 1px solid var(--md-outline-variant);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  border-radius: var(--md-shape-full);
+  padding: 0.55rem 1rem;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.builder-secondary-btn:hover:not(:disabled) {
+  background: var(--md-surface-container-highest);
+}
+
+.builder-secondary-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.builder-secondary-btn.hidden,
+.builder-primary-btn.hidden {
+  display: none;
+}
+
+.builder-button-row,
+.dialogue-action-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.builder-button-row > * {
+  flex: 1 1 auto;
+}
+
+/* Waypoint rows are numbered by the <ol>, so the tour order is readable at a
+   glance without duplicating the index into each row's label. */
+#waypoint-list {
+  list-style: decimal inside;
+  counter-reset: none;
+}
+
+#waypoint-list .builder-object-row {
+  display: list-item;
+  list-style-position: inside;
+}
+
+.waypoint-row-body {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: calc(100% - 1.5rem);
+  vertical-align: top;
+}
+
+.waypoint-label {
+  font-size: 0.78rem;
+  color: var(--md-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waypoint-coords {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.waypoint-actions {
+  display: flex;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.waypoint-actions button {
+  border: none;
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  border-radius: var(--md-shape-full);
+  padding: 0.15rem;
+  display: inline-flex;
+}
+
+.waypoint-actions button:hover {
+  background: var(--md-surface-container-highest);
+}
+
+.waypoint-actions .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+#character-generative-status.is-on {
+  color: var(--md-on-primary-container);
+  font-weight: 500;
+}
+
+/* Cursor affordance for "click the room to drop a tour stop" mode. */
+.room-canvas-wrap.waypoint-picking canvas,
+canvas.waypoint-picking {
+  cursor: crosshair;
+}
+
+/* Speech bubble anchored above a touring AI character. Reuses the player
+   bubble look but is positioned by renderAiCharacters, not renderPlayers. */
+.npc-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.35rem;
+  background: var(--md-surface-container-highest);
+  color: var(--md-on-surface);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-md);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.72rem;
+  max-width: 180px;
+  width: max-content;
+  text-align: center;
+  box-shadow: var(--md-elevation-2);
+  pointer-events: none;
+  z-index: 5;
+}
+
+
 .builder-field {
   display: flex;
   flex-direction: column;
@@ -1040,8 +1277,17 @@ a:focus-visible,
   color: var(--text-muted);
 }
 
+.builder-field.hidden {
+  display: none;
+}
+
+/* `textarea` must be listed here alongside input/select: without it every
+   multi-line builder field (story node lines, choice lists, knowledge
+   document content) falls back to the browser default white box and breaks
+   the Material 3 surface the rest of the panel uses. */
 .builder-field input,
-.builder-field select {
+.builder-field select,
+.builder-field textarea {
   background: var(--md-surface-container-highest);
   border: 1px solid var(--md-outline-variant);
   border-radius: var(--md-shape-sm);
@@ -1051,10 +1297,32 @@ a:focus-visible,
   font-size: 0.82rem;
 }
 
+.builder-field textarea {
+  resize: vertical;
+  min-height: 2.4rem;
+}
+
+.builder-field input::placeholder,
+.builder-field textarea::placeholder {
+  color: var(--md-on-surface-variant);
+  opacity: 0.7;
+}
+
 .builder-field input:focus-visible,
-.builder-field select:focus-visible {
+.builder-field select:focus-visible,
+.builder-field textarea:focus-visible {
   outline: 2px solid var(--md-primary);
   outline-offset: 1px;
+}
+
+.builder-error {
+  font-size: 0.72rem;
+  color: var(--md-error);
+  margin: 0;
+}
+
+.builder-error.hidden {
+  display: none;
 }
 
 .builder-checkbox-field {
@@ -1426,16 +1694,63 @@ a:focus-visible,
   z-index: calc(var(--z, 1));
 }
 
+/* Soft elliptical contact shadow that plants the avatar on the floor. The
+   avatar's own in-SVG shadow is deliberately faint, and the drop-shadow
+   below travels with the idle-bob animation, so neither alone reads as
+   ground contact. This one sits behind the avatar (the parent's z-index
+   makes a stacking context, so -1 stays inside the player) and does NOT
+   animate, which is what sells the character as standing on something. */
+.room-player::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 48px;
+  height: 13px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.26) 46%,
+    rgba(0, 0, 0, 0) 72%
+  );
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* KO'd players are lying down — a standing contact shadow would float. */
+.room-player.is-ko::after {
+  opacity: 0.35;
+  width: 62px;
+}
+
 .room-player .avatar-svg {
   width: 72px;
   height: 108px;
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.5));
+  /* Four hairline drop-shadows form a crisp dark outline all the way around
+     the silhouette (the classic Habbo "sticker" look), so avatars read
+     clearly against busy wallpaper and furniture; the fifth is the soft cast
+     shadow. filter: is used rather than an SVG stroke because it follows the
+     outer silhouette only, leaving the internal artwork untouched. */
+  filter:
+    drop-shadow(0.7px 0 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(-0.7px 0 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(0 0.7px 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(0 -0.7px 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(0 5px 9px rgba(0, 0, 0, 0.42));
   transition: transform 0.15s;
   overflow: visible;
 }
 
 .room-player.is-self .avatar-svg {
-  filter: drop-shadow(0 0 14px rgba(74, 222, 128, 0.55)) drop-shadow(0 6px 14px rgba(0,0,0,0.45));
+  filter:
+    drop-shadow(0.7px 0 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(-0.7px 0 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(0 0.7px 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(0 -0.7px 0 rgba(24, 12, 36, 0.62))
+    drop-shadow(0 0 12px rgba(74, 222, 128, 0.6))
+    drop-shadow(0 5px 9px rgba(0, 0, 0, 0.4));
 }
 
 /* Eye blink — each avatar gets a unique animation delay via CSS var so they
@@ -1487,18 +1802,24 @@ a:focus-visible,
   font-family: 'Roboto', sans-serif;
   font-size: 0.7rem;
   font-weight: 500;
+  letter-spacing: 0.015em;
   color: #fff;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.5);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.85);
   white-space: nowrap;
-  background: rgba(0,0,0,0.35);
+  background: linear-gradient(180deg, rgba(38,28,58,0.72), rgba(16,10,28,0.78));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.09);
   padding: 0.15rem 0.5rem;
-  border-radius: var(--md-shape-sm);
+  border-radius: 999px;
 }
 
 .room-player.is-self .player-name {
   color: var(--md-success);
-  background: rgba(143, 217, 168, 0.15);
-  border: 1px solid rgba(143, 217, 168, 0.3);
+  background: linear-gradient(180deg, rgba(143,217,168,0.26), rgba(40,90,60,0.5));
+  border: 1px solid rgba(143, 217, 168, 0.45);
+  box-shadow: 0 2px 10px rgba(74,222,128,0.22), inset 0 1px 0 rgba(255,255,255,0.14);
 }
 
 .room-npc {
@@ -1507,8 +1828,9 @@ a:focus-visible,
 
 .room-npc .player-name {
   color: var(--md-tertiary, #d4b3ff);
-  background: rgba(120, 80, 180, 0.25);
-  border: 1px solid rgba(180, 140, 255, 0.35);
+  background: linear-gradient(180deg, rgba(120,80,180,0.4), rgba(58,32,96,0.58));
+  border: 1px solid rgba(180, 140, 255, 0.45);
+  box-shadow: 0 2px 10px rgba(150,110,240,0.2), inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
 .self-indicator {
@@ -2246,228 +2568,124 @@ a:focus-visible,
   min-height: 1.2em;
 }
 
-/* ── Knowledge Store panel ──────────────────────────────────────────────
-   The rest of this app uses the Material 3 `--md-*` tokens above. This
-   panel is deliberately scoped to hand-rolled IBM Carbon Design System
-   tokens instead (Carbon's gray-100 surface, IBM Plex Sans, Carbon's
-   4px/8px spacing scale, square corners, and the `#0f62fe` "Blue 60"
-   interactive color) because this is a vanilla-JS/Vite project with no
-   React and no `@carbon/react` dependency -- pulling in the real Carbon
-   component library would require adopting React, a disproportionate
-   architectural change for one panel. Carbon's *visual language* is
-   reproduced here in plain CSS, scoped under `.kb-carbon` so it does not
-   affect the Material 3 styling used everywhere else in the app. */
-.kb-carbon {
-  --kb-font: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --kb-blue-60: #0f62fe;
-  --kb-blue-70: #0043ce;
-  --kb-red-60: #da1e28;
-  --kb-red-70: #a2191f;
-  --kb-gray-10: #f4f4f4;
-  --kb-gray-20: #e0e0e0;
-  --kb-gray-60: #6f6f6f;
-  --kb-gray-70: #525252;
-  --kb-gray-90: #262626;
-  --kb-gray-100: #161616;
-  font-family: var(--kb-font);
+/* ── Knowledge Store panel ──────────────────────────────────────
+   This panel previously used a hand-rolled IBM Carbon palette (blue 60,
+   square corners, IBM Plex Sans), which made the middle of the character
+   editor look like a different product. It now uses the same Material 3
+   `--md-*` tokens, shape scale, and type scale as every other builder
+   section. The remaining `.kb-*` classes only cover structures the generic
+   `.builder-*` classes don't provide -- tagged document rows and their
+   inline action buttons -- not a separate design system. */
+.kb-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  background: var(--kb-gray-100);
-  border: 1px solid var(--kb-gray-70);
-  padding: 1rem;
+  gap: 0.55rem;
+  background: var(--md-surface-container-high);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-lg);
+  padding: 0.75rem;
 }
 
-.kb-carbon__heading {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--kb-gray-20);
-  margin: 0 0 0.25rem;
-}
-
-.kb-carbon__subheading {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--kb-gray-20);
-  margin: 0.5rem 0 0;
-}
-
-.kb-carbon__count {
-  font-size: 0.75rem;
-  color: var(--kb-gray-60);
-  margin: 0.25rem 0 0;
-}
-
-.kb-carbon__count--full {
-  color: var(--kb-red-60);
-  font-weight: 600;
-}
-
-.kb-carbon__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--kb-gray-20);
-}
-
-.kb-carbon__field.hidden {
-  display: none;
-}
-
-.kb-carbon__label {
-  font-size: 0.7rem;
-  color: var(--kb-gray-20);
-}
-
-.kb-carbon__input,
-.kb-carbon__select,
-.kb-carbon__textarea {
-  font-family: var(--kb-font);
-  font-size: 0.85rem;
-  color: var(--kb-gray-10);
-  background: var(--kb-gray-90);
-  border: none;
-  border-bottom: 1px solid var(--kb-gray-60);
-  border-radius: 0;
-  padding: 0.55rem 0.75rem;
-}
-
-.kb-carbon__input:focus-visible,
-.kb-carbon__select:focus-visible,
-.kb-carbon__textarea:focus-visible {
-  outline: 2px solid var(--kb-blue-60);
-  outline-offset: -2px;
-}
-
-.kb-carbon__button {
-  font-family: var(--kb-font);
-  font-size: 0.85rem;
-  font-weight: 400;
-  border: none;
-  border-radius: 0;
-  padding: 0.65rem 1rem;
-  cursor: pointer;
-  transition: background-color 70ms cubic-bezier(0.2, 0, 0.38, 0.9);
-}
-
-.kb-carbon__button--primary {
-  background: var(--kb-blue-60);
-  color: #ffffff;
-}
-
-.kb-carbon__button--primary:hover {
-  background: var(--kb-blue-70);
-}
-
-.kb-carbon__button--danger {
-  background: transparent;
-  color: var(--kb-red-60);
-  border: 1px solid var(--kb-red-60);
-  padding: 0.35rem 0.65rem;
-  font-size: 0.75rem;
-  align-self: flex-start;
-}
-
-.kb-carbon__button--danger:hover {
-  background: var(--kb-red-60);
-  color: #ffffff;
-}
-
-.kb-carbon__button--secondary {
-  background: transparent;
-  color: var(--kb-blue-60);
-  border: 1px solid var(--kb-blue-60);
-  padding: 0.35rem 0.65rem;
-  font-size: 0.75rem;
-  align-self: flex-start;
-}
-
-.kb-carbon__button--secondary:hover {
-  background: var(--kb-blue-60);
-  color: #ffffff;
-}
-
-.kb-carbon__button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.kb-carbon__button-row {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.kb-carbon__error {
-  font-size: 0.75rem;
-  color: var(--kb-red-60);
-}
-
-.kb-carbon__error.hidden {
-  display: none;
-}
-
-.kb-carbon__list {
+.kb-doc-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
   max-height: 220px;
   overflow-y: auto;
 }
 
-.kb-carbon__list-item {
-  background: var(--kb-gray-90);
-  border-left: 3px solid var(--kb-blue-60);
-  padding: 0.6rem 0.75rem;
+.kb-doc {
+  background: var(--md-surface-container-highest);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-md);
+  padding: 0.5rem 0.6rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.kb-carbon__list-item-meta {
+.kb-doc__meta {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--kb-gray-10);
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--md-on-surface);
 }
 
-.kb-carbon__list-item-preview {
-  font-size: 0.75rem;
-  color: var(--kb-gray-20);
+.kb-doc__preview {
+  font-size: 0.72rem;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-.kb-carbon__list-item-actions {
+.kb-doc__actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.3rem;
+  flex-wrap: wrap;
 }
 
-.kb-carbon__tag {
-  font-size: 0.65rem;
+/* Compact pill buttons sized for a dense list row, sharing the primary
+   button's shape so they read as part of the same control family. */
+.kb-doc__action {
+  border: 1px solid var(--md-outline-variant);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  border-radius: var(--md-shape-full);
+  padding: 0.2rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.kb-doc__action:hover:not(:disabled) {
+  background: var(--md-surface-container-high);
+}
+
+.kb-doc__action--danger {
+  color: var(--md-error);
+  border-color: var(--md-error);
+}
+
+.kb-doc__action--danger:hover:not(:disabled) {
+  background: var(--md-error-container);
+  color: var(--md-on-error-container);
+}
+
+.kb-doc__action:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.kb-doc__tag {
+  font-size: 0.62rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 0.15rem 0.45rem;
-  background: var(--kb-gray-20);
-  color: var(--kb-gray-100);
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--md-shape-full);
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
 }
 
-.kb-carbon__tag--link {
-  background: var(--kb-blue-60);
-  color: #ffffff;
+.kb-doc__tag--link {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
 }
 
-.kb-carbon__empty-hint {
-  font-size: 0.75rem;
-  color: var(--kb-gray-60);
-  padding: 0.4rem 0;
+.kb-empty-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 0.3rem 0;
+}
+
+/* The document cap is a hard limit, so hitting it is an error state rather
+   than neutral information. */
+.kb-count--full {
+  color: var(--md-error);
+  font-weight: 600;
 }

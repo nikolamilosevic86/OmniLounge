@@ -775,8 +775,35 @@ class TestAiCharacterIntegration:
         npc_obj = next(o for o in objects if o["objectId"] == "npc-1")
         assert npc_obj["character"]["name"] == "Owl"
 
-    def test_get_object_embeds_none_character_before_configure(self):
-        assert self.builder.get_object("npc-1")["character"] is None
+    def test_get_object_embeds_default_character_before_configure(self):
+        character = self.builder.get_object("npc-1")["character"]
+        assert character["name"] == "New Character"
+        assert character["role"] == "guide"
+
+    def test_appearance_is_editable_before_the_character_is_named(self):
+        updated = self.builder.configure_character_appearance(
+            "npc-1", {"hair": "curly"}, requester_id="alice",
+        )
+        assert updated["appearance"]["hair"] == "curly"
+
+    def test_configure_character_preserves_appearance_and_knowledge(self):
+        self.builder.configure_character_appearance("npc-1", {"hair": "curly"}, requester_id="alice")
+        self.builder.set_character_knowledge_base_title("npc-1", "Owl Facts", requester_id="alice")
+        character = self.builder.configure_character(
+            "npc-1", name="Owl", role="mentor", start_node_id="node-1", requester_id="alice",
+        )
+        assert character["name"] == "Owl"
+        assert character["role"] == "mentor"
+        assert character["appearance"]["hair"] == "curly"
+        assert character["knowledgeBase"]["title"] == "Owl Facts"
+
+    def test_deleting_an_ai_character_clears_its_character_record(self):
+        self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")
+        self.builder.delete_object("npc-1", requester_id="alice")
+        self.builder.create_object(
+            "npc-1", "ai_character", (0, 0), x=10, y=10, width=20, height=20, created_by="alice",
+        )
+        assert self.builder.get_character_config("npc-1")["name"] == "New Character"
 
     def test_set_character_knowledge_base_title_requires_edit_permission(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1")
@@ -961,9 +988,18 @@ class TestAiCharacterIntegration:
         with pytest.raises(KeyError):
             self.builder.interact_with_object("npc-1", "talk", requester_id="p1", now_ms=1000)
 
-    def test_ask_character_raises_key_error_when_character_not_configured(self):
+    def test_ask_character_raises_key_error_for_unknown_object(self):
         with pytest.raises(KeyError):
-            self.builder.ask_character("npc-1", requester_id="p1", user_message="hint?", caller=lambda *a: "x")
+            self.builder.ask_character("ghost", requester_id="p1", user_message="hint?", caller=lambda *a: "x")
+
+    def test_ask_character_works_before_the_character_is_named(self):
+        # The character is provisioned with the object, so a learner asking a
+        # freshly placed character gets the predefined fallback rather than an
+        # "unknown character" error.
+        answer = self.builder.ask_character(
+            "npc-1", requester_id="p1", user_message="hint?", caller=lambda *a: "x",
+        )
+        assert isinstance(answer, dict)
 
     def test_ask_character_is_rate_limited_per_user_when_generative_enabled(self):
         self.builder.configure_character("npc-1", name="Owl", role="guide", start_node_id="node-1", requester_id="alice")

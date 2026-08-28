@@ -113,6 +113,7 @@
           <div class="room-frame">
             <canvas id="room-canvas" width="800" height="600"></canvas>
             <div id="players-layer" class="players-layer"></div>
+            <div id="tile-transition-overlay" class="tile-transition-overlay" aria-hidden="true"></div>
           </div>
 
           <div class="room-hud">
@@ -386,6 +387,8 @@
               <span>Character</span>
               <select id="character-npc-select"></select>
             </label>
+
+            <h5 class="builder-subheading">Identity</h5>
             <label class="builder-field">
               <span>Name</span>
               <input type="text" id="character-name-input" maxlength="80" placeholder="Character name" />
@@ -411,6 +414,9 @@
             <button type="button" id="character-configure-btn" class="builder-primary-btn">Save Character</button>
 
             <h5 class="builder-subheading">Appearance</h5>
+            <div class="character-avatar-preview-panel">
+              <div id="character-appearance-preview" class="character-avatar-preview"></div>
+            </div>
             <label class="builder-field">
               <span>Skin Color</span>
               <select id="character-skin-color-select"></select>
@@ -441,45 +447,48 @@
             </label>
             <button type="button" id="character-appearance-btn" class="builder-primary-btn">Save Appearance</button>
 
-            <div class="kb-carbon" id="knowledge-store-panel">
-              <h5 class="kb-carbon__heading">Knowledge Store</h5>
-              <label class="kb-carbon__field">
-                <span class="kb-carbon__label">Knowledge base title</span>
-                <input type="text" id="character-knowledge-base-title-input" class="kb-carbon__input" maxlength="120" placeholder="e.g. Owl Facts" />
+            <div class="kb-panel" id="knowledge-store-panel">
+              <h5 class="builder-subheading">Knowledge Store</h5>
+              <label class="builder-field">
+                <span>Knowledge base title</span>
+                <input type="text" id="character-knowledge-base-title-input" maxlength="120" placeholder="e.g. Owl Facts" />
               </label>
-              <button type="button" id="character-knowledge-base-title-btn" class="kb-carbon__button kb-carbon__button--primary">Save Title</button>
+              <button type="button" id="character-knowledge-base-title-btn" class="builder-primary-btn">Save Title</button>
 
-              <ul id="knowledge-document-list" class="kb-carbon__list"></ul>
-              <p class="kb-carbon__count" id="knowledge-document-count"></p>
+              <ul id="knowledge-document-list" class="kb-doc-list"></ul>
+              <p class="builder-hint" id="knowledge-document-count"></p>
 
-              <h6 class="kb-carbon__subheading" id="knowledge-document-form-heading">Add Document</h6>
-              <label class="kb-carbon__field">
-                <span class="kb-carbon__label">Document title</span>
-                <input type="text" id="knowledge-document-title-input" class="kb-carbon__input" maxlength="120" placeholder="Document title" />
+              <h6 class="builder-subheading" id="knowledge-document-form-heading">Add Document</h6>
+              <label class="builder-field">
+                <span>Document title</span>
+                <input type="text" id="knowledge-document-title-input" maxlength="120" placeholder="Document title" />
               </label>
-              <label class="kb-carbon__field">
-                <span class="kb-carbon__label">Type</span>
-                <select id="knowledge-document-type-select" class="kb-carbon__select">
+              <label class="builder-field">
+                <span>Type</span>
+                <select id="knowledge-document-type-select">
                   <option value="text">Text</option>
                   <option value="markdown">Markdown</option>
                   <option value="link">Link</option>
                 </select>
               </label>
-              <label class="kb-carbon__field" id="knowledge-document-content-field">
-                <span class="kb-carbon__label">Content</span>
-                <textarea id="knowledge-document-content-input" class="kb-carbon__textarea" rows="3" placeholder="Document content..."></textarea>
+              <label class="builder-field" id="knowledge-document-content-field">
+                <span>Content</span>
+                <textarea id="knowledge-document-content-input" rows="3" placeholder="Document content..."></textarea>
               </label>
-              <label class="kb-carbon__field hidden" id="knowledge-document-url-field">
-                <span class="kb-carbon__label">URL</span>
-                <input type="text" id="knowledge-document-url-input" class="kb-carbon__input" placeholder="https://example.com" />
+              <label class="builder-field hidden" id="knowledge-document-url-field">
+                <span>URL</span>
+                <input type="text" id="knowledge-document-url-input" placeholder="https://example.com" />
               </label>
-              <p class="kb-carbon__error hidden" id="knowledge-document-error"></p>
-              <div class="kb-carbon__button-row">
-                <button type="button" id="knowledge-document-add-btn" class="kb-carbon__button kb-carbon__button--primary">Add Document</button>
-                <button type="button" id="knowledge-document-cancel-btn" class="kb-carbon__button kb-carbon__button--secondary hidden">Cancel</button>
+              <p class="builder-error hidden" id="knowledge-document-error"></p>
+              <div class="builder-button-row">
+                <button type="button" id="knowledge-document-add-btn" class="builder-primary-btn">Add Document</button>
+                <button type="button" id="knowledge-document-cancel-btn" class="builder-secondary-btn hidden">Cancel</button>
               </div>
             </div>
 
+            <h5 class="builder-subheading">Generative AI (optional)</h5>
+            <p class="builder-hint" id="character-generative-status"></p>
+            <p class="builder-hint">Point the character at any OpenAI-compatible endpoint. Its knowledge documents are sent as context with every question. The key is stored server-side and never sent back to browsers.</p>
             <label class="builder-field">
               <span>Generative API Base URL</span>
               <input type="text" id="character-api-url-input" placeholder="https://api.openai.com/v1 (optional)" />
@@ -490,6 +499,8 @@
             </label>
             <button type="button" id="character-generative-btn" class="builder-primary-btn">Save Generative Config</button>
 
+            <h5 class="builder-subheading">Conversation Triggers</h5>
+            <p class="builder-hint">Each node is a line the character says. Add choices as "Text | nextNodeId" to branch the conversation.</p>
             <label class="builder-field">
               <span>New Node ID</span>
               <input type="text" id="story-node-id-input" placeholder="node-2" />
@@ -504,6 +515,20 @@
             </label>
             <button type="button" id="story-node-add-btn" class="builder-primary-btn">Add Story Node</button>
             <ul id="story-node-list" class="builder-object-list"></ul>
+
+            <h5 class="builder-subheading">Guided Tour</h5>
+            <p class="builder-hint">Add stops and the character can offer to guide visitors around the room. It walks to each stop in order, says the note, then returns home.</p>
+            <label class="builder-field">
+              <span>Stop note (spoken on arrival)</span>
+              <input type="text" id="waypoint-label-input" maxlength="120" placeholder="This is the library corner" />
+            </label>
+            <div class="builder-button-row">
+              <button type="button" id="waypoint-pick-btn" class="builder-primary-btn">Pick Spot on Map</button>
+              <button type="button" id="waypoint-here-btn" class="builder-secondary-btn">Use My Spot</button>
+            </div>
+            <p class="builder-hint hidden" id="waypoint-pick-hint">Click anywhere in the room to drop this tour stop.</p>
+            <ol id="waypoint-list" class="builder-object-list"></ol>
+            <button type="button" id="waypoint-clear-btn" class="builder-secondary-btn hidden">Clear All Stops</button>
           </section>
         </aside>
 
@@ -612,6 +637,11 @@
             </button>
           </form>
           <p id="dialogue-answer" class="reader-book-meta"></p>
+          <div class="dialogue-action-row">
+            <button type="button" id="dialogue-follow-btn" class="builder-primary-btn hidden">Follow me!</button>
+            <button type="button" id="dialogue-unfollow-btn" class="builder-secondary-btn hidden">Stop following</button>
+            <span id="dialogue-tour-status" class="waypoint-coords"></span>
+          </div>
           <button type="button" id="dialogue-restart-btn" class="builder-primary-btn">Start Mission Over</button>
         </div>
       </div>

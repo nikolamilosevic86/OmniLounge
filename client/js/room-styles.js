@@ -18,6 +18,7 @@ export const ROOM_STYLES = [
     wallBottom: '#5b6472',
     floorLight: '#8a8f98',
     floorDark: '#787d86',
+    lightColor: '190, 210, 235',
   },
   {
     id: 'cozy-den',
@@ -29,6 +30,7 @@ export const ROOM_STYLES = [
     wallBottom: '#7a5b3a',
     floorLight: '#a9784f',
     floorDark: '#96683f',
+    lightColor: '255, 190, 120',
   },
   {
     id: 'sunlit-studio',
@@ -40,6 +42,7 @@ export const ROOM_STYLES = [
     wallBottom: '#eaddc6',
     floorLight: '#d8c9ab',
     floorDark: '#c9b795',
+    lightColor: '255, 250, 230',
   },
   {
     id: 'midnight-lounge',
@@ -51,6 +54,7 @@ export const ROOM_STYLES = [
     wallBottom: '#463374',
     floorLight: '#463a6b',
     floorDark: '#3a2f59',
+    lightColor: '180, 140, 255',
   },
   {
     id: 'minimalist-white',
@@ -62,6 +66,7 @@ export const ROOM_STYLES = [
     wallBottom: '#eaeaea',
     floorLight: '#dcdcdc',
     floorDark: '#cfcfcf',
+    lightColor: '245, 245, 250',
   },
 ];
 

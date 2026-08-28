@@ -1,5 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey } from '../src/focus-trap.js';
+import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement } from '../src/focus-trap.js';
+
+describe('isTextEntryElement', () => {
+  it('treats text-like inputs as typing so arrow keys edit the caret', () => {
+    for (const type of ['text', 'search', 'email', 'password', 'number', 'url', 'tel']) {
+      expect(isTextEntryElement({ tagName: 'INPUT', type })).toBe(true);
+    }
+  });
+
+  it('treats a textarea and contenteditable regions as typing', () => {
+    expect(isTextEntryElement({ tagName: 'TEXTAREA' })).toBe(true);
+    expect(isTextEntryElement({ tagName: 'DIV', isContentEditable: true })).toBe(true);
+  });
+
+  it('defaults a typeless input to text', () => {
+    expect(isTextEntryElement({ tagName: 'INPUT' })).toBe(true);
+  });
+
+  // Regression: the build panel's Object Type/Size/Color dropdowns keep DOM
+  // focus after use, so counting <select> as "typing" swallowed every arrow
+  // key and made the avatar look permanently stuck after placing an object.
+  it('does NOT treat a select dropdown as typing', () => {
+    expect(isTextEntryElement({ tagName: 'SELECT' })).toBe(false);
+  });
+
+  it('does NOT treat checkboxes, radios or buttons as typing', () => {
+    expect(isTextEntryElement({ tagName: 'INPUT', type: 'checkbox' })).toBe(false);
+    expect(isTextEntryElement({ tagName: 'INPUT', type: 'radio' })).toBe(false);
+    expect(isTextEntryElement({ tagName: 'INPUT', type: 'range' })).toBe(false);
+    expect(isTextEntryElement({ tagName: 'BUTTON' })).toBe(false);
+  });
+
+  it('is case-insensitive about tag and type', () => {
+    expect(isTextEntryElement({ tagName: 'input', type: 'TEXT' })).toBe(true);
+    expect(isTextEntryElement({ tagName: 'select' })).toBe(false);
+  });
+
+  it('returns false for null/undefined or a plain container', () => {
+    expect(isTextEntryElement(null)).toBe(false);
+    expect(isTextEntryElement(undefined)).toBe(false);
+    expect(isTextEntryElement({ tagName: 'BODY' })).toBe(false);
+  });
+});
 
 describe('FOCUSABLE_SELECTOR', () => {
   it('targets common interactive elements', () => {

@@ -648,7 +648,7 @@ class TestRoomBuilderHandlers:
         errors = [e for e in fake_sio.emitted if e[0] == "error"]
         assert errors
 
-    async def test_object_list_embeds_none_character_before_configure(self, isolate_registry):
+    async def test_object_list_embeds_default_character_before_configure(self, isolate_registry):
         rooms, fake_sio = isolate_registry
         await self._join(rooms)
 
@@ -656,7 +656,20 @@ class TestRoomBuilderHandlers:
             "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
         })
         builder = rooms.get_builder("lobby")
-        assert builder.get_object(npc["objectId"])["character"] is None
+        assert builder.get_object(npc["objectId"])["character"]["name"] == "New Character"
+
+    async def test_appearance_can_be_saved_before_the_character_is_named(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        await self._join(rooms)
+
+        npc = await main_module.room_object_create("p1", {
+            "objectType": "ai_character", "x": 10, "y": 10, "width": 20, "height": 20,
+        })
+        character = await main_module.room_character_appearance("p1", {
+            "objectId": npc["objectId"], "appearance": {"hair": "curly"},
+        })
+        assert character["appearance"]["hair"] == "curly"
+        assert not [e for e in fake_sio.emitted if e[0] == "error"]
 
     async def test_character_talk_advances_story_with_choice_index(self, isolate_registry):
         rooms, fake_sio = isolate_registry

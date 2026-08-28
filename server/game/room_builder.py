@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from server.game.bookshelf import BookshelfLibrary
 from server.game.media import MediaLibrary
+from server.game.npc_guide import GuideEngine
 from server.game.room_builder_models import BoundsModel, RoomObjectPlacementModel
 from server.game.room_object_catalog import (
     COLOR_PRESETS,
@@ -19,7 +20,12 @@ from server.game.room_object_catalog import (
     get_interaction_menu,
     resolve_size_preset,
 )
-from server.game.story import StoryEngine
+from server.game.story import (
+    DEFAULT_CHARACTER_NAME,
+    DEFAULT_CHARACTER_ROLE,
+    DEFAULT_CHARACTER_START_NODE_ID,
+    StoryEngine,
+)
 from server.game.tile_navigation import can_add_neighbor_tile
 
 ZoneType = Literal["collision", "interaction"]
@@ -63,6 +69,7 @@ class RoomBuilderState:
         self._bookshelf = BookshelfLibrary()
         self._media = MediaLibrary()
         self._story = StoryEngine()
+        self._guide = GuideEngine()
         self._versions: list[dict[str, Any]] = []
         self._active_version: int | None = None
         self._next_version = 1
@@ -241,6 +248,17 @@ class RoomBuilderState:
             "config": config or {},
         }
         self._objects[object_id] = record
+        if record["objectType"] == "ai_character":
+            # Provision the story character up front. Every character editor
+            # action (appearance, knowledge base, generative mode) resolves a
+            # character record, so without this they all fail with "unknown
+            # character" until the author happens to save a name first.
+            self._story.add_character(
+                object_id, object_id,
+                name=DEFAULT_CHARACTER_NAME,
+                role=DEFAULT_CHARACTER_ROLE,
+                start_node_id=DEFAULT_CHARACTER_START_NODE_ID,
+            )
         return dict(record)
 
     def _interactions_for(self, record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -256,6 +274,11 @@ class RoomBuilderState:
             # render the AI character in the avatar's shape, with its
             # configured look, without a separate round-trip.
             decorated["character"] = self._story.get_character(record["objectId"], record["objectId"])
+            # Learners need to know a character can give a guided tour (to
+            # offer "follow me") without being able to edit it, so the route
+            # and any in-progress tour ship with the object too.
+            decorated["waypoints"] = self._guide.list_waypoints(record["objectId"])
+            decorated["tour"] = self._guide.public_tour(record["objectId"])
         return decorated
 
     def get_object(self, object_id: str) -> dict[str, Any] | None:
@@ -607,8 +630,14 @@ class RoomBuilderState:
     ) -> dict[str, Any]:
         record = self._require_ai_character(object_id)
         self._require_edit_permission(record, requester_id, is_room_host)
-        return self._story.add_character(
-            object_id, object_id, name=name, role=role, start_node_id=start_node_id, portrait_url=portrait_url,
+        if self._story.get_character(object_id, object_id) is None:
+            return self._story.add_character(
+                object_id, object_id, name=name, role=role, start_node_id=start_node_id,
+                portrait_url=portrait_url,
+            )
+        return self._story.set_character_profile(
+            object_id, object_id, name=name, role=role, start_node_id=start_node_id,
+            portrait_url=portrait_url,
         )
 
     def configure_character_appearance(
@@ -709,6 +738,86 @@ class RoomBuilderState:
         return self._story.ask_generative(
             object_id, object_id, user_message, caller=caller, user_id=requester_id, now_ms=now_ms,
         )
+
+    # ── AI character guided tours ("follow me") ──────────────────────────
+
+    def add_character_waypoint(
+        self, object_id: str, waypoint_id: str, x: float, y: float, label: str | None = None,
+        requester_id: str | None = None, is_room_host: bool = False,
+    ) -> list[dict[str, Any]]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._guide.add_waypoint(object_id, waypoint_id, x, y, label)
+
+    def remove_character_waypoint(
+        self, object_id: str, waypoint_id: str, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> list[dict[str, Any]]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._guide.remove_waypoint(object_id, waypoint_id)
+
+    def move_character_waypoint(
+        self, object_id: str, waypoint_id: str, direction: str,
+        requester_id: str | None = None, is_room_host: bool = False,
+    ) -> list[dict[str, Any]]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._guide.move_waypoint(object_id, waypoint_id, direction)
+
+    def clear_character_waypoints(
+        self, object_id: str, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> list[dict[str, Any]]:
+        record = self._require_ai_character(object_id)
+        self._require_edit_permission(record, requester_id, is_room_host)
+        return self._guide.clear_waypoints(object_id)
+
+    def list_character_waypoints(self, object_id: str) -> list[dict[str, Any]]:
+        self._require_ai_character(object_id)
+        return self._guide.list_waypoints(object_id)
+
+    def start_character_tour(
+        self, object_id: str, requester_id: str, now_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        """Accept a character's "follow me" invitation. Anyone in the room
+        may do this -- it is a learner-facing action, not an authoring one,
+        so unlike the route editor it is deliberately not permission-gated."""
+        record = self._require_ai_character(object_id)
+        return self._guide.start_tour(
+            object_id, origin={"x": record["x"], "y": record["y"]},
+            follower_id=requester_id, now_ms=now_ms,
+        )
+
+    def stop_character_tour(self, object_id: str, requester_id: str) -> dict[str, Any] | None:
+        self._require_ai_character(object_id)
+        return self._guide.leave_tour(object_id, requester_id)
+
+    def get_character_tour(self, object_id: str) -> dict[str, Any] | None:
+        self._require_ai_character(object_id)
+        return self._guide.public_tour(object_id)
+
+    def tick_character_tours(self, now_ms: float) -> list[dict[str, Any]]:
+        """Advance every in-progress guided tour in this room by one game
+        tick, writing each character's new position back onto its room
+        object so it is picked up by collision, hit-testing and the normal
+        builder-state broadcast. Returns one result per moving character for
+        the caller to broadcast."""
+        results = []
+        for object_id in self._guide.active_object_ids():
+            record = self._objects.get(object_id)
+            if record is None:
+                self._guide.discard(object_id)
+                continue
+            result = self._guide.tick(object_id, {"x": record["x"], "y": record["y"]}, now_ms)
+            if result is None:
+                continue
+            if result["moved"]:
+                record["x"] = result["position"]["x"]
+                record["y"] = result["position"]["y"]
+            character = self._story.get_character(object_id, object_id)
+            result["tile"] = record["tile"]
+            result["characterName"] = (character or {}).get("name") or "AI Character"
+            results.append(result)
+        return results
 
     def interact_with_object(
         self, object_id: str, interaction_type: str, requester_id: str, now_ms: float
@@ -845,6 +954,12 @@ class RoomBuilderState:
         self._require_edit_permission(record, requester_id, is_room_host)
         self._require_unlocked(record)
         del self._objects[object_id]
+        if record["objectType"] == "ai_character":
+            # Otherwise a deleted character's route would keep being ticked by
+            # the game loop, and re-creating an object with a recycled id
+            # would inherit the old character's tour and profile.
+            self._guide.discard(object_id)
+            self._story.remove_character(object_id, object_id)
         return True
 
     # ── Collision / interaction zone editor ──────────────────────────────

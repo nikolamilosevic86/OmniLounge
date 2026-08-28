@@ -7,6 +7,7 @@
  */
 import { ATTACK_TYPES } from './combat.js';
 import { ATTACK_DURATIONS, getBlockAngles } from './attack-anim.js';
+import { isTextEntryElement } from './focus-trap.js';
 
 let _socket         = null;
 let _getMyId        = null;
@@ -47,8 +48,9 @@ export function isBlocking() { return _blocking; }
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 function _isTyping() {
-  const tag = document.activeElement?.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA';
+  // Shares main.js's predicate so a focused non-text control (e.g. the build
+  // panel's checkbox/dropdowns) can't silently swallow combat keys either.
+  return isTextEntryElement(document.activeElement);
 }
 
 function _nearestTarget() {

@@ -21,6 +21,11 @@ OBSTACLES = [
 _MARGIN = 8
 
 
+def _point_overlaps_obstacle(px: float, py: float, obstacle: dict[str, float], margin: float = _MARGIN) -> bool:
+    return (obstacle["x"] - margin <= px <= obstacle["x"] + obstacle["w"] + margin and
+            obstacle["y"] - margin <= py <= obstacle["y"] + obstacle["h"] + margin)
+
+
 def collides_with_obstacle(
     px: float, py: float, margin: float = _MARGIN, extra_obstacles: list[dict[str, float]] | None = None,
 ) -> bool:
@@ -29,29 +34,88 @@ def collides_with_obstacle(
     of the hardcoded lobby `OBSTACLES`, so players can't walk through them.
     Each entry is an `{x, y, w, h}` axis-aligned bounding box."""
     for o in OBSTACLES:
-        if (o["x"] - margin <= px <= o["x"] + o["w"] + margin and
-                o["y"] - margin <= py <= o["y"] + o["h"] + margin):
+        if _point_overlaps_obstacle(px, py, o, margin):
             return True
     if extra_obstacles:
         for o in extra_obstacles:
-            if (o["x"] - margin <= px <= o["x"] + o["w"] + margin and
-                    o["y"] - margin <= py <= o["y"] + o["h"] + margin):
+            if _point_overlaps_obstacle(px, py, o, margin):
                 return True
     return False
+
+
+def _find_blocking_obstacle(
+    px: float, py: float, margin: float = _MARGIN,
+    extra_obstacles: list[dict[str, float]] | None = None,
+    ignore: list[dict[str, float]] | None = None,
+) -> dict[str, float] | None:
+    for o in (list(OBSTACLES) + list(extra_obstacles or [])):
+        if ignore and o in ignore:
+            continue
+        if _point_overlaps_obstacle(px, py, o, margin):
+            return o
+    return None
 
 
 def resolve_collision(
     current: dict[str, float], desired: dict[str, float],
     extra_obstacles: list[dict[str, float]] | None = None,
 ) -> dict[str, float]:
-    if not collides_with_obstacle(desired["x"], desired["y"], extra_obstacles=extra_obstacles):
+    # A builder can place a new object directly on top of a standing player
+    # (there's no check preventing that), which would otherwise embed the
+    # player fully inside a solid obstacle with no legal move left to make --
+    # permanently trapping them. Obstacles the player is ALREADY standing
+    # inside must not block this move, so they can always walk back out;
+    # obstacles they are not currently inside remain fully solid as normal.
+    # Once the player steps outside an embedding obstacle's bounds, it goes
+    # back to blocking them on the very next call, so this never opens up a
+    # way to walk through furniture under ordinary movement.
+    embedded_in = [
+        o for o in (list(OBSTACLES) + list(extra_obstacles or []))
+        if _point_overlaps_obstacle(current["x"], current["y"], o)
+    ]
+
+    def blocked(px: float, py: float) -> bool:
+        return _find_blocking_obstacle(px, py, extra_obstacles=extra_obstacles, ignore=embedded_in) is not None
+
+    if not blocked(desired["x"], desired["y"]):
         return desired
     slide_x = {"x": desired["x"], "y": current["y"]}
-    if not collides_with_obstacle(slide_x["x"], slide_x["y"], extra_obstacles=extra_obstacles):
+    if slide_x != current and not blocked(slide_x["x"], slide_x["y"]):
         return clamp_position(slide_x)
     slide_y = {"x": current["x"], "y": desired["y"]}
-    if not collides_with_obstacle(slide_y["x"], slide_y["y"], extra_obstacles=extra_obstacles):
+    if slide_y != current and not blocked(slide_y["x"], slide_y["y"]):
         return clamp_position(slide_y)
+
+    # Pure single-axis input (straight up/down/left/right) that runs head-on
+    # into an obstacle has no lateral component for the two slide attempts
+    # above to work with -- both degenerate back to the current position
+    # (skipped by the `!= current` checks above), leaving the player
+    # permanently stuck against furniture with no way to route around it
+    # other than manually pressing a perpendicular key.
+    # Nudge the player sideways (relative to whichever side of the obstacle
+    # they're already on) by the same step distance, so holding a single
+    # direction key naturally slides around the obstacle's corner instead of
+    # dead-stopping against it.
+    step = calculate_distance(current, desired)
+    if step <= 0:
+        return current
+    blocking = _find_blocking_obstacle(desired["x"], desired["y"], extra_obstacles=extra_obstacles, ignore=embedded_in)
+    if blocking is not None:
+        moving_vertically = desired["x"] == current["x"] and desired["y"] != current["y"]
+        moving_horizontally = desired["y"] == current["y"] and desired["x"] != current["x"]
+        if moving_vertically:
+            box_center_x = blocking["x"] + blocking["w"] / 2
+            nudge_dir = -1 if current["x"] < box_center_x else 1
+            nudge = {"x": current["x"] + nudge_dir * step, "y": current["y"]}
+            if not blocked(nudge["x"], nudge["y"]):
+                return clamp_position(nudge)
+        elif moving_horizontally:
+            box_center_y = blocking["y"] + blocking["h"] / 2
+            nudge_dir = -1 if current["y"] < box_center_y else 1
+            nudge = {"x": current["x"], "y": current["y"] + nudge_dir * step}
+            if not blocked(nudge["x"], nudge["y"]):
+                return clamp_position(nudge)
+
     return current
 
 

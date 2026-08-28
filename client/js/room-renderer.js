@@ -14,6 +14,7 @@ const LOBBY_STYLE = {
   wallBottom: '#6e6082',
   floorLight: '#c9a87c',
   floorDark: '#b8956a',
+  lightColor: '255, 200, 150',
 };
 
 let _animFrame = null;
@@ -48,6 +49,23 @@ export function setBuilderObjects(objects) {
   _builderObjects = Array.isArray(objects) ? objects : [];
 }
 
+/** Determines which edge a player crossed when moving from `fromTile` to
+ * `toTile` (adjacent tile coordinates, e.g. `{x:0,y:0}` -> `{x:0,y:-1}`),
+ * so the caller can play a matching directional transition animation.
+ * Returns null when the tiles are the same or not orthogonally adjacent
+ * (nothing to animate). */
+export function tileTransitionDirection(fromTile, toTile) {
+  if (!fromTile || !toTile) return null;
+  const dx = toTile.x - fromTile.x;
+  const dy = toTile.y - fromTile.y;
+  if (dx === 0 && dy === -1) return 'top';
+  if (dx === 0 && dy === 1) return 'bottom';
+  if (dx === -1 && dy === 0) return 'left';
+  if (dx === 1 && dy === 0) return 'right';
+  return null;
+}
+
+
 function _activeStyle() {
   return _isLobby ? LOBBY_STYLE : resolveRoomStyle(_roomStyleId);
 }
@@ -62,7 +80,8 @@ function _animLoop() {
   if (_isLobby) drawFurniture(ctx);
   drawBuilderObjects(ctx);
   drawAmbientLight(ctx);
-  drawDiscoBall(ctx, ROOM_WIDTH / 2, WALL_HEIGHT * 0.22);
+  drawCeilingFixture(ctx, ROOM_WIDTH / 2, WALL_HEIGHT * 0.22);
+  drawVignette(ctx);
 
   _animFrame = requestAnimationFrame(_animLoop);
 }
@@ -90,15 +109,57 @@ function drawWall(ctx) {
     ctx.fillRect(x, 0, 1, WALL_HEIGHT);
   }
 
+  drawWainscoting(ctx, style);
+
   drawWindow(ctx, ROOM_WIDTH * 0.08, ROOM_HEIGHT * 0.06, ROOM_WIDTH * 0.28, ROOM_HEIGHT * 0.22);
   drawWindow(ctx, ROOM_WIDTH * 0.64, ROOM_HEIGHT * 0.06, ROOM_WIDTH * 0.28, ROOM_HEIGHT * 0.22);
 
   drawWallArt(ctx, ROOM_WIDTH * 0.42, ROOM_HEIGHT * 0.08, 70, 50);
 
-  ctx.fillStyle = '#584e6a';
-  ctx.fillRect(0, WALL_HEIGHT - 6, ROOM_WIDTH, 8);
-  ctx.fillStyle = '#483e5a';
+  // Skirting board: dark base, lit top edge, dark shadow line underneath.
+  ctx.fillStyle = shadeColor(style.wallBottom, -28);
+  ctx.fillRect(0, WALL_HEIGHT - 10, ROOM_WIDTH, 12);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillRect(0, WALL_HEIGHT - 10, ROOM_WIDTH, 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.fillRect(0, WALL_HEIGHT - 2, ROOM_WIDTH, 4);
+}
+
+/** Panelled lower wall (wainscoting) with a dado rail. Breaks up the flat
+ * wall gradient and gives the room a furnished, hotel-lobby feel instead of
+ * a plain painted box. Purely decorative — no effect on collision. */
+function drawWainscoting(ctx, style) {
+  const railY = WALL_HEIGHT * 0.62;
+
+  // Lower section reads slightly darker than the wall above the rail.
+  ctx.fillStyle = 'rgba(0,0,0,0.13)';
+  ctx.fillRect(0, railY, ROOM_WIDTH, WALL_HEIGHT - railY);
+
+  // Recessed rectangular panels along the lower wall.
+  const panelW = 92;
+  const panelTop = railY + 13;
+  const panelH = WALL_HEIGHT - railY - 27;
+  if (panelH > 6) {
+    for (let x = 16; x + panelW < ROOM_WIDTH; x += panelW + 16) {
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.roundRect(x, panelTop, panelW, panelH, 3);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x + 1, panelTop + 1, panelW - 2, panelH - 2, 3);
+      ctx.stroke();
+    }
+  }
+
+  // Dado rail: body, lit top edge, cast shadow beneath.
+  ctx.fillStyle = shadeColor(style.wallBottom, 16);
+  ctx.fillRect(0, railY - 5, ROOM_WIDTH, 6);
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillRect(0, railY - 5, ROOM_WIDTH, 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(0, railY + 1, ROOM_WIDTH, 2.5);
 }
 
 function drawWindow(ctx, x, y, w, h) {
@@ -174,6 +235,8 @@ function drawFloor(ctx) {
     }
   }
 
+  drawFloorDepth(ctx);
+
   if (!_isLobby) return;
 
   const rugX = ROOM_WIDTH * 0.32;
@@ -194,13 +257,26 @@ function drawFloor(ctx) {
 }
 
 function drawFurniture(ctx) {
-  drawSofa(ctx, 60, ROOM_HEIGHT * 0.58, '#5b4a8a');       // muted indigo
-  drawSofa(ctx, ROOM_WIDTH - 210, ROOM_HEIGHT * 0.58, '#7a4060');  // muted rose
+  const sofaY = ROOM_HEIGHT * 0.58;
+  const tableY = ROOM_HEIGHT * 0.62;
+  const deckY = ROOM_HEIGHT * 0.72;
+
+  // Contact shadows are drawn first, so every piece visually sits ON the
+  // floor instead of hovering above it.
+  drawContactShadow(ctx, 125, sofaY + 62, 88, 15);
+  drawContactShadow(ctx, ROOM_WIDTH - 145, sofaY + 62, 88, 15);
+  drawContactShadow(ctx, 34, WALL_HEIGHT + 39, 28, 9);
+  drawContactShadow(ctx, ROOM_WIDTH - 41, WALL_HEIGHT + 39, 28, 9);
+  drawContactShadow(ctx, ROOM_WIDTH / 2, tableY + 40, 60, 12);
+  drawContactShadow(ctx, ROOM_WIDTH * 0.15 + 30, deckY + 42, 40, 10);
+
+  drawSofa(ctx, 60, sofaY, '#5b4a8a');       // muted indigo
+  drawSofa(ctx, ROOM_WIDTH - 210, sofaY, '#7a4060');  // muted rose
   drawPlant(ctx, 20, WALL_HEIGHT - 10);
   drawPlant(ctx, ROOM_WIDTH - 55, WALL_HEIGHT - 10);
-  drawCoffeeTable(ctx, ROOM_WIDTH / 2 - 50, ROOM_HEIGHT * 0.62);
+  drawCoffeeTable(ctx, ROOM_WIDTH / 2 - 50, tableY);
   drawNeonSign(ctx, ROOM_WIDTH / 2, WALL_HEIGHT - 30);
-  drawDJDeck(ctx, ROOM_WIDTH * 0.15, ROOM_HEIGHT * 0.72);
+  drawDJDeck(ctx, ROOM_WIDTH * 0.15, deckY);
 }
 
 function drawSofa(ctx, x, y, color) {
@@ -384,13 +460,296 @@ function drawDJDeck(ctx, x, y) {
 }
 
 function drawAmbientLight(ctx) {
+  const style = _activeStyle();
+  const tint = style.lightColor || '255, 200, 150';
   const lampX = ROOM_WIDTH / 2;
   const lampY = WALL_HEIGHT;
   const grad = ctx.createRadialGradient(lampX, lampY, 10, lampX, lampY + 100, 280);
-  grad.addColorStop(0, 'rgba(255, 200, 150, 0.12)');
-  grad.addColorStop(1, 'rgba(255, 200, 150, 0)');
+  grad.addColorStop(0, `rgba(${tint}, 0.12)`);
+  grad.addColorStop(1, `rgba(${tint}, 0)`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, WALL_HEIGHT, ROOM_WIDTH, ROOM_HEIGHT - WALL_HEIGHT);
+}
+
+/** Picks the room's ceiling fixture: the Lobby keeps its spinning disco ball
+ * (it's the branded club look, alongside its neon sign and DJ deck), while
+ * each selectable custom-room style gets its OWN fixture and light tint so
+ * every room doesn't look like the same nightclub. Purely decorative. */
+function drawCeilingFixture(ctx, x, y) {
+  if (_isLobby) {
+    drawDiscoBall(ctx, x, y);
+    return;
+  }
+  switch (_roomStyleId) {
+    case 'cozy-den':
+      drawLantern(ctx, x, y);
+      return;
+    case 'sunlit-studio':
+      drawSkylight(ctx, x, y);
+      return;
+    case 'midnight-lounge':
+      drawChandelierOrb(ctx, x, y);
+      return;
+    case 'minimalist-white':
+      drawPendantSphere(ctx, x, y);
+      return;
+    case 'modern-loft':
+    default:
+      drawPendantLamp(ctx, x, y);
+  }
+}
+
+/** Modern Loft: an industrial cone-shade pendant lamp on a bare cord. */
+function drawPendantLamp(ctx, x, y) {
+  ctx.strokeStyle = 'rgba(20,20,24,0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, y - 6);
+  ctx.stroke();
+
+  // Cone shade
+  ctx.fillStyle = '#23262b';
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y - 6);
+  ctx.lineTo(x + 4, y - 6);
+  ctx.lineTo(x + 22, y + 14);
+  ctx.lineTo(x - 22, y + 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y - 6);
+  ctx.lineTo(x - 1, y - 6);
+  ctx.lineTo(x - 10, y + 14);
+  ctx.lineTo(x - 18, y + 14);
+  ctx.closePath();
+  ctx.fill();
+
+  // Warm bulb glow, softly breathing
+  const t = performance.now() / 2200;
+  const pulse = 0.85 + 0.15 * Math.sin(t);
+  const glow = ctx.createRadialGradient(x, y + 16, 2, x, y + 16, 60);
+  glow.addColorStop(0, `rgba(210,225,255,${0.55 * pulse})`);
+  glow.addColorStop(1, 'rgba(210,225,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y + 16, 60, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = `rgba(240,245,255,${pulse})`;
+  ctx.beginPath();
+  ctx.arc(x, y + 16, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Cozy Den: a small hanging lantern with a warm, gently flickering candle glow. */
+function drawLantern(ctx, x, y) {
+  ctx.strokeStyle = 'rgba(60,40,25,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, y - 12);
+  ctx.stroke();
+
+  const t = performance.now() / 500;
+  const flicker = 0.85 + 0.15 * Math.sin(t * 1.7) + 0.05 * Math.sin(t * 4.3);
+
+  // Warm flame-lit glow behind the frame
+  const glow = ctx.createRadialGradient(x, y, 2, x, y, 55);
+  glow.addColorStop(0, `rgba(255,190,110,${0.5 * flicker})`);
+  glow.addColorStop(1, 'rgba(255,190,110,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, 55, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wood-framed glass box
+  ctx.fillStyle = '#4a3018';
+  ctx.beginPath();
+  ctx.roundRect(x - 13, y - 12, 26, 26, 3);
+  ctx.fill();
+  ctx.fillStyle = `rgba(255,205,130,${0.7 * flicker})`;
+  ctx.beginPath();
+  ctx.roundRect(x - 9, y - 8, 18, 18, 2);
+  ctx.fill();
+  ctx.strokeStyle = '#3a2412';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 10);
+  ctx.moveTo(x - 9, y + 1); ctx.lineTo(x + 9, y + 1);
+  ctx.stroke();
+  ctx.fillStyle = '#2f1d0d';
+  ctx.fillRect(x - 15, y + 12, 30, 4);
+}
+
+/** Sunlit Studio: a bright recessed ceiling skylight instead of a hanging
+ * fixture, casting soft daylight down into the room. */
+function drawSkylight(ctx, x, y) {
+  const w = 100;
+  const h = 46;
+
+  ctx.fillStyle = 'rgba(40,32,20,0.25)';
+  ctx.fillRect(x - w / 2 - 4, y - h / 2 - 4, w + 8, h + 8);
+
+  const sky = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
+  sky.addColorStop(0, '#fff8e8');
+  sky.addColorStop(1, '#ffe9b8');
+  ctx.fillStyle = sky;
+  ctx.fillRect(x - w / 2, y - h / 2, w, h);
+
+  ctx.strokeStyle = 'rgba(120,100,70,0.55)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - w / 6, y - h / 2); ctx.lineTo(x - w / 6, y + h / 2);
+  ctx.moveTo(x + w / 6, y - h / 2); ctx.lineTo(x + w / 6, y + h / 2);
+  ctx.stroke();
+
+  // Soft light rays falling into the room
+  const t = performance.now() / 3000;
+  const shimmer = 0.5 + 0.15 * Math.sin(t);
+  const rays = ctx.createRadialGradient(x, y + h / 2, 4, x, y + h / 2, 120);
+  rays.addColorStop(0, `rgba(255,246,214,${0.4 * shimmer})`);
+  rays.addColorStop(1, 'rgba(255,246,214,0)');
+  ctx.fillStyle = rays;
+  ctx.beginPath();
+  ctx.arc(x, y + h / 2, 120, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Midnight Lounge: a small, moody pendant orb with a slow violet pulse —
+ * elegant ambience rather than a spinning mirror ball. */
+function drawChandelierOrb(ctx, x, y) {
+  ctx.strokeStyle = 'rgba(180,160,220,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, y - 10);
+  ctx.stroke();
+
+  const t = performance.now() / 1400;
+  const pulse = 0.75 + 0.25 * Math.sin(t);
+
+  const glow = ctx.createRadialGradient(x, y, 2, x, y, 70);
+  glow.addColorStop(0, `rgba(180,140,255,${0.4 * pulse})`);
+  glow.addColorStop(1, 'rgba(180,140,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, 70, 0, Math.PI * 2);
+  ctx.fill();
+
+  const orb = ctx.createRadialGradient(x - 4, y - 4, 1, x, y, 14);
+  orb.addColorStop(0, '#efe6ff');
+  orb.addColorStop(0.55, '#9b7fd6');
+  orb.addColorStop(1, '#4b3477');
+  ctx.fillStyle = orb;
+  ctx.beginPath();
+  ctx.arc(x, y, 14, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(220,200,255,${0.5 * pulse})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, 20, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+/** Minimalist White: a plain matte-white sphere pendant on a thin cord. */
+function drawPendantSphere(ctx, x, y) {
+  ctx.strokeStyle = 'rgba(120,120,120,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, y - 12);
+  ctx.stroke();
+
+  const t = performance.now() / 2600;
+  const pulse = 0.85 + 0.15 * Math.sin(t);
+
+  const glow = ctx.createRadialGradient(x, y, 2, x, y, 50);
+  glow.addColorStop(0, `rgba(255,255,255,${0.35 * pulse})`);
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, 50, 0, Math.PI * 2);
+  ctx.fill();
+
+  const orb = ctx.createRadialGradient(x - 3, y - 3, 1, x, y, 12);
+  orb.addColorStop(0, '#ffffff');
+  orb.addColorStop(1, '#c8c8cc');
+  ctx.fillStyle = orb;
+  ctx.beginPath();
+  ctx.arc(x, y, 12, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Vertical linear gradient between two shades, in the CURRENT transform's
+ * local space — so sprite helpers can call it after ctx.translate/rotate. */
+function _vGrad(ctx, y0, y1, top, bottom) {
+  const grad = ctx.createLinearGradient(0, y0, 0, y1);
+  grad.addColorStop(0, top);
+  grad.addColorStop(1, bottom);
+  return grad;
+}
+
+/** Soft elliptical contact shadow used to visually "plant" furniture and
+ * props on the floor. Without one, sprites read as floating cutouts however
+ * nicely they're shaded. `cy` should be the object's BASE (its lowest edge),
+ * not its centre. */
+function drawContactShadow(ctx, cx, cy, rx, ry, alpha = 0.36) {
+  const r = Math.max(rx, 0.001);
+  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+  grad.addColorStop(0, `rgba(0,0,0,${alpha})`);
+  grad.addColorStop(0.55, `rgba(0,0,0,${alpha * 0.42})`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, ry / r); // squash the circle into the floor's perspective
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Overlays distance shading and an ambient-occlusion band where the wall
+ * meets the floor, so the flat tile grid reads as a lit surface receding
+ * into the room rather than a flat checkerboard. */
+function drawFloorDepth(ctx) {
+  const floorY = WALL_HEIGHT;
+  const floorH = ROOM_HEIGHT - floorY;
+
+  // Ambient occlusion along the wall/floor seam.
+  const ao = ctx.createLinearGradient(0, floorY, 0, floorY + 48);
+  ao.addColorStop(0, 'rgba(0,0,0,0.40)');
+  ao.addColorStop(0.5, 'rgba(0,0,0,0.13)');
+  ao.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ao;
+  ctx.fillRect(0, floorY, ROOM_WIDTH, 48);
+
+  // Warm pool of light in the middle of the floor, falling off to the edges.
+  const sheen = ctx.createRadialGradient(
+    ROOM_WIDTH / 2, floorY + floorH * 0.42, 20,
+    ROOM_WIDTH / 2, floorY + floorH * 0.42, ROOM_WIDTH * 0.6,
+  );
+  sheen.addColorStop(0, 'rgba(255,242,218,0.13)');
+  sheen.addColorStop(0.6, 'rgba(255,236,206,0.04)');
+  sheen.addColorStop(1, 'rgba(0,0,0,0.15)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(0, floorY, ROOM_WIDTH, floorH);
+}
+
+/** Cinematic edge darkening that pulls the eye toward the centre of the room.
+ * Drawn last so it sits over furniture and the disco lights alike. */
+function drawVignette(ctx) {
+  const grad = ctx.createRadialGradient(
+    ROOM_WIDTH / 2, ROOM_HEIGHT * 0.5, ROOM_HEIGHT * 0.36,
+    ROOM_WIDTH / 2, ROOM_HEIGHT * 0.5, ROOM_HEIGHT * 0.95,
+  );
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(10,5,22,0.40)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 }
 
 function shadeColor(hex, amount) {
@@ -415,6 +774,11 @@ function drawBuilderObjects(ctx) {
   for (const obj of _builderObjects) {
     const cx = obj.x + obj.width / 2;
     const cy = obj.y + obj.height / 2;
+
+    // Ground the sprite before drawing it, so builder-placed furniture is
+    // planted on the floor like the lobby's own furniture.
+    drawContactShadow(ctx, cx, obj.y + obj.height - 2, obj.width * 0.46, obj.height * 0.14);
+
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(((obj.rotation || 0) * Math.PI) / 180);
@@ -422,10 +786,21 @@ function drawBuilderObjects(ctx) {
     drawFurnitureSprite(ctx, obj);
 
     if (obj.isLocked) {
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      // Frosted tint + dashed outline reads as "locked" without hiding the
+      // sprite underneath the way an opaque black overlay did.
+      ctx.fillStyle = 'rgba(120,140,190,0.18)';
       ctx.beginPath();
       ctx.roundRect(-obj.width / 2, -obj.height / 2, obj.width, obj.height, 6);
       ctx.fill();
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(210,225,255,0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.roundRect(-obj.width / 2 + 1, -obj.height / 2 + 1, obj.width - 2, obj.height - 2, 6);
+      ctx.stroke();
+      ctx.restore();
     }
 
     ctx.restore();
@@ -470,23 +845,35 @@ function drawFurnitureSprite(ctx, obj) {
   }
 }
 
-function drawTableSprite(ctx, w, h, color) {
-  const legW = w * 0.09;
-  const legH = h * 0.4;
+/** Pure geometry for the table sprite's tabletop and legs, exported so the
+ * layout can be unit tested without a canvas: legs must start flush against
+ * the underside of the tabletop and run down to the sprite's bottom edge --
+ * previously `legH` was a fixed fraction of `h` positioned independently
+ * from the tabletop, leaving a visible gap between the legs and the
+ * tabletop ("legs look off"). */
+export function computeTableLayout(w, h) {
   const topH = h * 0.22;
   const topCenterY = -h / 2 + topH / 2 + 2;
+  const legTopY = topCenterY + topH / 2;
+  const legH = h / 2 - legTopY;
+  return { topH, topCenterY, legTopY, legH };
+}
+
+function drawTableSprite(ctx, w, h, color) {
+  const legW = w * 0.09;
+  const { topH, topCenterY, legTopY, legH } = computeTableLayout(w, h);
 
   ctx.fillStyle = shadeColor(color, -35);
-  ctx.fillRect(-w / 2 + legW * 0.6, h / 2 - legH, legW, legH);
-  ctx.fillRect(w / 2 - legW * 1.6, h / 2 - legH, legW, legH);
+  ctx.fillRect(-w / 2 + legW * 0.6, legTopY, legW, legH);
+  ctx.fillRect(w / 2 - legW * 1.6, legTopY, legW, legH);
 
-  ctx.fillStyle = color;
+  ctx.fillStyle = _vGrad(ctx, topCenterY - topH / 2, topCenterY + topH / 2, shadeColor(color, 22), shadeColor(color, -18));
   ctx.beginPath();
   ctx.roundRect(-w / 2, topCenterY - topH / 2, w, topH, Math.min(w, h) * 0.12);
   ctx.fill();
-  ctx.fillStyle = shadeColor(color, 20);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
   ctx.beginPath();
-  ctx.roundRect(-w / 2 + 2, topCenterY - topH / 2 + 2, w - 4, topH * 0.4, 2);
+  ctx.roundRect(-w / 2 + 2, topCenterY - topH / 2 + 1.5, w - 4, Math.max(1, topH * 0.16), 2);
   ctx.fill();
 
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
@@ -507,12 +894,12 @@ function drawChairSprite(ctx, w, h, color) {
   ctx.fillRect(-w / 2 + legW * 0.5, h / 2 - legH, legW, legH);
   ctx.fillRect(w / 2 - legW * 1.5, h / 2 - legH, legW, legH);
 
-  ctx.fillStyle = shadeColor(color, -10);
+  ctx.fillStyle = _vGrad(ctx, seatCenterY - seatH / 2 - backH, seatCenterY - seatH / 2, shadeColor(color, 14), shadeColor(color, -22));
   ctx.beginPath();
   ctx.roundRect(-backW / 2, seatCenterY - seatH / 2 - backH, backW, backH, 4);
   ctx.fill();
 
-  ctx.fillStyle = color;
+  ctx.fillStyle = _vGrad(ctx, seatCenterY - seatH / 2, seatCenterY + seatH / 2, shadeColor(color, 16), shadeColor(color, -18));
   ctx.beginPath();
   ctx.roundRect(-w / 2, seatCenterY - seatH / 2, w, seatH, 4);
   ctx.fill();
@@ -536,12 +923,12 @@ function drawSofaSprite(ctx, w, h, color) {
   ctx.roundRect(w / 2 - armW, seatCenterY - 4, armW, seatH + 4, 6);
   ctx.fill();
 
-  ctx.fillStyle = shadeColor(color, 15);
+  ctx.fillStyle = _vGrad(ctx, seatCenterY - backH, seatCenterY + 6, shadeColor(color, 28), shadeColor(color, -6));
   ctx.beginPath();
   ctx.roundRect(-w / 2 + armW * 0.4, seatCenterY - backH, w - armW * 0.8, backH + 6, 6);
   ctx.fill();
 
-  ctx.fillStyle = color;
+  ctx.fillStyle = _vGrad(ctx, seatCenterY, seatCenterY + seatH, shadeColor(color, 12), shadeColor(color, -22));
   ctx.beginPath();
   ctx.roundRect(-w / 2 + armW * 0.3, seatCenterY, w - armW * 0.6, seatH, 6);
   ctx.fill();
@@ -589,13 +976,21 @@ function drawBarSprite(ctx, w, h, color) {
 }
 
 function drawBookshelfSprite(ctx, w, h, color) {
-  ctx.fillStyle = shadeColor(color, -25);
+  // Outer case, gradient-shaded so the wood catches the room light.
+  ctx.fillStyle = _vGrad(ctx, -h / 2, h / 2, shadeColor(color, -6), shadeColor(color, -40));
   ctx.beginPath();
-  ctx.roundRect(-w / 2, -h / 2, w, h, 3);
+  ctx.roundRect(-w / 2, -h / 2, w, h, 4);
   ctx.fill();
 
   const innerX = -w / 2 + w * 0.08;
   const innerW = w * 0.84;
+
+  // Recessed interior, so the shelves read as depth rather than stripes.
+  ctx.fillStyle = shadeColor(color, -58);
+  ctx.beginPath();
+  ctx.roundRect(innerX, -h / 2 + h * 0.03, innerW, h * 0.94, 2);
+  ctx.fill();
+
   const shelfCount = 3;
   const shelfGap = h / shelfCount;
   const bookColors = ['#e07a5f', '#81b29a', '#f2cc8f', '#3d405b', '#c084fc', '#67e8f9'];
@@ -605,21 +1000,37 @@ function drawBookshelfSprite(ctx, w, h, color) {
     const shelfY = -h / 2 + s * shelfGap;
     const rowH = shelfGap - 4;
 
-    ctx.fillStyle = shadeColor(color, -45);
-    ctx.fillRect(innerX, shelfY + 2, innerW, rowH);
-
     const bookCount = 4 + (s % 2);
     const eachW = (innerW - 4) / bookCount;
     for (let b = 0; b < bookCount; b++) {
       const bh = rowH * (0.7 + (0.25 * ((b + s) % 3)) / 2);
-      ctx.fillStyle = bookColors[colorIdx % bookColors.length];
+      const bx = innerX + 2 + b * eachW;
+      const by = shelfY + 2 + (rowH - bh);
+      const bw = eachW - 2;
+      const spine = bookColors[colorIdx % bookColors.length];
       colorIdx++;
-      ctx.fillRect(innerX + 2 + b * eachW, shelfY + 2 + (rowH - bh), eachW - 2, bh);
+
+      ctx.fillStyle = _vGrad(ctx, by, by + bh, shadeColor(spine, 20), shadeColor(spine, -25));
+      ctx.fillRect(bx, by, bw, bh);
+      // Lit edge + gold band: the detail that makes a block read as a book.
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(bx, by, Math.max(1, bw * 0.2), bh);
+      ctx.fillStyle = 'rgba(255,222,150,0.5)';
+      ctx.fillRect(bx + bw * 0.15, by + bh * 0.3, bw * 0.7, Math.max(1, bh * 0.05));
     }
 
-    ctx.fillStyle = shadeColor(color, 10);
-    ctx.fillRect(-w / 2, shelfY + shelfGap - 3, w, 3);
+    // Shelf plank with a lit top edge.
+    const plankY = shelfY + shelfGap - 3;
+    ctx.fillStyle = shadeColor(color, -2);
+    ctx.fillRect(-w / 2, plankY, w, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.24)';
+    ctx.fillRect(-w / 2, plankY, w, 1);
   }
+
+  // Rim light along the top and left of the case.
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillRect(-w / 2, -h / 2, w, 1.5);
+  ctx.fillRect(-w / 2, -h / 2, 1.5, h);
 }
 
 function drawTvSprite(ctx, w, h, color) {
@@ -645,13 +1056,28 @@ function drawTvSprite(ctx, w, h, color) {
   ctx.roundRect(-w / 2 + bezelPad, -h / 2 + bezelPad, w - bezelPad * 2, screenH - bezelPad * 2, 2);
   ctx.fill();
 
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
   ctx.beginPath();
   ctx.moveTo(-w * 0.08, -h / 2 + screenH / 2 - h * 0.08);
   ctx.lineTo(-w * 0.08, -h / 2 + screenH / 2 + h * 0.08);
   ctx.lineTo(w * 0.1, -h / 2 + screenH / 2);
   ctx.closePath();
   ctx.fill();
+
+  // Diagonal glass glare, clipped to the panel so it reads as reflection.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-w / 2 + bezelPad, -h / 2 + bezelPad, w - bezelPad * 2, screenH - bezelPad * 2);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, -h / 2 + screenH);
+  ctx.lineTo(-w / 2 + w * 0.4, -h / 2);
+  ctx.lineTo(-w / 2 + w * 0.68, -h / 2);
+  ctx.lineTo(-w / 2 + w * 0.06, -h / 2 + screenH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawMusicPlayerSprite(ctx, w, h, color) {
@@ -683,15 +1109,21 @@ function drawMusicPlayerSprite(ctx, w, h, color) {
 }
 
 function drawGenericSprite(ctx, w, h, objectType, color) {
-  ctx.fillStyle = color;
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillStyle = _vGrad(ctx, -h / 2, h / 2, shadeColor(color, 26), shadeColor(color, -26));
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(-w / 2, -h / 2, w, h, 6);
+  ctx.roundRect(-w / 2, -h / 2, w, h, 8);
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  // Glossy top-half highlight, like a moulded plastic prop.
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h * 0.4, 6);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.font = `${Math.min(w, h, 28)}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

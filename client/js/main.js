@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 import { AVATAR_OPTIONS, renderAvatarSVG } from './avatar-renderer.js';
-import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle } from './room-renderer.js';
+import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, tileTransitionDirection } from './room-renderer.js';
 import { ROOM_STYLES, DEFAULT_ROOM_STYLE } from './room-styles.js';
 import { advanceWalkPhase } from './animation.js';
 import { getObjectAtPoint } from './room-objects.js';
@@ -19,7 +19,10 @@ import {
 } from './story.js';
 import { canSendChatMessage } from './chat.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
-import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey } from './focus-trap.js';
+import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement } from './focus-trap.js';
+import {
+  NPC_BUBBLE_DURATION_MS, applyNpcMove, formatTourStatus, normalizeWaypointLabel, tourButtonState,
+} from './npc-guide.js';
 
 const BUBBLE_DURATION = 6000;
 const HOST_TOKENS_STORAGE_KEY = 'hobboverse-host-tokens';
@@ -103,6 +106,11 @@ const state = {
   editingKnowledgeDocId: null,  // docId currently being edited in the knowledge store form, or null
   dialogueModalObjectId: null,
   dialogueCurrentNode: null,
+  // AI character guided tours. NPC bubbles are keyed by objectId and kept
+  // separate from `activeBubbles` (keyed by player id) because NPCs are room
+  // objects, not players, and are rendered by a different function.
+  npcBubbles: new Map(),  // objectId → { text, expiresAt }
+  waypointPickMode: false,
   roomHostId: null,
   myRoomRole: 'participant',
   playerRoles: new Map(),  // playerId → role (populated via room:role:updated)
@@ -120,6 +128,7 @@ const usernameInput = document.getElementById('username-input');
 const enterRoomBtn = document.getElementById('enter-room-btn');
 const roomCanvas = document.getElementById('room-canvas');
 const playersLayer = document.getElementById('players-layer');
+const tileTransitionOverlay = document.getElementById('tile-transition-overlay');
 const chatMessages = document.getElementById('chat-messages');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
@@ -247,6 +256,7 @@ const characterBeardSelect = document.getElementById('character-beard-select');
 const characterGlassesSelect = document.getElementById('character-glasses-select');
 const characterClothesSelect = document.getElementById('character-clothes-select');
 const characterAccessorySelect = document.getElementById('character-accessory-select');
+const characterAppearancePreview = document.getElementById('character-appearance-preview');
 const characterAppearanceBtn = document.getElementById('character-appearance-btn');
 const characterKnowledgeBaseTitleInput = document.getElementById('character-knowledge-base-title-input');
 const characterKnowledgeBaseTitleBtn = document.getElementById('character-knowledge-base-title-btn');
@@ -265,6 +275,7 @@ const knowledgeDocumentFormHeading = document.getElementById('knowledge-document
 const characterApiUrlInput = document.getElementById('character-api-url-input');
 const characterApiKeyInput = document.getElementById('character-api-key-input');
 const characterGenerativeBtn = document.getElementById('character-generative-btn');
+const characterGenerativeStatus = document.getElementById('character-generative-status');
 const storyNodeIdInput = document.getElementById('story-node-id-input');
 const storyNodeLineInput = document.getElementById('story-node-line-input');
 const storyNodeChoicesInput = document.getElementById('story-node-choices-input');
@@ -280,6 +291,15 @@ const dialogueAskForm = document.getElementById('dialogue-ask-form');
 const dialogueAskInput = document.getElementById('dialogue-ask-input');
 const dialogueAnswer = document.getElementById('dialogue-answer');
 const dialogueRestartBtn = document.getElementById('dialogue-restart-btn');
+const dialogueFollowBtn = document.getElementById('dialogue-follow-btn');
+const dialogueUnfollowBtn = document.getElementById('dialogue-unfollow-btn');
+const dialogueTourStatus = document.getElementById('dialogue-tour-status');
+const waypointLabelInput = document.getElementById('waypoint-label-input');
+const waypointPickBtn = document.getElementById('waypoint-pick-btn');
+const waypointHereBtn = document.getElementById('waypoint-here-btn');
+const waypointPickHint = document.getElementById('waypoint-pick-hint');
+const waypointListEl = document.getElementById('waypoint-list');
+const waypointClearBtn = document.getElementById('waypoint-clear-btn');
 
 function initCreator() {
   buildColorSwatches();
@@ -365,6 +385,20 @@ function updateAvatarPreview() {
   avatarPreview.innerHTML = renderAvatarSVG(state.avatar, 'large');
 }
 
+function updateCharacterAppearancePreview() {
+  if (!characterAppearancePreview) return;
+  const appearance = {
+    skinColor: characterSkinColorSelect?.value,
+    gender: characterGenderSelect?.value,
+    hair: characterHairSelect?.value,
+    beard: characterBeardSelect?.value,
+    glasses: characterGlassesSelect?.value,
+    clothes: characterClothesSelect?.value,
+    accessory: characterAccessorySelect?.value,
+  };
+  characterAppearancePreview.innerHTML = renderAvatarSVG(appearance, 'normal');
+}
+
 function enterRoom() {
   if (!state.avatar.username) return;
   creatorScreen.classList.remove('active');
@@ -381,6 +415,14 @@ function initGame() {
 
   roomCanvas.addEventListener('click', (e) => {
     const coords = canvasToRoomCoords(roomCanvas, e.clientX, e.clientY);
+
+    // While picking a tour stop, a click means "drop the waypoint here" and
+    // nothing else -- not select an object, not walk.
+    if (state.waypointPickMode) {
+      addCharacterWaypoint(coords.x, coords.y);
+      setWaypointPickMode(false);
+      return;
+    }
 
     // In build mode, clicking a configurable object (bookshelf/tv/music
     // player/AI character) opens it in the Configure Object panel instead
@@ -497,6 +539,10 @@ function initGame() {
     updateBuildModeUi();
     if (state.buildMode) {
       state.socket?.emit('room:builder:request', {});
+    } else {
+      // Otherwise the next click in the room would silently drop a tour stop
+      // instead of walking the player.
+      setWaypointPickMode(false);
     }
   });
 
@@ -901,6 +947,9 @@ function initGame() {
   });
 
   characterNpcSelect?.addEventListener('change', () => {
+    // A stop picked on the map belongs to whichever character was selected
+    // when picking started, so switching characters must cancel it.
+    setWaypointPickMode(false);
     renderCharacterConfigFields();
     renderBuilderStoryNodeList();
   });
@@ -943,6 +992,15 @@ function initGame() {
       renderAiCharacters();
     });
   });
+
+  // Live-update the appearance preview as the user picks options, instead of
+  // only reflecting the saved appearance after clicking "Save Appearance".
+  [
+    characterSkinColorSelect, characterGenderSelect, characterHairSelect,
+    characterBeardSelect, characterGlassesSelect, characterClothesSelect,
+    characterAccessorySelect,
+  ].forEach((selectEl) => selectEl?.addEventListener('change', updateCharacterAppearancePreview));
+
 
   characterKnowledgeBaseTitleBtn?.addEventListener('click', () => {
     const objectId = characterNpcSelect?.value;
@@ -1079,6 +1137,40 @@ function initGame() {
     if (storyNodeChoicesInput) storyNodeChoicesInput.value = '';
   });
 
+  waypointPickBtn?.addEventListener('click', () => {
+    if (!characterNpcSelect?.value) {
+      addSystemMessage('Select an AI character first.');
+      return;
+    }
+    setWaypointPickMode(!state.waypointPickMode);
+  });
+
+  waypointHereBtn?.addEventListener('click', () => {
+    const me = state.players[state.myId];
+    if (!me) return;
+    setWaypointPickMode(false);
+    addCharacterWaypoint(me.position.x, me.position.y);
+  });
+
+  waypointClearBtn?.addEventListener('click', () => {
+    const objectId = characterNpcSelect?.value;
+    if (!objectId) return;
+    state.socket?.emit('room:character:waypoint:clear', { objectId }, () => renderWaypointList());
+  });
+
+  waypointListEl?.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('button[data-waypoint-action]');
+    const objectId = characterNpcSelect?.value;
+    if (!btn || !objectId) return;
+    const waypointId = btn.getAttribute('data-waypoint-id');
+    const action = btn.getAttribute('data-waypoint-action');
+    const event = action === 'remove' ? 'room:character:waypoint:remove' : 'room:character:waypoint:reorder';
+    const payload = action === 'remove'
+      ? { objectId, waypointId }
+      : { objectId, waypointId, direction: action };
+    state.socket?.emit(event, payload, () => renderWaypointList());
+  });
+
   dialogueModalClose?.addEventListener('click', closeDialogueModal);
 
   dialogueChoiceList?.addEventListener('click', (evt) => {
@@ -1120,6 +1212,28 @@ function initGame() {
     state.socket?.emit('room:object:interact', { objectId, interactionType: 'start_mission' });
   });
 
+  dialogueFollowBtn?.addEventListener('click', () => {
+    const objectId = state.dialogueModalObjectId;
+    if (!objectId) return;
+    state.socket?.emit('room:character:tour:start', { objectId }, (tour) => {
+      if (!tour) return;
+      applyTourToObject(objectId, tour);
+      updateDialogueTourButtons();
+      addSystemMessage('Follow the guide!');
+      // Get out of the way so the learner can actually walk after the guide.
+      closeDialogueModal();
+    });
+  });
+
+  dialogueUnfollowBtn?.addEventListener('click', () => {
+    const objectId = state.dialogueModalObjectId;
+    if (!objectId) return;
+    state.socket?.emit('room:character:tour:stop', { objectId }, (tour) => {
+      applyTourToObject(objectId, tour);
+      updateDialogueTourButtons();
+    });
+  });
+
   let progressSaveTimer = null;
   readerBookContent?.addEventListener('scroll', () => {
     if (!state.readerModalObjectId || !state.readerCurrentBook || !readerBookContent) return;
@@ -1145,6 +1259,12 @@ function initGame() {
 function onKeyDown(e) {
   if (!state.keys.hasOwnProperty(e.key)) return;
   if (isTypingContext()) return;
+  // Hand keyboard focus back to the game before moving. The build panel's
+  // dropdowns/checkboxes keep DOM focus long after the user is done with
+  // them, and while they held focus the arrow key would also silently change
+  // the dropdown's value instead of walking. The preventDefault() below stops
+  // that value change; the blur stops focus lingering for the next keypress.
+  releaseNonTypingFocus();
   e.preventDefault();
   state.keys[e.key] = true;
   emitDirection();
@@ -1157,14 +1277,16 @@ function onKeyUp(e) {
   emitDirection();
 }
 
-function isTypingContext() {
+function releaseNonTypingFocus() {
   const active = document.activeElement;
-  if (!active) return false;
-  const tag = active.tagName?.toUpperCase();
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-    return true;
-  }
-  return Boolean(active.isContentEditable);
+  if (!active || active === document.body) return;
+  // Never fight an open modal's focus trap.
+  if (activeModal) return;
+  active.blur?.();
+}
+
+function isTypingContext() {
+  return isTextEntryElement(document.activeElement);
 }
 
 function getDirectionFromKeys() {
@@ -1331,6 +1453,29 @@ function connectSocket() {
     renderBuilderTriggerList();
     refreshCanvasBuilderObjects();
     renderCharacterConfigFields();
+    renderWaypointList();
+    updateDialogueTourButtons();
+  });
+
+  // Guided tours move an AI character every game tick. That arrives on its
+  // own lightweight event rather than a full builder-state rebroadcast,
+  // which would ship every object/zone/trigger in the room 30x a second.
+  state.socket.on('room:npc:moved', (payload) => {
+    if (payload.roomId !== state.currentRoomId) return;
+    const next = applyNpcMove(state.builderState.objects, payload);
+    if (next === state.builderState.objects) return;
+    state.builderState.objects = next;
+    refreshCanvasBuilderObjects();
+    if (payload.finished) updateDialogueTourButtons();
+  });
+
+  state.socket.on('room:npc:say', (payload) => {
+    if (payload.roomId !== state.currentRoomId) return;
+    state.npcBubbles.set(payload.objectId, {
+      text: payload.text,
+      expiresAt: Date.now() + NPC_BUBBLE_DURATION_MS,
+    });
+    renderAiCharacters();
   });
 
   state.socket.on('room:builder:versions', (payload) => {
@@ -1395,7 +1540,12 @@ function connectSocket() {
     updateMutedChatUi();
     const me = state.players.get(state.playerId);
     if (me?.tile) {
+      const previousTile = state.currentTile;
+      const tileChanged = me.tile.x !== previousTile.x || me.tile.y !== previousTile.y;
       state.currentTile = me.tile;
+      if (tileChanged) {
+        playTileTransition(tileTransitionDirection(previousTile, me.tile));
+      }
       updateCurrentTileLabel();
       renderMiniMap();
       refreshCanvasBuilderObjects();
@@ -1506,6 +1656,15 @@ function pruneExpiredBubbles() {
     }
   }
   if (changed) renderPlayers();
+
+  let npcChanged = false;
+  for (const [id, bubble] of state.npcBubbles) {
+    if (bubble.expiresAt <= now) {
+      state.npcBubbles.delete(id);
+      npcChanged = true;
+    }
+  }
+  if (npcChanged) renderAiCharacters();
 }
 
 function renderPlayers() {
@@ -1513,7 +1672,17 @@ function renderPlayers() {
   const now = Date.now();
 
   // ── remove elements for players who have left ────────────────────────────
-  for (const el of [...playersLayer.querySelectorAll('.room-player')]) {
+  // Scoped to exclude .room-npc: those are AI-character avatar overlays
+  // (see renderAiCharacters()) which share this same '.room-player' base
+  // class and layer but are keyed by `dataset.oid`, not `dataset.pid`. Before
+  // this exclusion, every call here found `el.dataset.pid` undefined for an
+  // NPC element and deleted it immediately -- and since this function runs
+  // ~30x/sec (see the setInterval game loop below) as well as on every
+  // room:state broadcast, the NPC's avatar was destroyed within milliseconds
+  // of renderAiCharacters() creating it, so it never had a chance to paint.
+  // The only thing left visible was its (independent, canvas-drawn) contact
+  // shadow -- i.e. "AI characters are just a shadow".
+  for (const el of [...playersLayer.querySelectorAll('.room-player:not(.room-npc)')]) {
     if (!state.players.has(el.dataset.pid)) el.remove();
   }
 
@@ -1788,6 +1957,7 @@ function updateRecipientList() {
 function clearSceneStateForRoomSwitch() {
   state.players.clear();
   state.activeBubbles.clear();
+  state.npcBubbles.clear();
   state.walkPhases.clear();
   state.talkingUntil.clear();
   state.blinkDelay.clear();
@@ -1802,6 +1972,27 @@ function clearSceneStateForRoomSwitch() {
   state.wakingUpUntil.clear();
   playersLayer.innerHTML = '';
   chatMessages.innerHTML = '';
+}
+
+let _tileTransitionTimeout = null;
+
+/** Plays the directional "swoosh" wipe over the room whenever the local
+ * player's tile changes (e.g. walking through the top edge into a
+ * builder-added neighbor tile), so the instant server-side teleport to the
+ * opposite edge of the new tile reads as intentional travel to another room
+ * instead of the avatar abruptly jumping/disappearing. */
+function playTileTransition(direction) {
+  if (!tileTransitionOverlay || !direction) return;
+  tileTransitionOverlay.classList.remove('direction-top', 'direction-bottom', 'direction-left', 'direction-right');
+  // Force a reflow so re-triggering the same direction back-to-back (e.g.
+  // walking back and forth across a tile boundary) restarts the animation
+  // instead of the class-add being a no-op.
+  void tileTransitionOverlay.offsetWidth;
+  tileTransitionOverlay.classList.add(`direction-${direction}`);
+  clearTimeout(_tileTransitionTimeout);
+  _tileTransitionTimeout = setTimeout(() => {
+    tileTransitionOverlay.classList.remove(`direction-${direction}`);
+  }, 450);
 }
 
 function updateCurrentTileLabel() {
@@ -1947,6 +2138,21 @@ function renderAiCharacters() {
     else el.insertBefore(newSvgEl, el.firstChild);
 
     el.querySelector('.player-name').textContent = name;
+
+    // Waypoint notes are spoken as a bubble above the character so a tour
+    // reads as narration rather than silent walking.
+    const bubble = state.npcBubbles.get(obj.objectId);
+    let bubbleEl = el.querySelector('.npc-bubble');
+    if (bubble) {
+      if (!bubbleEl) {
+        bubbleEl = document.createElement('div');
+        bubbleEl.className = 'npc-bubble';
+        el.appendChild(bubbleEl);
+      }
+      bubbleEl.textContent = bubble.text;
+    } else if (bubbleEl) {
+      bubbleEl.remove();
+    }
   }
 }
 
@@ -2407,11 +2613,26 @@ function renderCharacterConfigFields() {
   if (characterGlassesSelect) characterGlassesSelect.value = appearance.glasses;
   if (characterClothesSelect) characterClothesSelect.value = appearance.clothes;
   if (characterAccessorySelect) characterAccessorySelect.value = appearance.accessory;
+  updateCharacterAppearancePreview();
   if (characterKnowledgeBaseTitleInput) characterKnowledgeBaseTitleInput.value = character?.knowledgeBase?.title || '';
   exitKnowledgeDocumentEditMode();
   renderKnowledgeDocumentList(character);
   updateKnowledgeDocumentFormFields();
   if (characterApiUrlInput) characterApiUrlInput.value = character?.apiBaseUrl || '';
+  updateGenerativeStatus(character);
+  renderWaypointList();
+}
+
+// Surface whether this character will actually answer free-form questions.
+// The API key is never echoed back by the server (it is write-only), so
+// without this the panel gives no clue that generative mode is configured.
+function updateGenerativeStatus(character) {
+  if (!characterGenerativeStatus) return;
+  const enabled = !!character?.generativeEnabled;
+  characterGenerativeStatus.textContent = enabled
+    ? 'Generative mode is ON — this character answers free-form questions using its knowledge documents.'
+    : 'Generative mode is OFF — this character only follows its scripted conversation triggers.';
+  characterGenerativeStatus.classList.toggle('is-on', enabled);
 }
 
 function updateKnowledgeDocumentFormFields() {
@@ -2454,24 +2675,24 @@ function renderKnowledgeDocumentList(character) {
   const documents = character?.knowledgeBase?.documents || [];
   knowledgeDocumentList.innerHTML = documents.length
     ? documents.map((doc, index) => `
-        <li class="kb-carbon__list-item">
-          <div class="kb-carbon__list-item-meta">
-            <span class="kb-carbon__tag kb-carbon__tag--${escapeHtml(doc.docType)}">${escapeHtml(doc.docType)}</span>
+        <li class="kb-doc">
+          <div class="kb-doc__meta">
+            <span class="kb-doc__tag kb-doc__tag--${escapeHtml(doc.docType)}">${escapeHtml(doc.docType)}</span>
             <strong>${escapeHtml(doc.title)}</strong>
           </div>
-          <div class="kb-carbon__list-item-preview">${escapeHtml(summarizeKnowledgeDocument(doc))}</div>
-          <div class="kb-carbon__list-item-actions">
-            <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-move-doc-id="${escapeHtml(doc.docId)}" data-move-direction="up" ${index === 0 ? 'disabled' : ''}>Up</button>
-            <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-move-doc-id="${escapeHtml(doc.docId)}" data-move-direction="down" ${index === documents.length - 1 ? 'disabled' : ''}>Down</button>
-            <button type="button" class="kb-carbon__button kb-carbon__button--secondary" data-edit-doc-id="${escapeHtml(doc.docId)}">Edit</button>
-            <button type="button" class="kb-carbon__button kb-carbon__button--danger" data-doc-id="${escapeHtml(doc.docId)}">Remove</button>
+          <div class="kb-doc__preview">${escapeHtml(summarizeKnowledgeDocument(doc))}</div>
+          <div class="kb-doc__actions">
+            <button type="button" class="kb-doc__action" data-move-doc-id="${escapeHtml(doc.docId)}" data-move-direction="up" ${index === 0 ? 'disabled' : ''}>Up</button>
+            <button type="button" class="kb-doc__action" data-move-doc-id="${escapeHtml(doc.docId)}" data-move-direction="down" ${index === documents.length - 1 ? 'disabled' : ''}>Down</button>
+            <button type="button" class="kb-doc__action" data-edit-doc-id="${escapeHtml(doc.docId)}">Edit</button>
+            <button type="button" class="kb-doc__action kb-doc__action--danger" data-doc-id="${escapeHtml(doc.docId)}">Remove</button>
           </div>
         </li>`).join('')
-    : '<li class="kb-carbon__empty-hint">No documents yet.</li>';
+    : '<li class="kb-empty-hint">No documents yet.</li>';
   if (knowledgeDocumentCount) {
     const full = isKnowledgeBaseFull(documents.length);
     knowledgeDocumentCount.textContent = `${documents.length} / ${MAX_KNOWLEDGE_DOCUMENTS} documents`;
-    knowledgeDocumentCount.classList.toggle('kb-carbon__count--full', full);
+    knowledgeDocumentCount.classList.toggle('kb-count--full', full);
   }
   if (knowledgeDocumentAddBtn && !state.editingKnowledgeDocId) {
     knowledgeDocumentAddBtn.disabled = isKnowledgeBaseFull(documents.length);
@@ -2505,7 +2726,83 @@ function openDialogueModal(objectId, character, node, mode) {
   if (dialogueAnswer) dialogueAnswer.textContent = '';
   if (dialogueAskInput) dialogueAskInput.value = '';
   renderDialogueNode(node, mode);
+  updateDialogueTourButtons();
   if (dialogueModal) activateModal(dialogueModal, closeDialogueModal);
+}
+
+// ── AI character guided tours ────────────────────────────────────────────
+
+function findBuilderObject(objectId) {
+  return state.builderState.objects.find((obj) => obj.objectId === objectId) || null;
+}
+
+function updateDialogueTourButtons() {
+  const object = findBuilderObject(state.dialogueModalObjectId);
+  const { follow, stop } = tourButtonState(object, state.myId);
+  dialogueFollowBtn?.classList.toggle('hidden', !follow);
+  dialogueUnfollowBtn?.classList.toggle('hidden', !stop);
+  if (dialogueTourStatus) dialogueTourStatus.textContent = stop ? formatTourStatus(object?.tour) : '';
+}
+
+function applyTourToObject(objectId, tour) {
+  const object = findBuilderObject(objectId);
+  if (object) object.tour = tour || null;
+}
+
+function setWaypointPickMode(enabled) {
+  state.waypointPickMode = !!enabled;
+  roomCanvas?.classList.toggle('waypoint-picking', state.waypointPickMode);
+  waypointPickHint?.classList.toggle('hidden', !state.waypointPickMode);
+  if (waypointPickBtn) waypointPickBtn.textContent = state.waypointPickMode ? 'Cancel Picking' : 'Pick Spot on Map';
+}
+
+function addCharacterWaypoint(x, y) {
+  const objectId = characterNpcSelect?.value;
+  if (!objectId) return;
+  let label;
+  try {
+    label = normalizeWaypointLabel(waypointLabelInput?.value);
+  } catch (err) {
+    addSystemMessage(err.message);
+    return;
+  }
+  state.socket?.emit('room:character:waypoint:add', { objectId, x, y, label }, (waypoints) => {
+    if (!waypoints) return;
+    if (waypointLabelInput) waypointLabelInput.value = '';
+    renderWaypointList(waypoints);
+  });
+}
+
+function renderWaypointList(waypoints) {
+  if (!waypointListEl) return;
+  const objectId = characterNpcSelect?.value;
+  const list = waypoints || findBuilderObject(objectId)?.waypoints || [];
+
+  waypointClearBtn?.classList.toggle('hidden', list.length === 0);
+
+  if (list.length === 0) {
+    waypointListEl.innerHTML = '<li class="builder-empty-hint">No tour stops yet.</li>';
+    return;
+  }
+
+  waypointListEl.innerHTML = list.map((wp) => `
+    <li class="builder-object-row">
+      <div class="waypoint-row-body">
+        <span class="waypoint-label">${escapeHtml(wp.label || 'Unnamed stop')}</span>
+        <span class="waypoint-coords">${Math.round(wp.x)}, ${Math.round(wp.y)}</span>
+        <span class="waypoint-actions">
+          <button type="button" data-waypoint-action="up" data-waypoint-id="${escapeHtml(wp.waypointId)}" aria-label="Move stop earlier" title="Move earlier">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span>
+          </button>
+          <button type="button" data-waypoint-action="down" data-waypoint-id="${escapeHtml(wp.waypointId)}" aria-label="Move stop later" title="Move later">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span>
+          </button>
+          <button type="button" data-waypoint-action="remove" data-waypoint-id="${escapeHtml(wp.waypointId)}" aria-label="Remove stop" title="Remove">
+            <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+          </button>
+        </span>
+      </div>
+    </li>`).join('');
 }
 
 function closeDialogueModal() {

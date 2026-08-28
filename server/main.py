@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -31,6 +32,7 @@ from server.game.tile_navigation import tiles_within_radius
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 
+logger  = logging.getLogger(__name__)
 sio     = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 db      = Database()
 rooms   = RoomsRegistry()
@@ -197,6 +199,48 @@ def apply_player_movement(room: Room, room_id: str, player: dict, now_ms: float)
     return False
 
 
+async def tick_guided_tours(room_id: str, now_ms: float) -> None:
+    """Walk any AI characters that are currently giving a guided tour, and
+    push their new positions to the room.
+
+    Positions are sent on a dedicated lightweight `room:npc:moved` event
+    rather than by re-broadcasting the whole builder state each tick: the
+    builder-state payload contains every object, zone and trigger in the
+    room, which would be wasteful at the game-loop tick rate (and is only
+    consumed by clients in build mode anyway).
+    """
+    builder = rooms.get_builder(room_id)
+    if builder is None:
+        return
+    try:
+        results = builder.tick_character_tours(now_ms)
+    except Exception:  # a broken tour must never take the whole game loop down
+        logger.exception("guided tour tick failed for room %s", room_id)
+        return
+
+    for result in results:
+        tile = result["tile"]
+        await sio.emit("room:npc:moved", {
+            "roomId": room_id,
+            "objectId": result["objectId"],
+            "tile": {"x": tile[0], "y": tile[1]},
+            "position": result["position"],
+            "status": result["status"],
+            "waypointIndex": result["waypointIndex"],
+            "finished": result["finished"],
+        }, room=room_channel(room_id))
+
+        # Speak the waypoint's label on arrival so a tour reads as the
+        # character narrating the room, not just silently walking off.
+        arrived = result["arrived"]
+        if arrived and arrived.get("label"):
+            await sio.emit("room:npc:say", {
+                "roomId": room_id,
+                "objectId": result["objectId"],
+                "text": arrived["label"][:200],
+            }, room=room_channel(room_id))
+
+
 async def game_loop() -> None:
     interval  = 1.0 / TICK_RATE
     last_time = time.time()
@@ -223,6 +267,7 @@ async def game_loop() -> None:
                     moved = True
 
             moved_by_room[room_id] = moved
+            await tick_guided_tours(room_id, now_ms)
 
         # ── AI bot tick (lobby only) ─────────────────────────────────────────
         lobby = rooms.get_room("lobby")
@@ -1588,6 +1633,124 @@ async def room_character_ask(sid, data):
         return
 
     return result
+
+
+@sio.on("room:character:waypoint:add")
+async def room_character_waypoint_add(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    waypoint_id = data.get("waypointId") or f"wp-{uuid.uuid4().hex[:8]}"
+    try:
+        waypoints = builder.add_character_waypoint(
+            data["objectId"], waypoint_id, data["x"], data["y"], label=data.get("label"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return waypoints
+
+
+@sio.on("room:character:waypoint:remove")
+async def room_character_waypoint_remove(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        waypoints = builder.remove_character_waypoint(
+            data["objectId"], data["waypointId"],
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return waypoints
+
+
+@sio.on("room:character:waypoint:reorder")
+async def room_character_waypoint_reorder(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        waypoints = builder.move_character_waypoint(
+            data["objectId"], data["waypointId"], data["direction"],
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return waypoints
+
+
+@sio.on("room:character:waypoint:clear")
+async def room_character_waypoint_clear(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        waypoints = builder.clear_character_waypoints(
+            data["objectId"], requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+    return waypoints
+
+
+@sio.on("room:character:tour:start")
+async def room_character_tour_start(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        tour = builder.start_character_tour(data["objectId"], requester_id=sid, now_ms=time.time() * 1000)
+    except (KeyError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return tour
+
+
+@sio.on("room:character:tour:stop")
+async def room_character_tour_stop(sid, data):
+    room_id, _tile, builder = _current_room_and_builder(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        tour = builder.stop_character_tour(data["objectId"], requester_id=sid)
+    except (KeyError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    return tour
 
 
 @sio.on("room:object:duplicate")

@@ -150,3 +150,143 @@ class TestPlayerDirectionRejectsMalformedInput:
         player = room.get_player("p1")
         # Must not raise -- this is exactly what game_loop() does every tick.
         main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+
+
+class TestTileTransitionEndToEnd:
+    """Reproduces the reported real-world flow: a builder adds a neighbor
+    tile, then a player walks straight toward that edge using only a single
+    direction key (as opposed to hand-crafting an already-at-the-edge
+    position, which the older unit tests did). This must actually land the
+    player in the new tile, at the far edge of it, exactly like clicking
+    "Add Up" and holding the up arrow key in the real client."""
+
+    def _run_until_transition_or_timeout(self, room, player, *, max_ticks=300):
+        for _ in range(max_ticks):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+            if player["tile"] != {"x": 0, "y": 0}:
+                return True
+        return False
+
+    def test_walking_up_reaches_newly_added_top_tile(self, isolate_registry):
+        rooms, _fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+
+        # Start in a furniture-free column so this test isolates the tile
+        # transition itself (the separate wall-slide behavior for players
+        # who spawn directly under furniture is covered below).
+        player["position"] = {"x": 500.0, "y": 300.0}
+        rooms.add_neighbor_tile("lobby", (0, 0), "top")
+
+        player["direction"] = {"x": 0, "y": -1}
+        transitioned = self._run_until_transition_or_timeout(room, player)
+
+        assert transitioned
+        assert player["tile"] == {"x": 0, "y": -1}
+        # Lands near the bottom of the new tile, matching the reported
+        # expectation ("character should be at the bottom of next tile").
+        from server.game.movement import ROOM_BOUNDS
+        from server.game.tile_navigation import TRANSITION_INSET
+
+        assert player["position"]["y"] == pytest.approx(ROOM_BOUNDS["height"] - TRANSITION_INSET)
+
+    def test_walking_up_from_every_realistic_spawn_reaches_new_tile(self, isolate_registry):
+        """Regression test for players getting permanently stuck against the
+        lobby's hardcoded furniture (sofas/table/dj-deck) when holding a
+        single direction key, unable to ever reach the tile edge. Exercises
+        many realistic spawn points -- some of which land directly below/
+        beside furniture -- to make sure every one of them can still reach
+        the newly added tile by holding "up", not just a hand-picked clear
+        column."""
+        rooms, _fake_sio = isolate_registry
+        rooms.add_neighbor_tile("lobby", (0, 0), "top")
+        room = rooms.get_room("lobby")
+
+        for i in range(20):
+            avatar = create_default_avatar(f"Player{i}")
+            player = room.add_player(f"p{i}", avatar)
+            rooms.player_tile[f"p{i}"] = (0, 0)
+            player["tile"] = {"x": 0, "y": 0}
+            player["direction"] = {"x": 0, "y": -1}
+
+            transitioned = self._run_until_transition_or_timeout(room, player)
+
+            assert transitioned, f"player spawned at {player['position']} got stuck"
+            assert player["tile"] == {"x": 0, "y": -1}
+
+
+class TestPlacingObjectOnPlayerDoesNotTrapThem:
+    """Reproduces the reported real-world flow exactly: a player opens the
+    build panel and clicks "Add Object" (client sends the player's OWN
+    current position as the new object's x/y, which the server stores
+    verbatim as the object's top-left corner -- so the player ends up
+    standing right at the corner of/inside the brand-new object's hitbox)
+    and must still be able to walk away afterward, for every placeable
+    object type, not just the hardcoded lobby furniture."""
+
+    @pytest.mark.parametrize("object_type", ["bookshelf", "table", "chair", "sofa", "bar", "tv", "music_player"])
+    async def test_can_walk_away_after_placing_object_on_self(self, isolate_registry, object_type):
+        rooms, fake_sio = isolate_registry
+        avatar = create_default_avatar("Alice")
+        rooms.join_room("p1", avatar, "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+
+        # Furniture-free spot so this test isolates the embedded-object
+        # escape behavior from the separate wall-slide-around-furniture
+        # behavior covered elsewhere.
+        player["position"] = {"x": 400.0, "y": 300.0}
+
+        await main_module.room_object_create(
+            "p1",
+            {
+                "objectType": object_type,
+                "x": player["position"]["x"],
+                "y": player["position"]["y"],
+            },
+        )
+
+        player["direction"] = {"x": 1, "y": 0}
+        for _ in range(80):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+
+        assert player["position"]["x"] > 400.0, (
+            f"player got stuck after a {object_type} was placed on top of them"
+        )
+
+
+class TestTileTransitionBroadcastsUpdatedTile:
+    """The client plays its directional "swoosh" wipe by diffing the `tile`
+    field across consecutive `room:state` broadcasts, so the whole feature
+    only works if a transition actually reaches the wire. Drives the real
+    `room:tile:add` socket handler (as clicking "Add Up" does) rather than
+    poking the registry directly."""
+
+    async def test_walking_into_a_newly_added_tile_broadcasts_the_new_tile(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
+        room = rooms.get_room("lobby")
+        player = room.get_player("p1")
+        player["position"] = {"x": 500.0, "y": 300.0}
+
+        await main_module.room_tile_add("p1", {"direction": "top"})
+        assert [e for e in fake_sio.emitted if e[0] == "room:tiles"], "tile was never added"
+
+        player["direction"] = {"x": 0, "y": -1}
+        for _ in range(300):
+            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+            if player["tile"] != {"x": 0, "y": 0}:
+                break
+
+        assert player["tile"] == {"x": 0, "y": -1}
+
+        await main_module.broadcast_room_state("lobby")
+        states = [e for e in fake_sio.emitted if e[0] == "room:state"]
+        assert states, "no room:state broadcast reached the client"
+        me = next(p for p in states[-1][1]["players"] if p["id"] == "p1")
+        assert me["tile"] == {"x": 0, "y": -1}, (
+            "room:state omitted the updated tile, so the client can never "
+            "detect the transition and play the swoosh animation"
+        )
