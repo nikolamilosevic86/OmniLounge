@@ -41,23 +41,34 @@ Digital escape-the-room games and social virtual spaces (browser point-and-click
 | A puzzle "trigger area" (step on the rug, approach the desk) | Existing zone (`collision`/`interaction`) + trigger (`evaluate_area_enter`) system in `room_builder.py` | A third zone-adjacent use: triggers can now emit a `reveal_object` event type (§6.3) |
 | A puzzle that's really a question with a right/wrong answer | `StoryEngine` node graph (`characterLine`, `choices`, **`completion_flag`**, **`knowledge_check`** — both fields already exist in `story.py`/`StoryNodeModel` but are currently unused hooks) | Wire `knowledge_check` to actually gate progress (§6.4); add a free-text-answer story node variant |
 | A character that gives a clue or a hint | `ai_character`'s knowledge base + the **already-defined but unimplemented `ask_hint` interaction** (`OBJECT_TYPE_CATALOG["ai_character"]["interactions"]`, stubbed in `room_builder.py: _interaction_payload`) | Real hint-budget logic behind `ask_hint` (§6.5) |
-| A locked door that only opens once conditions are met | `RoomBuilderState.set_locked` / `isLocked` exists, but currently means "locked *from editing*," not "locked as a game obstacle" | A distinct **gameplay lock** state on `escape_door` objects, independent of the existing builder edit-lock (§5.1) |
+| A locked door that only opens once conditions are met | `RoomBuilderState.set_locked` / `isLocked` exists, but currently means "locked *from editing*," not "locked as a game obstacle" | A distinct, **per-visitor gameplay lock** state, tracked independently of the existing builder edit-lock (§3.1, §5.1) |
 | Carrying a found key between puzzles | Nothing exists yet | New per-user **Inventory** concept (§7), modeled after `StoryEngine`'s existing per-user progress dict pattern |
 | A room-wide countdown and win/fail state | Nothing exists yet | New **EscapeSessionEngine** (§8), following the same in-memory, pure, unit-testable engine pattern as `GuideEngine`/`StoryEngine`/`MediaLibrary` |
 | Fastest-completion leaderboard | `RoomBuilderState` versioning already tracks ordered history (`_versions`, `save_draft`/`publish`) as a precedent for append-only in-memory history | New `_attempts` list on `EscapeSessionEngine` (§8.4) |
 | Multi-room puzzle sequences ("solve room 1, walk through the door into room 2") | The 5×5 tile grid and `tile_navigation.can_add_neighbor_tile` (documented in [educational_rooms_feature_design.md](educational_rooms_feature_design.md) §6) already support multi-tile rooms | `escape_door.destinationTile` reuses this instead of inventing new spatial logic (§5.1) |
-| Object collision (a locked door blocks movement like any other object) | `movement.py: resolve_collision` + `server/main.py: _tile_collision_obstacles`, which already turns every builder-placed object into a solid AABB obstacle | No change — an `escape_door` is solid by default, exactly like a table; opening it just removes it from the obstacle list dynamically (§5.1) |
+| Object collision (a locked door blocks movement like any other object) | `movement.py: resolve_collision` + `server/main.py: _tile_collision_obstacles`, which already turns every builder-placed object into a solid AABB obstacle | Small addition — `_tile_collision_obstacles` gains a `requester_id` parameter (it is already invoked once per player per movement tick, so the caller already has this value) so an opened `escape_door` stops blocking only the specific visitor who opened it (§3.1, §5.1) |
 | Room edit permissions for who can author puzzles | `RoomBuilderState._require_edit_permission` / `editPermission: owner_only \| anyone` per object | No change — puzzle authoring uses the same permission check as every other object edit |
 
-This table is the core argument for the design: **escape rooms are not a new subsystem, they are seven small additions wired through six systems that already exist and are already tested.**
+This table is the core argument for the design: **escape rooms are not a new subsystem — they are a small, bounded set of additions layered onto systems that already exist and are already tested.**
+
+### 3.1 Consistency Rule: Per-User Progress by Default
+
+Every piece of *live* escape-room progress — which puzzles are solved, which hidden items are revealed, which doors are open, and how much time is left — defaults to **per-visitor, private state**, not shared room-wide state. This mirrors a separation the codebase already relies on: `StoryEngine` keeps authored node *definitions* (`_nodes`) completely separate from per-`(object_id, character_id, user_id)` *progress* (`_progress`), so two visitors can be at different points in the same character's conversation simultaneously. Escape rooms need the identical separation for the same reason: OmniLaunge rooms are persistent, ambient spaces (per [docs/01-user-experience.md](../docs/01-user-experience.md)) that many unrelated visitors can drop into at any time, not a single booked session for one team. Concretely:
+
+- **Puzzle-solved state** is tracked per `(puzzle_id, user_id)`, not globally per puzzle (§6.1).
+- **Hidden-item-revealed state** is tracked per `(object_id, user_id)`, not as a single shared flag on the object (§5.2, §8.1).
+- **Door-open state** is tracked per `(object_id, user_id)`, so a door one visitor has unlocked keeps blocking every other visitor who hasn't solved it themselves (§5.1, §8.1).
+- **The countdown timer** is already per-user by design (§8.1).
+
+Without this rule, the first visitor to reach the door would silently unlock it — and reveal every hidden item — for every other concurrent visitor too, letting them walk straight through with zero puzzle-solving. Defaulting to private per-user state avoids that failure mode entirely and lets any number of people attempt the same room independently and concurrently, same as they'd each independently start a guided tour or a story conversation today. A room-host-togglable **Team/Shared Mode**, where a group intentionally pools progress the way a physical escape room team does, is scoped to Phase 2 (§14) rather than being the default.
 
 ## 4. End-to-End Experience Walkthrough
 
 ### 4.1 Creator (authoring) flow
 1. Creator builds a room as normal: tiles, furniture, an AI character, a bookshelf, a TV — using the existing builder panels.
 2. Creator opens the new **"Escape Room" builder panel** (parallel to the existing "AI Character" panel) and flips **Enable Escape Mode** on for the room. This exposes a time limit field (minutes) and a short briefing text field (shown to visitors before the timer starts).
-3. Creator places a **Locked Door** object (new catalog type `escape_door`) somewhere in the room — the literal exit — and configures what unlocks it: either a specific **key item id**, or a list of **puzzle ids** that must all be solved first (or both).
-4. Creator places one or more **Hidden Item** objects (new catalog type `hidden_item`, defaults to `isRevealed: false` so it renders nothing and cannot be interacted with) representing the eventual key, and optionally decoy items.
+3. Creator places a **Locked Door** object (new catalog type `escape_door`) somewhere in the room — the literal exit — and configures what unlocks it: a specific **key item id**, a list of **puzzle ids** that must all be solved first, or both together (the door only opens once every configured condition is satisfied — see the exact unlock formula in §5.1).
+4. Creator places one or more **Hidden Item** objects (new catalog type `hidden_item`, invisible and non-interactable to every visitor until they personally reveal it — see §3.1/§5.2) representing the eventual key, and optionally decoy items.
 5. Creator authors **puzzles** in the same panel: each puzzle has a prompt, an answer (never exposed to clients), a list of hint strings, and a **reward** — typically "reveal this hidden item" or "unlock this door directly." A puzzle can be presented through:
    - A **puzzle panel object** (new interaction on any object, e.g. a desk or a locked chest) where a visitor types a free-text or numeric answer.
    - An existing **AI character's story node**, using the already-defined-but-unused `knowledge_check` field to gate that node's next choice on a correct answer instead of always advancing.
@@ -69,7 +80,7 @@ This table is the core argument for the design: **escape rooms are not a new sub
 1. Visitor joins the room and sees a **briefing card** ("You have 20 minutes to find the archivist's key and escape the vault.") with a **Start** button. The timer does not start until a visitor (or the room host) starts it, so idle browsing before commitment doesn't burn the clock.
 2. A persistent HUD shows the countdown and a small **inventory strip** (icons for held items).
 3. Visitor explores, talks to characters, reads books, watches videos, and interacts with puzzle objects exactly as they already do for any interactive object — using the existing radial interaction menu.
-4. Solving a puzzle either reveals a hidden item (which now renders in the room and becomes interactable — "Pick Up") or reports success and unlocks the door directly.
+4. Solving a puzzle either reveals a hidden item for that visitor (which now renders in the room and becomes interactable — "Pick Up") or reports success and unlocks the door directly for them (§3.1).
 5. Visitor picks up the key item; it moves into their personal inventory.
 6. Visitor approaches the locked door and interacts with it. If they hold the required key (or all required puzzles are solved), the door opens: it stops blocking movement, and if the creator configured a `destinationTile`, the visitor transitions there (reusing the existing tile-edge-transition system) — otherwise the room is marked **escaped** for that visitor.
 7. If the timer expires first, the visitor sees a "time's up" outcome card, matching the genre's "good ending / bad ending regardless of success" principle from §2.1 — nothing is lost except the win, and the room stays explorable.
@@ -89,15 +100,21 @@ Both entries live in `server/game/room_object_catalog.py` next to the existing s
     ],
 },
 ```
-Config fields (stored in the existing per-object `config` dict, same mechanism `bookshelf`/`tv`/`music_player` already use for object-specific data):
+Config fields (stored in the existing per-object `config` dict, same mechanism `bookshelf`/`tv`/`music_player` already use for object-specific data). Per §3.1, this `config` dict only holds the **authored blueprint** for the door — it never holds live per-visitor open/closed state:
 - `requiredItemId: str | None` — an inventory item id that must be held to open it.
 - `requiredPuzzleIds: list[str]` — puzzle ids that must all be in a "solved" state.
-- `destinationTile: {"x": int, "y": int} | None` — reuses the existing tile-graph coordinate model; if set, a successful open transitions the visitor there via the same mechanism as a normal edge crossing; if omitted, opening it marks that visitor's escape attempt as **won**.
-- `isOpen: bool` — runtime state, defaults to `False`.
+- `destinationTile: {"x": int, "y": int} | None` — reuses the existing tile-graph coordinate model; if set, a successful open transitions the visitor there via the same mechanism as a normal edge crossing; if omitted, opening it marks that visitor's escape attempt as **won** (subject to the expiry rule in §8.3).
 
-Gameplay-lock vs edit-lock: `escape_door` deliberately does **not** reuse `RoomBuilderState.isLocked`/`set_locked`, because that field already means "an editor cannot move/delete/resize this object" (`_require_unlocked` in `delete_object`/move/resize handlers). Overloading it would mean an author's escape door became un-editable the moment gameplay locked it, or (worse) a player "unlocking" it during play would accidentally grant editors the ability to move it. A door's `isOpen` runtime flag is a separate, independent piece of state, exactly the same way `ai_character`'s `tour`/`waypoints` runtime state already lives alongside the object without touching `isLocked`.
+**Unlock formula** (evaluated per requesting visitor, never room-wide): a door opens for visitor `user_id` when
+```
+(requiredItemId is None or inventory.has(user_id, requiredItemId))
+and all(puzzles.is_solved(pid, user_id) for pid in requiredPuzzleIds)
+```
+This is a strict **AND** across both conditions — an author configuring both a required item and required puzzles means a visitor needs *all* of them, not just one. If neither field is set, the door has no gate and opens unconditionally on first attempt (useful for a final "free exit" door with no further puzzle). This is the same logic §4.1 step 3 refers back to.
 
-Collision: while `isOpen` is `False`, `escape_door` is a solid AABB obstacle for free — `server/main.py: _tile_collision_obstacles` already turns every object in `RoomBuilderState.list_objects` into a blocking box with no per-type special-casing needed. Once `isOpen` flips to `True`, `_tile_collision_obstacles` must skip objects where `record["objectType"] == "escape_door" and record["config"].get("isOpen")`, so the one required change is a single added condition in that existing function, not a new subsystem.
+Gameplay-lock vs edit-lock: `escape_door` deliberately does **not** reuse `RoomBuilderState.isLocked`/`set_locked`, because that field already means "an editor cannot move/delete/resize this object" (`_require_unlocked` in `delete_object`/move/resize handlers). Overloading it would mean an author's escape door became un-editable the moment gameplay locked it, or (worse) a player "unlocking" it during play would accidentally grant editors the ability to move it. A door's open/closed state is therefore tracked entirely outside the object record, in `EscapeSessionEngine` (§8.1), keyed per `(object_id, user_id)` — the same kind of external, per-user-keyed runtime state `StoryEngine._progress` already keeps separate from its own node definitions (§3.1).
+
+Collision: an `escape_door` a given visitor has not yet opened remains a solid AABB obstacle for that visitor, exactly like any other object — `server/main.py: _tile_collision_obstacles` already turns every object in `RoomBuilderState.list_objects` into a blocking box with no per-type special-casing needed. Per §3.1, this function gains a `requester_id` parameter (it is already called once per player per movement tick from inside `apply_player_movement`, so the caller already has this value on hand) and skips only `escape_door` objects where `escape_session.has_opened(requester_id, object_id)` is `True` — so the door keeps blocking every other visitor who hasn't opened it themselves. This is the one behavioral change to an existing function; every other object type is completely unaffected.
 
 ### 5.2 `hidden_item`
 ```python
@@ -109,12 +126,13 @@ Collision: while `isOpen` is `False`, `escape_door` is a solid AABB obstacle for
     ],
 },
 ```
-Config fields:
-- `isRevealed: bool` — defaults to `False`. While `False`, the object is decorated exactly like today but the client renders nothing for it and `interact_with_object` rejects `pick_up` with a `PermissionError` ("this cannot be interacted with yet"), mirroring the existing `isInteractable` check pattern.
+Config fields — again, only the authored blueprint, per §3.1:
 - `itemKind: "key" | "tool" | "note"` — cosmetic/inventory-icon hint only.
-- `singleUse: bool` — whether the item disappears from the world once picked up (default `True`; the common case for a key).
+- `singleUse: bool` — whether, once a visitor has picked the item up, it stops appearing as pick-up-able for that same visitor again (default `True`; the common case for a key). Because reveal/held state is already per-visitor (below), this only prevents a single visitor from re-collecting the same item, not a room-wide disappearance.
 
-Revealing an item is just `record["config"]["isRevealed"] = True`, settable from three places, matching §4.1's three puzzle-authoring paths: a solved puzzle's reward, a fired area trigger's `reveal_object` payload (§6.3), or a story node's `knowledge_check` success branch (§6.4).
+Whether the item is currently revealed is **not** stored on the object at all — it is per-visitor runtime state on `EscapeSessionEngine` (§8.1), exactly like `escape_door`'s open state. A hidden item is revealed for visitor `user_id` via `escape_session.reveal_item(user_id, object_id)`, settable from three places, matching §4.1's three puzzle-authoring paths: a solved puzzle's reward, a fired area trigger's `reveal_object` payload (§6.3), or a story node's `knowledge_check` success branch (§6.4).
+
+**Server-side visibility, not client-side hiding.** An unrevealed `hidden_item` must never be sent to a visitor's client at all — not even with a "don't render this" flag — because a visitor could otherwise discover its exact position by inspecting network traffic before solving anything, defeating the entire puzzle. `RoomBuilderState.list_objects_for_tiles` (and `list_objects`) therefore gain a `requester_id`/`is_room_host` pair of parameters: for a normal play-mode visitor, any `hidden_item` not yet revealed for that `requester_id` is omitted from the returned list entirely; for `is_room_host` (build-mode/editor) calls, every `hidden_item` is always included (shown with a distinct "hidden until revealed" badge in the builder UI, §10) so authors can find and edit it. This is the same never-trust-the-client discipline already applied to puzzle answers (§6.1) and AI character API keys (`StoryEngine._public_character`).
 
 ## 6. Puzzle Authoring Paths (reusing existing systems)
 
@@ -124,30 +142,44 @@ A new, small, pure module `server/game/puzzle.py`, matching the existing style o
 ```python
 class PuzzleEngine:
     def __init__(self) -> None:
-        self._puzzles: dict[str, dict[str, Any]] = {}   # puzzle_id -> definition + solved-by set
+        self._puzzles: dict[str, dict[str, Any]] = {}   # puzzle_id -> definition (prompt, answer, hints, ...)
+        self._solved_by: dict[str, set[str]] = {}        # puzzle_id -> set of user_ids who solved it (per §3.1)
+        self._hints_used: dict[tuple[str, str], int] = {}  # (puzzle_id, user_id) -> hints requested so far
         self._attempt_limiter = SlidingWindowRateLimiter(...)  # reuse server/game/rate_limiter.py
 
     def add_puzzle(self, puzzle_id, prompt, answer, hints: list[str], reveal_item_id=None,
-                   unlock_door_id=None, max_attempts: int | None = None) -> dict: ...
+                   unlock_door_id=None, match_mode="exact", max_attempts: int | None = None) -> dict: ...
     def remove_puzzle(self, puzzle_id) -> bool: ...
     def get_puzzle_public(self, puzzle_id) -> dict:  # never includes `answer`
     def attempt_solve(self, puzzle_id, user_id, guess: str, now_ms: float) -> dict:
-        # returns {"correct": bool, "attemptsRemaining": int | None, "alreadySolved": bool}
-        # rate-limited per (puzzle_id, user_id) to blunt brute-forcing short codes
-    def is_solved(self, puzzle_id, user_id=None) -> bool:
-        # user_id=None checks "solved by anyone in the room" for shared-progress rooms
+        # returns {"correct": bool, "attemptsRemaining": int | None, "alreadySolved": bool, "locked": bool}
+        # rate-limited per (puzzle_id, user_id) to blunt brute-forcing short codes; once a user's
+        # per-puzzle attempt count reaches max_attempts, further guesses return locked=True until
+        # a room host calls reset_attempts (below) -- see the lockout note after this block
+    def reset_attempts(self, puzzle_id, user_id) -> None:
+        # edit-permission-gated (room:puzzle:reset); clears a locked-out user's attempt count only,
+        # never their solved state, so a solved puzzle can never be "un-solved" by a reset
+    def is_solved(self, puzzle_id, user_id) -> bool:
+        # always evaluated for a specific visitor (per §3.1) -- Phase 2 Team Mode is the only path
+        # that treats "solved by anyone on the team" as equivalent to "solved by this user" (§14)
     def request_hint(self, puzzle_id, user_id, now_ms: float) -> dict:
         # returns {"hint": str | None, "hintsUsed": int, "hintsRemaining": int}
 ```
-Answer comparison is case-insensitive and whitespace-trimmed by default (a `matchMode: "exact" | "numeric" | "contains"` field on the puzzle covers riddles vs number-lock codes vs keyword-search answers, mirroring the puzzle-type variety in §2.1). The **answer field is only ever read server-side**; `get_puzzle_public` is the only representation ever serialized to a client, exactly the same discipline `StoryEngine._public_character` already applies to strip `apiKey` before any client-facing response (see [docs/08-ai-characters.md](../docs/08-ai-characters.md)).
+Answer comparison is case-insensitive and whitespace-trimmed by default (`match_mode: "exact" | "numeric" | "contains"` on the puzzle covers riddles vs number-lock codes vs keyword-search answers, mirroring the puzzle-type variety in §2.1). The **answer field is only ever read server-side**; `get_puzzle_public` is the only representation ever serialized to a client, exactly the same discipline `StoryEngine._public_character` already applies to strip `apiKey` before any client-facing response (see [docs/08-ai-characters.md](../docs/08-ai-characters.md)).
+
+**Attempt lockout.** A puzzle configured with `max_attempts` stops accepting guesses from a user once they exhaust it (`attempt_solve` returns `locked: True` instead of checking the guess); only a room editor can clear that lockout for that one visitor via `reset_attempts` / the `room:puzzle:reset` event (§9), so a locked-out visitor cannot brute-force further but also isn't permanently blocked without recourse.
+
+**Reconciling `reveal_item_id`/`unlock_door_id` with the door's own `requiredPuzzleIds`.** A puzzle's `reveal_item_id`/`unlock_door_id` and a door's `requiredPuzzleIds` describe the *same* authored relationship from opposite ends, which could drift out of sync if set independently. To avoid that, these are never edited as two separate raw fields: the builder's puzzle-authoring panel's "reward" picker (§4.1 step 5) is the single UI action that sets both sides atomically — choosing "reveal this hidden item" as a puzzle's reward sets the puzzle's `reveal_item_id` and nothing further is needed on the item itself (reveal is driven purely by `reveal_item_id`, not by any field stored on the `hidden_item`); choosing "unlock this door" sets the puzzle's `unlock_door_id` *and* appends this puzzle's id into that door's `requiredPuzzleIds` server-side in the same call. `requiredPuzzleIds` on the door remains the single source of truth `attempt_open` actually evaluates (§5.1); `unlock_door_id` on the puzzle is purely a convenience back-reference the builder UI uses to show "this puzzle unlocks: Vault Door" without a separate lookup.
 
 `RoomBuilderState` owns one `PuzzleEngine` instance per room (`self._puzzles = PuzzleEngine()` in `__init__`, next to `self._story`/`self._guide`), the same ownership pattern already used for every other per-room engine.
 
 ### 6.2 Puzzle panel interaction (typed-answer puzzles)
 Rather than inventing a tenth object type, any existing interactive object gains an optional puzzle binding: a `puzzleId` field in its `config`. When present, a new generic interaction `solve_puzzle` (added to `bookshelf`, `table`, or any object type a creator wants to double as a puzzle prop — e.g. a "desk" is just a `table` with a bound puzzle) opens a small answer-input modal client-side and calls `room:puzzle:attempt` with the typed guess.
 
+This requires one small change to how interaction menus are built: today `get_interaction_menu(object_type)` (and the `_decorate_object` step that attaches its result to every object) is purely a function of `objectType` — it has no way to add an interaction only some instances of a type should offer. Object decoration must therefore append `{"interactionType": "solve_puzzle", "label": "Solve", "actionState": None}` onto the menu returned for a specific object *only when that object's own `config.get("puzzleId")` is set*, in addition to (not instead of) its type's static catalog menu. This is a small, localized change inside `_decorate_object`, not a change to the catalog itself — every object type keeps exactly the static menu it has today unless it's also been bound to a puzzle.
+
 ### 6.3 Trigger-revealed puzzles (search-based / environmental)
-`RoomBuilderState.evaluate_area_enter` already fires trigger payloads keyed by `eventType`. This design adds one new recognized `eventType`: `"reveal_object"`, with `payload: {"objectId": "<hidden_item id>"}`. No change to the trigger *engine* is required — `evaluate_area_enter`'s cooldown/repeatable/fired-once semantics already fully cover "reveal this the first time someone steps on this rug." The only new code is the handler in `server/main.py` that, on receiving a fired `reveal_object` trigger, calls the existing `set_object_config`-style setter to flip `isRevealed` and broadcasts the updated object — the same broadcast path every other builder mutation already uses.
+`RoomBuilderState.evaluate_area_enter` already fires trigger payloads keyed by `eventType`, and it is already called per-player (`evaluate_area_enter(player_id, tile, x, y, now_ms)`), so it already carries the visiting player's identity needed for a per-user reveal. This design adds one new recognized `eventType`: `"reveal_object"`, with `payload: {"objectId": "<hidden_item id>"}`. No change to the trigger *engine* is required — `evaluate_area_enter`'s cooldown/repeatable/fired-once semantics already fully cover "reveal this the first time someone steps on this rug," and since fired-state is already tracked per `(player_id, trigger_id)`, per-user reveal (§3.1) falls out for free. The only new code is the handler in `server/main.py` that, on a fired `reveal_object` trigger, calls the new `escape_session.reveal_item(player_id, object_id)` method (§8.1) and broadcasts the updated object list to that one player — the same targeted-broadcast pattern already used for `room:npc:moved` (§8.2) rather than a full-room rebroadcast, since the reveal is only meaningful to the player who triggered it.
 
 ### 6.4 Story-character knowledge checks (character-guarded puzzles)
 `StoryNodeModel.knowledge_check` and `completion_flag` already exist in `server/game/story.py` but `StoryEngine.talk`/`advance` never reads them — they are currently write-only metadata. This design activates them: when a node has `knowledge_check` set to a `puzzle_id`, `StoryEngine.talk` (called from `room:character:talk`) consults the room's `PuzzleEngine.is_solved(puzzle_id, user_id)` before allowing the choice that leads past that node; if unsolved, the character's line branches to a "you need to figure that out first" response instead of the configured next node. This lets a creator build a character who simply won't hand over a hint or the next chapter of the story until the visitor has actually solved something — the "quiz master" role already listed in `ALLOWED_ROLES` finally has a concrete mechanical purpose.
@@ -157,7 +189,7 @@ Rather than inventing a tenth object type, any existing interactive object gains
 
 ## 7. Inventory
 
-A new, small, per-room, per-user structure — deliberately not a generalized item/economy system, since nothing else in the product needs one yet:
+A new, small, per-room, per-user structure — deliberately not a generalized item/economy system, since nothing else in the product needs one yet. Per §3.1, held items are always private to the visitor who picked them up:
 
 ```python
 class InventoryEngine:  # server/game/inventory.py
@@ -167,9 +199,9 @@ class InventoryEngine:  # server/game/inventory.py
     def grant(self, user_id: str, item_object_id: str) -> None: ...
     def has(self, user_id: str, item_object_id: str) -> bool: ...
     def list_items(self, user_id: str) -> list[str]: ...
-    def revoke_all_for_object(self, item_object_id: str) -> None:  # object deleted mid-game
+    def revoke_all_for_object(self, item_object_id: str) -> None:  # object deleted mid-game, all users
 ```
-This mirrors the `dict[str, set[...]]`-per-user-key shape already used by `StoryEngine._progress` (keyed by `(object_id, character_id, user_id)`) and `BookshelfLibrary`'s reading-progress map, so it fits the codebase's existing idiom rather than introducing a new persistence style. `interact_with_object`'s `pick_up` branch on `hidden_item` calls `self._inventory.grant(requester_id, object_id)`, flips `singleUse` items to no longer render for that user (or globally, for `singleUse` items shared by the whole room — configurable per item), and the client adds it to the HUD inventory strip.
+This mirrors the `dict[str, set[...]]`-per-user-key shape already used by `StoryEngine._progress` (keyed by `(object_id, character_id, user_id)`) and `BookshelfLibrary`'s reading-progress map, so it fits the codebase's existing idiom rather than introducing a new persistence style. `interact_with_object`'s `pick_up` branch on `hidden_item` requires `escape_session.has_revealed(requester_id, object_id)` to be `True` (§5.2, §8.1) — a visitor cannot pick up an item they haven't personally uncovered yet — then calls `self._inventory.grant(requester_id, object_id)`. Because reveal/hold state is per-visitor throughout, one visitor picking up an item never affects what any other visitor sees or can pick up; the client simply adds it to that one visitor's HUD inventory strip.
 
 ## 8. Escape Session (timer, win/lose, leaderboard)
 
@@ -182,19 +214,28 @@ class EscapeSessionEngine:
     def start(self, user_id: str, now_ms: float) -> dict:  # per-user attempt clock
     def status(self, user_id: str, now_ms: float) -> dict:
         # {"state": "not_started"|"in_progress"|"won"|"expired", "remainingMs": float}
-    def mark_won(self, user_id: str, now_ms: float) -> dict:  # called when the escape_door opens
+    def mark_won(self, user_id: str, now_ms: float) -> dict:  # called when the last required escape_door opens
     def record_attempt(self, user_id: str, display_name: str, elapsed_ms: float) -> None:
         # appended to an ordered leaderboard list, same append-then-sort pattern as
         # RoomBuilderState._versions
     def leaderboard(self, limit: int = 10) -> list[dict]: ...
+
+    # Per-visitor live progress (§3.1) -- kept here, alongside the timer, rather than on the
+    # objects themselves, mirroring StoryEngine's separation of node definitions from _progress:
+    def reveal_item(self, user_id: str, object_id: str) -> None: ...
+    def has_revealed(self, user_id: str, object_id: str) -> bool: ...
+    def open_door(self, user_id: str, object_id: str) -> None: ...
+    def has_opened(self, user_id: str, object_id: str) -> bool: ...
 ```
-Per-user (not room-wide) timers are the default because OmniLaunge rooms are persistent, ambient multiplayer spaces (per [docs/01-user-experience.md](../docs/01-user-experience.md)) rather than a booked, synchronized physical session — a visitor who joins mid-session should not inherit someone else's countdown. A room-host-configurable "shared team timer" mode is listed as a Phase 2 item (§10) for groups who want the classic synchronized-team experience.
+Per-user (not room-wide) timers are the default because OmniLaunge rooms are persistent, ambient multiplayer spaces (per [docs/01-user-experience.md](../docs/01-user-experience.md)) rather than a booked, synchronized physical session — a visitor who joins mid-session should not inherit someone else's countdown, revealed items, or opened doors (§3.1). A room-host-configurable **Team/Shared Mode** — where the timer, solved puzzles, revealed items, and opened doors are all pooled room-wide instead of per-visitor, matching the classic synchronized physical-escape-room-team experience — is scoped to Phase 2 (§14) rather than being the MVP default.
 
 ### 8.2 Game-loop tick
 `server/main.py`'s existing `game_loop()` already ticks per-room, per-frame concerns (see `tick_guided_tours`). A new `tick_escape_sessions(room_id, now_ms)` follows the exact same shape: for each in-progress session past its `time_limit_ms`, transition it to `expired` and emit a lightweight `room:escape:expired` event to that user only — mirroring how `room:npc:moved` is a targeted, lightweight event rather than a full state rebroadcast.
 
 ### 8.3 Winning
-When `escape_door`'s `attempt_open` interaction succeeds, `RoomBuilderState` calls `self._escape.mark_won(requester_id, now_ms)` and, if `destinationTile` is unset, that is the win condition; if set, the visitor also transitions tiles via the existing tile-crossing path, and the room is "escaped" as a bonus rather than the sole win condition — supporting the "escape door leads to the next themed room" chained-rooms pattern from §4.2 without any new spatial code.
+When `escape_door`'s `attempt_open` interaction succeeds for a visitor (per the unlock formula in §5.1), `RoomBuilderState` calls `self._escape.open_door(requester_id, object_id)` (§8.1) so the door stops blocking that visitor from now on, then: if `destinationTile` is unset, calls `mark_won(requester_id, now_ms)` and that is the win condition; if set, the visitor also transitions tiles via the existing tile-crossing path, and the room is "escaped" as a bonus rather than the sole win condition — supporting the "escape door leads to the next themed room" chained-rooms pattern from §4.2 without any new spatial code.
+
+**Expiry does not retroactively block opening, but it does block winning.** Per the genre principle in §2.1 that a room stays explorable after time runs out, a visitor whose session has already transitioned to `expired` may still solve puzzles and open doors — nothing about gameplay is hard-gated by the timer. However, `mark_won`/`record_attempt` are only ever called while that visitor's session state is `in_progress`; if it is already `expired`, opening the final door still unlocks it mechanically (so the visitor isn't stuck) but is not recorded as a win and does not appear on the leaderboard. Puzzle attempts, hint requests, and item pickups are likewise never blocked by session state (`not_started`/`expired`) — the timer only gates leaderboard eligibility, not the ability to keep playing.
 
 ### 8.4 Leaderboard
 Purely additive: an ordered list of `{displayName, elapsedMs, completedAtMs}`, exposed read-only via `room:escape:leaderboard:list`. In-memory for MVP (matches every other engine in this codebase, all of which are in-memory pending the Phase A persistence work already tracked in [educational_rooms_feature_design.md](educational_rooms_feature_design.md) §16); persisting it is a natural, low-risk Phase 2 add-on once/if a `room_versions`-style table is extended.
@@ -209,11 +250,12 @@ Following the exact naming and payload conventions of the existing `room:charact
 | `room:escape:start` | client → server | Visitor starts their own countdown |
 | `room:escape:status` | client → server | Poll current state/remaining time (also pushed proactively on join) |
 | `room:escape:expired` | server → client | Game-loop tick informs a visitor their time ran out |
-| `room:escape:won` | server → client | Broadcast (to the winner, and optionally room-wide as a celebratory toast) when a door opens the room |
+| `room:escape:won` | server → client | Broadcast (to the winner, and optionally room-wide as a celebratory toast that omits any spoiler detail) when that visitor opens their winning door |
 | `room:escape:leaderboard:list` | client → server | Fetch top completion times |
 | `room:puzzle:add` / `:remove` / `:list` | client → server | Author puzzles (edit-permission gated) |
-| `room:puzzle:attempt` | client → server | Submit a guess; returns `{correct, attemptsRemaining, alreadySolved}` — **never** the answer |
+| `room:puzzle:attempt` | client → server | Submit a guess; returns `{correct, attemptsRemaining, alreadySolved, locked}` — **never** the answer |
 | `room:puzzle:hint` | client → server | Same shape as `room:character:ask`'s rate-limited pattern; returns the next hint string |
+| `room:puzzle:reset` | client → server | Edit-permission gated; clears one visitor's exhausted attempt count for a puzzle without clearing their solved state (§6.1) |
 | `room:door:configure` | client → server | Set `requiredItemId`/`requiredPuzzleIds`/`destinationTile` on an `escape_door` |
 | `room:door:attempt_open` | client → server | Also reachable via the generic `room:object:interact` with `interactionType: "attempt_open"`, consistent with every other object's interaction dispatch |
 | `room:item:pick_up` | client → server | Also reachable via `room:object:interact` with `interactionType: "pick_up"`, same as above |
@@ -224,7 +266,7 @@ All of these follow the already-established handler skeleton in `server/main.py`
 ## 10. Client UI Additions
 
 - **Builder panel**: a new "Escape Room" section in the existing builder sidebar (parallel to "AI Character," see [client/index.html](../client/index.html)'s `#configure-character-section`), with an Enable toggle, time-limit field, briefing textarea, and a puzzle list (add/edit/remove) using the same `.builder-field`/`.builder-primary-btn`/`.builder-object-list` Material 3 classes already standardized across the builder (see the recent Knowledge Store panel M3 unification).
-- **Door/Item authoring**: placing an `escape_door` or `hidden_item` object surfaces a small config section (required item/puzzle dropdown for doors; reveal-condition summary for items), reusing the existing per-object-type "Configure" section pattern already used for bookshelf/tv/music_player/ai_character.
+- **Door/Item authoring**: placing an `escape_door` or `hidden_item` object surfaces a small config section (required item/puzzle dropdown for doors; reveal-condition summary for items), reusing the existing per-object-type "Configure" section pattern already used for bookshelf/tv/music_player/ai_character. In build mode, `hidden_item` objects always render (per §5.2's `is_room_host` visibility rule) with a small "hidden until revealed" badge so authors can find and edit them; that badge — and the object itself — disappears for ordinary visitors in play mode until they personally reveal it.
 - **Player HUD**: a compact countdown timer chip and an inventory strip of small icons, added next to the existing tile/build-mode HUD chips in the room view (see the screenshot in [README.md](../README.md) for the existing HUD chip style to match).
 - **Puzzle modal**: a small modal (reusing the existing dialogue-modal shell used for AI character conversations) with the prompt text, a single text input, a Submit button, and an "Ask for a Hint" secondary action when the puzzle is bound to a character.
 - **Briefing / win / expired cards**: full-panel overlays reusing the existing modal/overlay component already used for the room-chooser and dialogue modals, not a new overlay system.
@@ -236,9 +278,9 @@ To ground the design in the educational use case from the README, a concrete aut
 2. An `ai_character` "Archivist" (role `quiz_master`) has a knowledge base pre-loaded with three short historical facts (existing knowledge-document system). Its story graph has a `knowledge_check` node gated on puzzle `date-riddle`.
 3. A `bookshelf` holds a "clue" book whose content contains the fact needed to answer `date-riddle` (reuses the existing reading system — no new content type).
 4. A `table` object is bound to `puzzle: date-riddle` (numeric match mode) — visitors read the book, talk to the Archivist to confirm their understanding, then interact with the table to submit the year.
-5. Solving `date-riddle` reveals a `hidden_item` ("Brass Key") elsewhere in the room via its `rewardItemId`.
-6. An `escape_door` requires that key. Opening it has no `destinationTile` set, so opening it is the win condition and ends that visitor's timer.
-7. A leaderboard on the room's info panel shows the fastest three visitors to find the key.
+5. Solving `date-riddle` reveals a `hidden_item` ("Brass Key") elsewhere in the room via the puzzle's `reveal_item_id` (§6.1) — for that visitor only (§3.1); a second visitor exploring the same room concurrently would need to solve their own copy of `date-riddle` before their own key appears.
+6. An `escape_door` requires that key. Opening it has no `destinationTile` set, so opening it is the win condition and ends that visitor's timer, per §8.3.
+7. A leaderboard on the room's info panel shows the fastest three visitors to find the key, each independently timed from when they pressed Start (§8.1).
 
 This example uses **zero new content types** — book, character, table, and door are all either pre-existing or the two new catalog entries from §5.
 
@@ -249,6 +291,8 @@ This example uses **zero new content types** — book, character, table, and doo
 - **Server-authoritative reveal/unlock state.** `isRevealed`/`isOpen` are only ever flipped by server-side puzzle/trigger logic, never by a raw client-sent field — the same validated-input discipline already enforced by `RoomObjectPlacementModel` and the "reject non-numeric input" bug-fix history visible in this repo's commit log.
 - **Edit-permission-gated authoring, learner-open gameplay.** Adding/editing puzzles and doors requires the same `_require_edit_permission` check as every other object edit; *attempting* a puzzle or door is intentionally open to any room visitor, mirroring the existing precedent that *starting a guided tour* is not permission-gated even though *authoring* one is (see [docs/08-ai-characters.md](../docs/08-ai-characters.md) §"Guided tours").
 - **No SSRF/URL surface added.** This feature introduces no new external URL fields, so `is_safe_external_url` is not implicated — puzzles are pure text/number matching.
+- **Unrevealed items are never transmitted, not just unrendered.** As in §5.2, an undiscovered `hidden_item`'s position and existence are withheld server-side (filtered out of `list_objects_for_tiles` for that visitor) rather than sent to the client with a "please don't draw this" flag, which would leak its location to anyone inspecting network traffic.
+- **Per-visitor isolation prevents griefing and spoilers alike.** Because solved-puzzle, revealed-item, and opened-door state are all keyed per user (§3.1), one visitor cannot lock another out of a puzzle via attempt-lockout, spoil another visitor's hidden item by revealing it first, or let another visitor walk through a door they didn't personally earn.
 
 ## 13. Data Model Additions (for the eventual persistence phase)
 
@@ -276,17 +320,31 @@ CREATE TABLE IF NOT EXISTS room_escape_attempts (
     elapsed_ms     BIGINT NOT NULL,
     completed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Per-visitor live progress (§3.1): which puzzles/items/doors this user has personally solved,
+-- revealed, or opened in this room. Mirrors the existing per-(object,user) shape of
+-- `reading_progress` rather than introducing a new persistence idiom.
+CREATE TABLE IF NOT EXISTS room_escape_progress (
+    room_id             VARCHAR NOT NULL REFERENCES rooms(id),
+    user_id             VARCHAR NOT NULL,
+    solved_puzzle_ids   JSONB NOT NULL DEFAULT '[]',
+    revealed_item_ids   JSONB NOT NULL DEFAULT '[]',
+    opened_door_ids     JSONB NOT NULL DEFAULT '[]',
+    hints_used          JSONB NOT NULL DEFAULT '{}',
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (room_id, user_id)
+);
 ```
-`room_objects.config` (already a JSON/JSONB config column per the existing schema pattern used by bookshelf/tv/music_player) absorbs `escape_door`/`hidden_item` fields with no schema change needed there.
+`room_objects.config` (already a JSON/JSONB config column per the existing schema pattern used by bookshelf/tv/music_player) absorbs `escape_door`/`hidden_item` *authored blueprint* fields with no schema change needed there; only the new `room_escape_progress` table above is needed for the *live per-visitor* state described in §3.1.
 
 ## 14. Delivery Phases
 
 ### Phase 1 (MVP)
-- `escape_door` and `hidden_item` catalog entries + collision/reveal wiring (§5).
-- `PuzzleEngine` with typed-answer puzzles bound to any object (§6.1–6.2).
+- `escape_door` and `hidden_item` catalog entries + per-visitor collision/reveal wiring (§3.1, §5).
+- `PuzzleEngine` with typed-answer puzzles bound to any object, including per-user solved state and attempt lockout/reset (§6.1–6.2).
 - `InventoryEngine` with pick-up/require-item door logic (§7).
-- `EscapeSessionEngine` with per-user timer, briefing, win/expired states (§8.1–8.3).
-- Builder panel + player HUD + puzzle modal (§10).
+- `EscapeSessionEngine` with per-user timer, briefing, win/expired states, and per-user reveal/open tracking (§8.1–8.3).
+- Builder panel + player HUD + puzzle modal, including build-mode-only visibility of unrevealed `hidden_item` objects (§10).
 - Full unit test coverage for all three new engines, mirroring the existing `tests_python/test_npc_guide.py`/`test_story.py` structure (pure-logic tests, no sockets), plus `tests_python/test_main_*` handler-level tests following the `FakeSio` harness already used for guided tours.
 
 ### Phase 2
@@ -294,7 +352,7 @@ CREATE TABLE IF NOT EXISTS room_escape_attempts (
 - Story-character `knowledge_check` gating (§6.4) and the `ask_hint` payload wiring (§6.5).
 - Leaderboard persistence and display (§8.4).
 - Multi-door / multi-room chained escape sequences using `destinationTile` (§8.3).
-- Optional room-host-configurable shared/synchronized team timer (§8.1).
+- **Team/Shared Mode**: a room-host toggle that pools the timer, solved puzzles, revealed items, and opened doors room-wide instead of per-visitor, for groups who want the classic synchronized physical-escape-room-team experience (§3.1, §8.1).
 
 ### Phase 3
 - Puzzle template library (pre-built riddle/cipher/sequence puzzle types with built-in `match_mode` presets) so non-technical creators can drop in a puzzle without writing their own answer-matching logic.
@@ -305,7 +363,8 @@ CREATE TABLE IF NOT EXISTS room_escape_attempts (
 - **Risk:** a creator builds an unsolvable room (a puzzle whose required fact is never actually placed anywhere reachable). **Mitigation:** the builder's existing Play Mode (§4.1 step 7) is the validation path; Phase 3's authoring guidance/checklist can also prompt "does every puzzle have a fact source in the room?"
 - **Risk:** guess brute-forcing for short numeric codes. **Mitigation:** per-puzzle-per-user rate limiting (§12) and an optional `max_attempts` lockout.
 - **Risk:** a hidden item or door is deleted mid-session, orphaning a visitor's in-progress inventory/state. **Mitigation:** `InventoryEngine.revoke_all_for_object` and `PuzzleEngine`/`EscapeSessionEngine` follow the same defensive discard pattern `GuideEngine.discard` already establishes for deleted `ai_character` objects (see `delete_object` in `room_builder.py`).
-- **Risk:** per-user timers feel less "team" than genre-standard shared timers. **Mitigation:** explicitly scoped as a Phase 2 opt-in mode (§8.1), not blocking MVP.
+- **Risk:** per-user timers feel less "team" than genre-standard shared timers. **Mitigation:** explicitly scoped as a Phase 2 opt-in Team/Shared Mode (§3.1, §8.1, §14), not blocking MVP.
+- **Risk:** per-visitor progress tracking (solved puzzles, revealed items, opened doors, each keyed per user) could grow unbounded in a very popular room with many one-time visitors. **Mitigation:** bounded the same way object/tile counts already are (`MAX_OBJECTS_PER_TILE`) — a follow-up cap on tracked escape-progress entries per room, plus normal inactive-session eviction, is a Phase 2 operational concern, not a Phase 1 blocker given typical concurrent-visitor counts.
 
 ## 16. Alignment Questions for Product Direction
 
@@ -314,3 +373,4 @@ CREATE TABLE IF NOT EXISTS room_escape_attempts (
 3. Is a shared, room-wide "team" timer (everyone in the room shares one clock, matching the physical escape-room genre most closely) a Phase 1 requirement, or is the per-user timer proposed here acceptable for MVP?
 4. Should the leaderboard be per-room only, or eventually cross-room (a global "fastest escapes" board) once persistence exists?
 5. Do we want a built-in puzzle-type library (cipher, sequence, sudoku, riddle) in Phase 1, or is free-text/numeric answer matching sufficient to start, with templates deferred to Phase 3?
+6. Should Team/Shared Mode (§3.1, §14) be pulled forward into Phase 1 if early educational users (classrooms, team-building groups) most commonly want one shared clock/progress per group rather than per individual?
