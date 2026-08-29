@@ -4454,8 +4454,13 @@ function renderBuilderVersionList() {
 }
 
 function renderMiniMap() {
-  if (!miniMapEl) return;
+  // The room canvas's doorway/rail graphics (design doc §10) are driven by
+  // the very same tile-neighbour data the mini-map draws from, so both are
+  // refreshed together here. This deliberately runs BEFORE the mini-map's
+  // own early return: the canvas doorways are a separate feature, and a
+  // missing/renamed `#mini-map` element must never silently freeze them.
   setTileNeighbors(neighborTileFlags(state.roomTiles, state.currentTile));
+  if (!miniMapEl) return;
   const cells = buildMiniMapCells(state.roomTiles, state.currentTile);
   miniMapEl.innerHTML = '';
   cells.forEach((cell) => {
