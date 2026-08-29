@@ -72,6 +72,56 @@ export function setSelectedBuilderObjectId(objectId) {
   _selectedObjectId = objectId || null;
 }
 
+/** Pure hit-test for the Build-Mode-only doorway/rail click shortcut (design doc
+ * §10.4): given a click point in room coordinates (as returned by
+ * `canvasToRoomCoords`), reports which of the 4 tile edges (if any) the point
+ * falls within the doorway/rail hotspot of, and whether that edge currently has
+ * a neighboring tile (`isOpen`). The hotspot rectangles intentionally match the
+ * exact regions `drawTopDoorway`/`drawEdgeJambs` paint, regardless of whether
+ * that edge is currently rendered open or closed, so a click always lands in
+ * the same visual spot whether the edge is a doorway or a capped rail.
+ * Callers are expected to only act on a closed (`isOpen: false`) hit -- an
+ * open hit needs no special handling since the existing click-to-move flow
+ * already walks the avatar there and crosses the tile transition naturally.
+ * Returns `null` when the point isn't within any edge's hotspot. Pure
+ * geometry, no canvas/DOM dependency, so it's directly unit-testable. */
+export function edgeHotspotAtPoint(x, y, neighbors) {
+  const n = {
+    top: Boolean(neighbors?.top),
+    bottom: Boolean(neighbors?.bottom),
+    left: Boolean(neighbors?.left),
+    right: Boolean(neighbors?.right),
+  };
+
+  const doorW = 130;
+  const doorH = WALL_HEIGHT * 0.82;
+  const doorX = ROOM_WIDTH / 2 - doorW / 2;
+  const doorY = WALL_HEIGHT - doorH;
+  if (x >= doorX && x <= doorX + doorW && y >= doorY && y <= doorY + doorH) {
+    return { edge: 'top', isOpen: n.top };
+  }
+
+  const gap = 130;
+  const jambStub = 40;
+  const floorCenterY = WALL_HEIGHT + (ROOM_HEIGHT - WALL_HEIGHT) / 2;
+  const y0 = floorCenterY - gap / 2;
+  const y1 = floorCenterY + gap / 2;
+
+  if (y >= ROOM_HEIGHT - jambStub && y <= ROOM_HEIGHT) {
+    const x0 = ROOM_WIDTH / 2 - gap / 2;
+    const x1 = ROOM_WIDTH / 2 + gap / 2;
+    if (x >= x0 && x <= x1) return { edge: 'bottom', isOpen: n.bottom };
+  }
+  if (x >= 0 && x <= jambStub && y >= y0 && y <= y1) {
+    return { edge: 'left', isOpen: n.left };
+  }
+  if (x >= ROOM_WIDTH - jambStub && x <= ROOM_WIDTH && y >= y0 && y <= y1) {
+    return { edge: 'right', isOpen: n.right };
+  }
+
+  return null;
+}
+
 /** Determines which edge a player crossed when moving from `fromTile` to
  * `toTile` (adjacent tile coordinates, e.g. `{x:0,y:0}` -> `{x:0,y:-1}`),
  * so the caller can play a matching directional transition animation.

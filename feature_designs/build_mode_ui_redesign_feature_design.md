@@ -325,7 +325,7 @@ No other new socket events are needed — everything else in this design is clie
 
 ### Phase 5 — Polish
 - [x] Grid snapping icon toggle as a new `.hud-pill` beside `#build-mode-toggle` (§12). Currently only applied to the "Add Object Here" creation flow's spawn position; on-canvas drag-to-place/drag-to-move snapping is deferred along with the rest of Phase 2/3's drag interactions.
-- [ ] Build-mode doorway/rail click shortcuts (§10.4).
+- [x] Build-mode doorway/rail click shortcuts (§10.4). Implemented as a pure `edgeHotspotAtPoint` hit-test (unit tested) wired into the existing canvas click handler: clicking a closed rail emits `room:tile:add` for that edge; clicking an open doorway is intentionally left to fall through to the existing click-to-move handling, which already walks the avatar there and crosses the tile transition naturally.
 - [ ] Catalog filter chips + search field (§7.1).
 - [ ] `localStorage` persistence of the "More" accordion's expanded rows (§6.1, §17 Decision D6). *Underlying module done:* `builder-preferences.js` (`loadExpandedAccordionRows`/`saveExpandedAccordionRows`/`toggleAccordionRow`) is built and fully tested, but not yet wired to any accordion UI since Phase 1's tab-ify/accordion markup doesn't exist yet.
 

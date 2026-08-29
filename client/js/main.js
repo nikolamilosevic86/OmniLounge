@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 import { AVATAR_OPTIONS, renderAvatarSVG } from './avatar-renderer.js';
-import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, setTileNeighbors, setSelectedBuilderObjectId, tileTransitionDirection } from './room-renderer.js';
+import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, setTileNeighbors, setSelectedBuilderObjectId, edgeHotspotAtPoint, tileTransitionDirection } from './room-renderer.js';
 import { ROOM_STYLES, DEFAULT_ROOM_STYLE } from './room-styles.js';
 import { advanceWalkPhase } from './animation.js';
 import { getObjectAtPoint } from './room-objects.js';
@@ -517,6 +517,19 @@ function initGame() {
         if (selectBuilderObjectForConfiguration(configTarget)) {
           return;
         }
+      }
+
+      // Build-mode-only doorway/rail click shortcut (design doc §10.4): a
+      // click on a *closed* rail (no neighbor tile yet on that edge) is a
+      // shortcut for the same "Add Tile" action the Tiles panel's directional
+      // buttons trigger. A click on an *open* doorway needs no special case
+      // here -- it intentionally falls through to the normal click-to-move
+      // handling below, which already walks the avatar there and crosses the
+      // tile transition naturally.
+      const hotspot = edgeHotspotAtPoint(coords.x, coords.y, neighborTileFlags(state.roomTiles, state.currentTile));
+      if (hotspot && !hotspot.isOpen) {
+        state.socket?.emit('room:tile:add', { direction: hotspot.edge });
+        return;
       }
     }
 
