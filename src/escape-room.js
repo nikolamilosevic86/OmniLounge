@@ -88,6 +88,31 @@ export function puzzleTemplateFormValues(template) {
   };
 }
 
+/**
+ * View-model for the puzzle template picker's elevated-card row (design doc
+ * build_mode_ui_redesign_feature_design.md §8.7, Gap 3), replacing the old
+ * bare `<option>` list so a template's `description` is no longer discarded.
+ * Always leads with a "Custom (blank)" card so a creator can start from an
+ * empty form -- `puzzleTemplateFormValues(null)` already implements that
+ * behavior once selected. `active` marks exactly one card: the one whose
+ * `templateId` equals `selectedTemplateId` (or Custom, when it's blank).
+ */
+export function puzzleTemplateCardOptions(templates, selectedTemplateId = '') {
+  const customCard = {
+    templateId: '',
+    label: 'Custom (blank)',
+    description: 'Start from a blank puzzle.',
+    active: !selectedTemplateId,
+  };
+  const templateCards = (templates || []).map((t) => ({
+    templateId: t.templateId,
+    label: t.label,
+    description: t.description || '',
+    active: t.templateId === selectedTemplateId,
+  }));
+  return [customCard, ...templateCards];
+}
+
 /** One-line summary of a puzzle's attempt analytics for the builder panel. */
 export function formatPuzzleAnalytics(stats) {
   if (!stats) return '';

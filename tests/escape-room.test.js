@@ -11,6 +11,7 @@ import {
   formatPuzzleAnalytics,
   puzzleDifficultySignal,
   validatePuzzleInput,
+  puzzleTemplateCardOptions,
 } from '../src/escape-room.js';
 
 describe('escapeStatusLabel', () => {
@@ -200,6 +201,47 @@ describe('puzzleTemplateFormValues', () => {
 
   it('tolerates a template with no hints', () => {
     expect(puzzleTemplateFormValues({ promptTemplate: 'p', matchMode: 'exact' }).hints).toBe('');
+  });
+});
+
+describe('puzzleTemplateCardOptions (design doc build_mode_ui_redesign_feature_design.md section 8.7, Gap 3)', () => {
+  const templates = [
+    { templateId: 'riddle', label: 'Riddle', description: 'A word riddle with a single specific answer.' },
+    { templateId: 'cipher', label: 'Cipher', description: 'A coded message the player must decode into plain text.' },
+  ];
+
+  it('always leads with a "Custom (blank)" card', () => {
+    const cards = puzzleTemplateCardOptions(templates);
+    expect(cards[0]).toEqual({
+      templateId: '', label: 'Custom (blank)', description: 'Start from a blank puzzle.', active: true,
+    });
+  });
+
+  it('maps every template onto a card with its label and description', () => {
+    const cards = puzzleTemplateCardOptions(templates);
+    expect(cards.slice(1)).toEqual([
+      { templateId: 'riddle', label: 'Riddle', description: 'A word riddle with a single specific answer.', active: false },
+      { templateId: 'cipher', label: 'Cipher', description: 'A coded message the player must decode into plain text.', active: false },
+    ]);
+  });
+
+  it('marks the Custom card active when no template id is selected', () => {
+    const cards = puzzleTemplateCardOptions(templates, '');
+    expect(cards.find((c) => c.templateId === '').active).toBe(true);
+    expect(cards.every((c) => c.templateId === '' || !c.active)).toBe(true);
+  });
+
+  it('marks the matching template card active and Custom inactive', () => {
+    const cards = puzzleTemplateCardOptions(templates, 'cipher');
+    expect(cards.find((c) => c.templateId === '').active).toBe(false);
+    expect(cards.find((c) => c.templateId === 'cipher').active).toBe(true);
+    expect(cards.find((c) => c.templateId === 'riddle').active).toBe(false);
+  });
+
+  it('tolerates a missing templates list', () => {
+    expect(puzzleTemplateCardOptions(undefined)).toEqual([
+      { templateId: '', label: 'Custom (blank)', description: 'Start from a blank puzzle.', active: true },
+    ]);
   });
 });
 

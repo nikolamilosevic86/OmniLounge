@@ -33,7 +33,7 @@ import {
 import {
   escapeStatusLabel, formatCountdown, isLowTime, puzzleAttemptMessage, formatLeaderboardEntry, doorAttemptMessage,
   formatGlobalLeaderboardEntry, puzzleTemplateFormValues, formatPuzzleAnalytics, puzzleDifficultySignal,
-  validatePuzzleInput,
+  validatePuzzleInput, puzzleTemplateCardOptions,
 } from './escape-room.js';
 
 const BUBBLE_DURATION = 6000;
@@ -147,6 +147,7 @@ const state = {
   escapeInventory: [],
   puzzles: [],
   puzzleTemplates: [],
+  selectedPuzzleTemplateId: '',
   puzzleModalPuzzleId: null,
 };
 
@@ -366,7 +367,7 @@ const puzzleAddBtn = document.getElementById('puzzle-add-btn');
 const puzzleCancelBtn = document.getElementById('puzzle-cancel-btn');
 const puzzleErrorEl = document.getElementById('puzzle-error');
 const puzzleListEl = document.getElementById('puzzle-list');
-const puzzleTemplateSelect = document.getElementById('puzzle-template-select');
+const puzzleTemplateCardsEl = document.getElementById('puzzle-template-cards');
 const puzzleAnalyticsBtn = document.getElementById('puzzle-analytics-btn');
 const puzzleAnalyticsListEl = document.getElementById('puzzle-analytics-list');
 const escapeLeaderboardBtn = document.getElementById('escape-leaderboard-btn');
@@ -1532,21 +1533,25 @@ function initGame() {
     }, () => refreshEscapeStatus());
   });
 
-  puzzleTemplateSelect?.addEventListener('change', () => {
-    const template = state.puzzleTemplates.find((t) => t.templateId === puzzleTemplateSelect.value);
+  puzzleTemplateCardsEl?.addEventListener('click', (evt) => {
+    const card = evt.target.closest('button[data-template-id]');
+    if (!card) return;
+    state.selectedPuzzleTemplateId = card.getAttribute('data-template-id');
+    const template = state.puzzleTemplates.find((t) => t.templateId === state.selectedPuzzleTemplateId);
     const values = puzzleTemplateFormValues(template);
     if (puzzlePromptInput) puzzlePromptInput.value = values.prompt;
     if (puzzleHintsInput) puzzleHintsInput.value = values.hints;
     if (puzzleMatchModeSelect) puzzleMatchModeSelect.value = values.matchMode;
     // Only a placeholder: the creator always authors their own answer.
     if (puzzleAnswerInput) puzzleAnswerInput.placeholder = values.answerPlaceholder || 'a piano';
+    renderPuzzleTemplateCards();
   });
 
   puzzleAddBtn?.addEventListener('click', () => {
     const puzzleId = puzzleIdInput?.value?.trim();
     const prompt = puzzlePromptInput?.value?.trim();
     const answer = puzzleAnswerInput?.value?.trim();
-    const templateId = puzzleTemplateSelect?.value || undefined;
+    const templateId = state.selectedPuzzleTemplateId || undefined;
     const validation = validatePuzzleInput({ puzzleId, prompt, answer, templateId });
     if (!validation.valid) {
       showPuzzleFormError(validation.error);
@@ -1575,7 +1580,8 @@ function initGame() {
         if (puzzleAnswerInput) puzzleAnswerInput.value = '';
         if (puzzleHintsInput) puzzleHintsInput.value = '';
         if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
-        if (puzzleTemplateSelect) puzzleTemplateSelect.value = '';
+        state.selectedPuzzleTemplateId = '';
+        renderPuzzleTemplateCards();
       }
     };
     if (editingPuzzleId) {
@@ -3017,7 +3023,8 @@ function enterPuzzleEditMode(puzzle) {
   if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = puzzle.maxAttempts ?? '';
   if (puzzleRevealItemSelect) puzzleRevealItemSelect.value = puzzle.revealItemId || '';
   if (puzzleUnlockDoorSelect) puzzleUnlockDoorSelect.value = puzzle.unlockDoorId || '';
-  if (puzzleTemplateSelect) puzzleTemplateSelect.value = '';
+  state.selectedPuzzleTemplateId = '';
+  renderPuzzleTemplateCards();
   showPuzzleFormError('');
   if (puzzleAddBtn) puzzleAddBtn.textContent = 'Save Changes';
   puzzleCancelBtn?.classList.remove('hidden');
@@ -3033,6 +3040,8 @@ function exitPuzzleEditMode() {
   if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
   if (puzzleRevealItemSelect) puzzleRevealItemSelect.value = '';
   if (puzzleUnlockDoorSelect) puzzleUnlockDoorSelect.value = '';
+  state.selectedPuzzleTemplateId = '';
+  renderPuzzleTemplateCards();
   showPuzzleFormError('');
   if (puzzleAddBtn) puzzleAddBtn.textContent = 'Add Puzzle';
   puzzleCancelBtn?.classList.add('hidden');
@@ -3075,16 +3084,18 @@ function renderPuzzleAnalytics(stats) {
 function refreshPuzzleTemplates() {
   state.socket?.emit('room:puzzle:templates', {}, (templates) => {
     state.puzzleTemplates = templates || [];
-    renderPuzzleTemplateSelect();
+    renderPuzzleTemplateCards();
   });
 }
 
-function renderPuzzleTemplateSelect() {
-  if (!puzzleTemplateSelect) return;
-  puzzleTemplateSelect.innerHTML = ['<option value="">Custom (blank)</option>']
-    .concat(state.puzzleTemplates.map((t) =>
-      `<option value="${escapeHtml(t.templateId)}">${escapeHtml(t.label)}</option>`))
-    .join('');
+function renderPuzzleTemplateCards() {
+  if (!puzzleTemplateCardsEl) return;
+  const cards = puzzleTemplateCardOptions(state.puzzleTemplates, state.selectedPuzzleTemplateId);
+  puzzleTemplateCardsEl.innerHTML = cards.map((c) => `
+    <button type="button" class="puzzle-template-card${c.active ? ' active' : ''}" data-template-id="${escapeHtml(c.templateId)}" role="option" aria-selected="${c.active}">
+      <span class="puzzle-template-card__label">${escapeHtml(c.label)}</span>
+      <span class="puzzle-template-card__description">${escapeHtml(c.description)}</span>
+    </button>`).join('');
 }
 
 // Door/item "Configure" selects mirror renderBookShelfSelect: scoped to the

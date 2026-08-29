@@ -1152,6 +1152,54 @@ a:focus-visible,
   box-shadow: var(--md-elevation-1);
 }
 
+/* Puzzle template picker (design doc build_mode_ui_redesign_feature_design.md
+   §8.7 Gap 3): a horizontally-scrollable row of elevated cards replacing the
+   old bare <select>, so each template's description is visible instead of
+   discarded. */
+.puzzle-template-cards {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.puzzle-template-card {
+  flex: 0 0 auto;
+  width: 9.5rem;
+  border: 2px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-medium);
+  background: var(--md-surface, transparent);
+  box-shadow: var(--md-elevation-1);
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard),
+    box-shadow var(--md-duration-short) var(--md-easing-standard);
+}
+
+.puzzle-template-card:hover {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-2);
+}
+
+.puzzle-template-card.active {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-2);
+}
+
+.puzzle-template-card__label {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.puzzle-template-card__description {
+  display: block;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
 .builder-subheading {
   font-size: 0.68rem;
   font-weight: 600;
