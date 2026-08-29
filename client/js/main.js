@@ -29,6 +29,7 @@ import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from '
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement } from './focus-trap.js';
 import { loadExpandedAccordionRows, saveExpandedAccordionRows, toggleAccordionRow } from './builder-preferences.js';
 import { CATALOG_ENTRIES, CATALOG_FILTER_CHIPS, filterCatalogEntries, CATALOG_COLOR_DOT_HEXES } from './builder-catalog.js';
+import { isTileNearObjectBudget } from './builder-tile-budget.js';
 import {
   NPC_BUBBLE_DURATION_MS, applyNpcMove, formatTourStatus, normalizeWaypointLabel, tourButtonState,
 } from './npc-guide.js';
@@ -790,6 +791,12 @@ function initGame() {
   });
 
   catalogGridEl?.addEventListener('click', (evt) => {
+    if (catalogDragJustCompleted) {
+      // Suppress the synthetic click that follows a completed drag-placement
+      // (pointerup fires before click) so the object isn't placed twice.
+      catalogDragJustCompleted = false;
+      return;
+    }
     const card = evt.target.closest('button[data-object-type]');
     if (!card) return;
     const me = state.players.get(state.playerId);
@@ -803,6 +810,85 @@ function initGame() {
       y,
       editPermission: objectEditAnyoneInput?.checked ? 'anyone' : 'owner_only',
     });
+  });
+
+  // Pointer-based drag-to-place from a catalog card to the canvas (§7.2):
+  // shared groundwork with future on-canvas dragging (§8.2). A plain
+  // tap/click (no movement past CATALOG_DRAG_THRESHOLD) falls through to the
+  // click handler above unchanged -- this only engages once the pointer has
+  // actually moved, so mouse/touch users get drag-to-place while keyboard
+  // users keep the Enter-activated click path with no extra listeners.
+  const CATALOG_DRAG_THRESHOLD = 6;
+  let catalogDrag = null;
+  let catalogDragJustCompleted = false;
+
+  catalogGridEl?.addEventListener('pointerdown', (evt) => {
+    if (evt.button !== 0) return;
+    const card = evt.target.closest('button[data-object-type]');
+    if (!card) return;
+    catalogDrag = {
+      objectType: card.getAttribute('data-object-type'),
+      pointerId: evt.pointerId,
+      startX: evt.clientX,
+      startY: evt.clientY,
+      started: false,
+      ghostEl: null,
+    };
+  });
+
+  window.addEventListener('pointermove', (evt) => {
+    if (!catalogDrag || evt.pointerId !== catalogDrag.pointerId) return;
+    const dx = evt.clientX - catalogDrag.startX;
+    const dy = evt.clientY - catalogDrag.startY;
+    if (!catalogDrag.started) {
+      if (Math.hypot(dx, dy) < CATALOG_DRAG_THRESHOLD) return;
+      catalogDrag.started = true;
+      catalogDrag.ghostEl = createCatalogDragGhost(catalogDrag.objectType);
+      document.body.appendChild(catalogDrag.ghostEl);
+    }
+    positionCatalogDragGhost(catalogDrag.ghostEl, evt.clientX, evt.clientY);
+    updateCatalogDragGhostTint(catalogDrag.ghostEl, evt.clientX, evt.clientY);
+  });
+
+  window.addEventListener('pointerup', (evt) => {
+    if (!catalogDrag || evt.pointerId !== catalogDrag.pointerId) return;
+    const { objectType, started, ghostEl } = catalogDrag;
+    ghostEl?.remove();
+    catalogDrag = null;
+    if (!started) return; // plain tap/click, handled by the `click` listener above
+
+    // The subsequent synthetic `click` only fires on catalogGridEl if the
+    // pointerup target is still within it (down+up on the same element) --
+    // a drop over the canvas releases outside catalogGridEl entirely, so no
+    // `click` ever arrives there to consume this flag. Self-clear it on the
+    // next tick regardless, so a drag dropped on the canvas can never
+    // silently swallow some later, unrelated plain click on a card.
+    catalogDragJustCompleted = true;
+    setTimeout(() => { catalogDragJustCompleted = false; }, 0);
+
+    const rect = roomCanvas.getBoundingClientRect();
+    const overCanvas = evt.clientX >= rect.left && evt.clientX <= rect.right
+      && evt.clientY >= rect.top && evt.clientY <= rect.bottom;
+    if (!overCanvas) return; // dropped outside the canvas -- cancel, no event (§7.2)
+
+    const coords = canvasToRoomCoords(roomCanvas, evt.clientX, evt.clientY);
+    const { x, y } = snapPoint(coords, state.gridSnapEnabled);
+    state.socket?.emit('room:object:create', {
+      objectType,
+      x,
+      y,
+      editPermission: objectEditAnyoneInput?.checked ? 'anyone' : 'owner_only',
+    });
+  });
+
+  // A gesture can be interrupted (e.g. the browser takes over for a touch
+  // scroll) without ever firing `pointerup` -- without this, the ghost
+  // element would stay stuck on screen forever. Treat it the same as
+  // dropping outside the canvas: cancel, no event.
+  window.addEventListener('pointercancel', (evt) => {
+    if (!catalogDrag || evt.pointerId !== catalogDrag.pointerId) return;
+    catalogDrag.ghostEl?.remove();
+    catalogDrag = null;
   });
 
   roomStyleSwatchesEl?.addEventListener('click', (evt) => {
@@ -2768,6 +2854,34 @@ function renderCatalogGrid() {
     card.appendChild(dots);
     catalogGridEl.appendChild(card);
   });
+}
+
+// Placement-preview ghost for §7.2's pointer-based drag-to-place: a
+// 60%-opacity thumbnail (the same renderObjectThumbnail canvas sprite used
+// on the card itself) that follows the cursor via fixed positioning, plus an
+// amber tint while over the canvas if the current tile is at/near its
+// MAX_OBJECTS_PER_TILE budget -- never a red/green overlap-block tint, since
+// no such server rule exists (§7.2 correction).
+function createCatalogDragGhost(objectType) {
+  const ghostEl = document.createElement('div');
+  ghostEl.className = 'catalog-drag-ghost';
+  const thumb = renderObjectThumbnail({ objectType, color: undefined, size: 56 });
+  if (thumb) ghostEl.appendChild(thumb);
+  return ghostEl;
+}
+
+function positionCatalogDragGhost(ghostEl, clientX, clientY) {
+  if (!ghostEl) return;
+  ghostEl.style.left = `${clientX}px`;
+  ghostEl.style.top = `${clientY}px`;
+}
+
+function updateCatalogDragGhostTint(ghostEl, clientX, clientY) {
+  if (!ghostEl) return;
+  const rect = roomCanvas.getBoundingClientRect();
+  const overCanvas = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  const nearBudget = overCanvas && isTileNearObjectBudget(state.builderState.objects, state.currentTile);
+  ghostEl.classList.toggle('budget-warning', nearBudget);
 }
 
 function tileKey(tile) {

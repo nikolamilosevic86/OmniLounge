@@ -1297,6 +1297,23 @@ a:focus-visible,
   border: 1px solid var(--md-outline-variant);
 }
 
+/* Drag-to-place ghost (§7.2): follows the cursor via left/top, positioned
+   fixed so it isn't clipped by the scrollable catalog grid or sidebar. */
+.catalog-drag-ghost {
+  position: fixed;
+  z-index: 500;
+  opacity: 0.6;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  border-radius: var(--md-shape-sm);
+}
+
+.catalog-drag-ghost.budget-warning {
+  outline: 3px solid #e0a72e;
+  outline-offset: 2px;
+  border-radius: var(--md-shape-sm);
+}
+
 
 .room-style-swatches {
   display: grid;
