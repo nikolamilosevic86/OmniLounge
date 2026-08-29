@@ -1119,6 +1119,103 @@ a:focus-visible,
   margin: 0;
 }
 
+/* Room Builder panel tabs (design doc build_mode_ui_redesign_feature_design.md
+   §6.1): Furniture / Room & Doors / More, a real M3 tab strip (role="tab",
+   aria-selected) rather than styled buttons, so assistive tech announces tab
+   semantics. */
+.builder-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.builder-tab {
+  flex: 1;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.55rem 0.3rem;
+  cursor: pointer;
+  transition: color var(--md-duration-short) var(--md-easing-standard),
+    border-color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.builder-tab:hover {
+  color: var(--md-on-surface);
+}
+
+.builder-tab.active {
+  color: var(--md-primary);
+  border-bottom-color: var(--md-primary);
+}
+
+.builder-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.builder-tab-panel.hidden {
+  display: none;
+}
+
+/* "More" tab accordion (§6.1): Zones/Triggers/Escape Room/Room Admin/Versions
+   as independently expandable rows, collapsed by default. Expanded state
+   persists via builder-preferences.js (§17 Decision D6). */
+.accordion-row {
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.accordion-row:last-child {
+  border-bottom: none;
+}
+
+.accordion-row-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--md-surface-container-low);
+  border: none;
+  border-radius: var(--md-shape-sm);
+  padding: 0.6rem 0.7rem;
+  margin: 0.4rem 0;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.accordion-row-header:hover {
+  background: var(--hover-overlay);
+}
+
+.accordion-row-chevron {
+  font-size: 1.1rem;
+  transition: transform var(--md-duration-short) var(--md-easing-standard);
+}
+
+.accordion-row-header[aria-expanded="true"] .accordion-row-chevron {
+  transform: rotate(180deg);
+}
+
+.accordion-row-content {
+  padding-bottom: 0.75rem;
+}
+
+.accordion-row-content.hidden {
+  display: none;
+}
+
+
 .room-style-swatches {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

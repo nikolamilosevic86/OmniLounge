@@ -27,6 +27,7 @@ import {
 } from './chat.js';
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement } from './focus-trap.js';
+import { loadExpandedAccordionRows, saveExpandedAccordionRows, toggleAccordionRow } from './builder-preferences.js';
 import {
   NPC_BUBBLE_DURATION_MS, applyNpcMove, formatTourStatus, normalizeWaypointLabel, tourButtonState,
 } from './npc-guide.js';
@@ -711,6 +712,42 @@ function initGame() {
       const direction = btn.getAttribute('data-dir');
       if (!direction) return;
       state.socket?.emit('room:tile:add', { direction });
+    });
+  });
+
+  // Room Builder panel tabs (design doc build_mode_ui_redesign_feature_design.md
+  // §6.1): Furniture / Room & Doors / More.
+  const builderTabButtons = buildControls?.querySelectorAll('.builder-tab') || [];
+  builderTabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-tab');
+      builderTabButtons.forEach((b) => {
+        const active = b === btn;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', String(active));
+      });
+      buildControls?.querySelectorAll('.builder-tab-panel').forEach((panel) => {
+        panel.classList.toggle('hidden', panel.getAttribute('data-tab-panel') !== target);
+      });
+    });
+  });
+
+  // "More" tab accordion (§6.1), expanded state persisted via
+  // builder-preferences.js (§17 Decision D6).
+  let expandedAccordionRows = loadExpandedAccordionRows(window.localStorage);
+  buildControls?.querySelectorAll('.accordion-row-header').forEach((header) => {
+    const rowId = header.closest('.accordion-row')?.getAttribute('data-accordion-row');
+    const content = document.getElementById(header.getAttribute('aria-controls'));
+    const applyExpanded = (expanded) => {
+      header.setAttribute('aria-expanded', String(expanded));
+      content?.classList.toggle('hidden', !expanded);
+    };
+    applyExpanded(rowId ? expandedAccordionRows.includes(rowId) : false);
+    header.addEventListener('click', () => {
+      if (!rowId) return;
+      expandedAccordionRows = toggleAccordionRow(expandedAccordionRows, rowId);
+      applyExpanded(expandedAccordionRows.includes(rowId));
+      saveExpandedAccordionRows(window.localStorage, expandedAccordionRows);
     });
   });
 

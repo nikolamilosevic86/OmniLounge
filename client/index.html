@@ -164,40 +164,13 @@
             <h3>Room Builder</h3>
           </div>
 
-          <section class="builder-section">
-            <h4>Tiles</h4>
-            <div class="build-controls-grid">
-              <button type="button" data-dir="top">Add Up</button>
-              <button type="button" data-dir="left">Add Left</button>
-              <button type="button" data-dir="right">Add Right</button>
-              <button type="button" data-dir="bottom">Add Down</button>
-            </div>
-            <div class="build-controls-grid">
-              <button type="button" id="tile-clone-btn">Clone → Right</button>
-              <button type="button" id="tile-delete-btn">Delete Tile</button>
-            </div>
-            <label class="builder-field">
-              <span>Label</span>
-              <input type="text" id="tile-label-input" maxlength="80" placeholder="e.g. Library Wing" />
-            </label>
-            <label class="builder-field">
-              <span>Purpose</span>
-              <select id="tile-purpose-select">
-                <option value="">—</option>
-                <option value="intro">Intro</option>
-                <option value="lesson">Lesson</option>
-                <option value="quiz">Quiz</option>
-                <option value="lounge">Lounge</option>
-              </select>
-            </label>
-            <button type="button" id="tile-configure-btn" class="builder-primary-btn">Save Tile</button>
-          </section>
+          <div class="builder-tabs" role="tablist" aria-label="Room builder sections">
+            <button type="button" class="builder-tab active" id="build-tab-furniture-btn" role="tab" aria-selected="true" aria-controls="build-tab-furniture" data-tab="furniture">Furniture</button>
+            <button type="button" class="builder-tab" id="build-tab-room-doors-btn" role="tab" aria-selected="false" aria-controls="build-tab-room-doors" data-tab="room-doors">Room &amp; Doors</button>
+            <button type="button" class="builder-tab" id="build-tab-more-btn" role="tab" aria-selected="false" aria-controls="build-tab-more" data-tab="more">More</button>
+          </div>
 
-          <section class="builder-section hidden" id="room-style-section">
-            <h4>Room Style</h4>
-            <div class="room-style-swatches" id="room-style-swatches"></div>
-          </section>
-
+          <div class="builder-tab-panel" id="build-tab-furniture" role="tabpanel" aria-labelledby="build-tab-furniture-btn" data-tab-panel="furniture">
           <section class="builder-section">
             <h4>Objects</h4>
             <label class="builder-field">
@@ -257,9 +230,53 @@
             <button type="button" id="object-add-btn" class="builder-primary-btn">Add Object Here</button>
             <ul id="object-list" class="builder-object-list"></ul>
           </section>
+          </div>
 
+          <div class="builder-tab-panel hidden" id="build-tab-room-doors" role="tabpanel" aria-labelledby="build-tab-room-doors-btn" data-tab-panel="room-doors">
           <section class="builder-section">
-            <h4>Zones</h4>
+            <h4>Tiles</h4>
+            <div class="build-controls-grid">
+              <button type="button" data-dir="top">Add Up</button>
+              <button type="button" data-dir="left">Add Left</button>
+              <button type="button" data-dir="right">Add Right</button>
+              <button type="button" data-dir="bottom">Add Down</button>
+            </div>
+            <div class="build-controls-grid">
+              <button type="button" id="tile-clone-btn">Clone → Right</button>
+              <button type="button" id="tile-delete-btn">Delete Tile</button>
+            </div>
+            <label class="builder-field">
+              <span>Label</span>
+              <input type="text" id="tile-label-input" maxlength="80" placeholder="e.g. Library Wing" />
+            </label>
+            <label class="builder-field">
+              <span>Purpose</span>
+              <select id="tile-purpose-select">
+                <option value="">—</option>
+                <option value="intro">Intro</option>
+                <option value="lesson">Lesson</option>
+                <option value="quiz">Quiz</option>
+                <option value="lounge">Lounge</option>
+              </select>
+            </label>
+            <button type="button" id="tile-configure-btn" class="builder-primary-btn">Save Tile</button>
+          </section>
+
+          <section class="builder-section hidden" id="room-style-section">
+            <h4>Room Style</h4>
+            <div class="room-style-swatches" id="room-style-swatches"></div>
+          </section>
+          </div>
+
+          <div class="builder-tab-panel hidden" id="build-tab-more" role="tabpanel" aria-labelledby="build-tab-more-btn" data-tab-panel="more">
+
+          <div class="accordion-row" data-accordion-row="zones">
+            <button type="button" class="accordion-row-header" aria-expanded="false" aria-controls="zones-accordion-content">
+              <span>Zones</span>
+              <span class="material-symbols-outlined accordion-row-chevron" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-row-content hidden" id="zones-accordion-content">
+          <section class="builder-section">
             <label class="builder-field">
               <span>Type</span>
               <select id="zone-type-select">
@@ -276,9 +293,16 @@
             <button type="button" id="zone-add-btn" class="builder-primary-btn">Add Zone Here</button>
             <ul id="zone-list" class="builder-object-list"></ul>
           </section>
+            </div>
+          </div>
 
+          <div class="accordion-row" data-accordion-row="triggers">
+            <button type="button" class="accordion-row-header" aria-expanded="false" aria-controls="triggers-accordion-content">
+              <span>Triggers</span>
+              <span class="material-symbols-outlined accordion-row-chevron" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-row-content hidden" id="triggers-accordion-content">
           <section class="builder-section">
-            <h4>Triggers</h4>
             <label class="builder-field">
               <span>Zone</span>
               <select id="trigger-zone-select"></select>
@@ -294,9 +318,16 @@
             <button type="button" id="trigger-add-btn" class="builder-primary-btn">Add Trigger</button>
             <ul id="trigger-list" class="builder-object-list"></ul>
           </section>
+            </div>
+          </div>
 
-          <section class="builder-section" id="escape-room-section">
-            <h4>Escape Room</h4>
+          <div class="accordion-row" id="escape-room-section" data-accordion-row="escape-room">
+            <button type="button" class="accordion-row-header" aria-expanded="false" aria-controls="escape-room-accordion-content">
+              <span>Escape Room</span>
+              <span class="material-symbols-outlined accordion-row-chevron" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-row-content hidden" id="escape-room-accordion-content">
+          <section class="builder-section">
             <label class="builder-field builder-checkbox-field">
               <input type="checkbox" id="escape-enabled-input" />
               <span>Enable escape mode for this room</span>
@@ -374,9 +405,16 @@
             </div>
             <ul id="escape-leaderboard-list" class="builder-object-list"></ul>
           </section>
+            </div>
+          </div>
 
-          <section class="builder-section" id="moderation-section">
-            <h4>Room Admin</h4>
+          <div class="accordion-row" id="moderation-section" data-accordion-row="room-admin">
+            <button type="button" class="accordion-row-header" aria-expanded="false" aria-controls="room-admin-accordion-content">
+              <span>Room Admin</span>
+              <span class="material-symbols-outlined accordion-row-chevron" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-row-content hidden" id="room-admin-accordion-content">
+          <section class="builder-section">
             <label class="builder-field builder-checkbox-field" id="external-links-field">
               <input type="checkbox" id="external-links-input" checked />
               <span>Allow external links</span>
@@ -387,16 +425,28 @@
             <button type="button" id="audit-log-btn" class="builder-primary-btn">View Audit Log</button>
             <ul id="audit-log-list" class="builder-object-list hidden"></ul>
           </section>
+            </div>
+          </div>
 
+          <div class="accordion-row" data-accordion-row="versions">
+            <button type="button" class="accordion-row-header" aria-expanded="false" aria-controls="versions-accordion-content">
+              <span>Versions</span>
+              <span class="material-symbols-outlined accordion-row-chevron" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-row-content hidden" id="versions-accordion-content">
           <section class="builder-section">
-            <h4>Versions</h4>
             <div class="build-controls-grid">
               <button type="button" id="version-save-btn">Save Draft</button>
               <button type="button" id="version-publish-btn">Publish Latest</button>
             </div>
             <ul id="version-list" class="builder-version-list"></ul>
           </section>
+            </div>
+          </div>
+
+          </div>
         </aside>
+
 
         <aside id="configure-controls" class="builder-panel hidden" aria-label="Configure object">
           <div class="builder-panel-header">
