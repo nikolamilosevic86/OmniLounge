@@ -1761,7 +1761,41 @@ class TestEscapeTeamMode:
         result = self.builder.interact_with_object("key-1", "pick_up", requester_id="p2", now_ms=1000)
         assert result["payload"]["granted"] is True
 
-    def test_team_mode_pools_door_open_state_across_visitors(self):
+    def test_team_mode_hidden_item_disappears_for_whole_team_once_any_member_picks_it_up(self):
+        # Regression for the pooled-inventory + pooled-visibility interaction:
+        # once one team member grabs a singleUse (default) hidden_item, it
+        # must vanish from every OTHER team member's view too, and show up
+        # in every member's pooled inventory listing, since the item now
+        # belongs to the shared team, not just the one who grabbed it.
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", reveal_item_id="key-1")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=2)
+
+        assert "key-1" not in {o["objectId"] for o in self.builder.list_objects(requester_id="p2")}
+        assert self.builder.list_inventory("p2") == ["key-1"]
+
+    def test_team_mode_pools_puzzle_hint_and_attempt_lockout_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.add_puzzle(
+            "riddle-1", "2+2?", "4", hints=["It's even.", "It's four."], max_attempts=1,
+        )
+        self.builder.request_puzzle_hint("riddle-1", requester_id="p1", now_ms=0)
+
+        # p2 never personally asked for a hint themselves, but the hint
+        # counter is pooled, so their request continues the team's tally
+        # (the team's 2nd hint) instead of starting back at the team's 1st.
+        result = self.builder.request_puzzle_hint("riddle-1", requester_id="p2", now_ms=1)
+        assert result["hintsUsed"] == 2
+
+        # A wrong guess from p1 uses up the team's shared single attempt...
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="wrong", now_ms=2)
+        # ...so p2 is locked out too, since attempts are pooled as well.
+        locked = self.builder.attempt_solve_puzzle("riddle-1", requester_id="p2", guess="4", now_ms=3)
+        assert locked["locked"] is True
+
+    def test_team_mode_door_open_state_across_visitors(self):
         self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
         self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
         self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
