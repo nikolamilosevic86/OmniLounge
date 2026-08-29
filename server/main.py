@@ -907,13 +907,38 @@ async def room_tile_add(sid, data):
     )
 
 
+@sio.on("room:style:set")
+async def room_style_set(sid, data):
+    """Change the calling room's ambient style (design doc
+    feature_designs/build_mode_ui_redesign_feature_design.md §11). Room-host
+    only. Per §17 Decision D1 there is no dedicated broadcast event for
+    this -- the new style simply rides the existing `room:builder:state`
+    broadcast every other builder mutation already triggers."""
+    room_id = rooms.get_player_room_id(sid)
+    if not room_id:
+        await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    data = data or {}
+    try:
+        rooms.set_room_style(
+            room_id, data.get("styleId"),
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
+        await sio.emit("error", {"message": str(exc)}, room=sid)
+        return
+
+    await broadcast_builder_state(room_id)
+
+
 def builder_state_payload(
     room_id: str, tiles: set[tuple[int, int]] | None = None,
     requester_id: str | None = None, is_room_host: bool = False,
 ) -> dict:
     builder = rooms.get_builder(room_id)
     if not builder:
-        return {"tiles": [], "objects": [], "zones": [], "triggers": []}
+        return {"tiles": [], "objects": [], "zones": [], "triggers": [], "roomStyle": rooms.get_room_style(room_id)}
     objects = (
         builder.list_objects_for_tiles(tiles, requester_id=requester_id, is_room_host=is_room_host)
         if tiles is not None
@@ -924,6 +949,7 @@ def builder_state_payload(
         "objects": objects,
         "zones": builder.list_zones(),
         "triggers": builder.list_triggers(),
+        "roomStyle": rooms.get_room_style(room_id),
     }
 
 

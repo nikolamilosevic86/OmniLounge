@@ -22,6 +22,8 @@ let _canvas = null;
 let _builderObjects = [];
 let _isLobby = true;
 let _roomStyleId = DEFAULT_ROOM_STYLE;
+let _neighbors = { top: false, bottom: false, left: false, right: false };
+let _selectedObjectId = null;
 
 /** Draws the room. Pass `{ isLobby: false, roomStyle }` for custom/user-built rooms so they
  * start as an empty shell (walls/floor only, colored per the chosen style) instead of the
@@ -47,6 +49,27 @@ export function setRoomStyle(roomStyle) {
 /** Sets the builder-placed objects (for the player's current tile) to render on the canvas. */
 export function setBuilderObjects(objects) {
   _builderObjects = Array.isArray(objects) ? objects : [];
+}
+
+/** Updates which of the current tile's 4 edges have a neighboring tile (design doc
+ * feature_designs/build_mode_ui_redesign_feature_design.md §10.2/§10.3), driving whether
+ * `drawWall`/`drawEdgeJambs` render a walkable doorway or a capped rail on each edge.
+ * Pass the result of `neighborTileFlags(tiles, currentTile)` from world-map.js. */
+export function setTileNeighbors(neighbors) {
+  _neighbors = {
+    top: Boolean(neighbors?.top),
+    bottom: Boolean(neighbors?.bottom),
+    left: Boolean(neighbors?.left),
+    right: Boolean(neighbors?.right),
+  };
+}
+
+/** Sets which builder object (by id) is currently selected in Build Mode (design doc
+ * feature_designs/build_mode_ui_redesign_feature_design.md §8.1/§13), driving the
+ * on-canvas selection highlight `drawBuilderObjects` draws around it. Pass `null` to
+ * clear the selection (e.g. on Escape or after a delete). */
+export function setSelectedBuilderObjectId(objectId) {
+  _selectedObjectId = objectId || null;
 }
 
 /** Determines which edge a player crossed when moving from `fromTile` to
@@ -77,6 +100,7 @@ function _animLoop() {
   drawBackdrop(ctx);
   drawWall(ctx);
   drawFloor(ctx);
+  drawEdgeJambs(ctx);
   if (_isLobby) drawFurniture(ctx);
   drawBuilderObjects(ctx);
   drawAmbientLight(ctx);
@@ -123,6 +147,127 @@ function drawWall(ctx) {
   ctx.fillRect(0, WALL_HEIGHT - 10, ROOM_WIDTH, 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.fillRect(0, WALL_HEIGHT - 2, ROOM_WIDTH, 4);
+
+  if (_neighbors.top) drawTopDoorway(ctx, style);
+}
+
+/** Cuts a walkable doorway opening into the top wall (design doc §10.3), used only when a
+ * neighboring tile exists to the north. Replaces a section of the flat wall fill with the
+ * backdrop color, a door-frame outline, and a pair of door-leaf graphics drawn ajar, all in
+ * the room's current style colors -- purely decorative, never affects tile-transition collision. */
+function drawTopDoorway(ctx, style) {
+  const doorW = 130;
+  const doorH = WALL_HEIGHT * 0.82;
+  const doorX = ROOM_WIDTH / 2 - doorW / 2;
+  const doorY = WALL_HEIGHT - doorH;
+
+  // Opening: replaces the wall fill with the backdrop color so it reads as
+  // a hole through to the next tile rather than a painted decal.
+  ctx.fillStyle = style.backdropBottom;
+  ctx.fillRect(doorX, doorY, doorW, doorH);
+
+  // Frame outline.
+  ctx.strokeStyle = shadeColor(style.wallBottom, -30);
+  ctx.lineWidth = 6;
+  ctx.strokeRect(doorX, doorY, doorW, doorH);
+
+  // A pair of door leaves, hinged at the outer frame edges and drawn
+  // swung open at an angle ("ajar") rather than flush across the opening.
+  const leafW = doorW / 2 - 4;
+  const leafH = doorH - 6;
+  const swingAngle = 0.38; // radians, ~22°
+
+  ctx.save();
+  ctx.translate(doorX + 3, doorY + 3);
+  ctx.rotate(swingAngle);
+  ctx.fillStyle = style.wallBottom;
+  ctx.fillRect(0, 0, leafW, leafH);
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(2, 2, leafW - 4, 4);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(doorX + doorW - 3, doorY + 3);
+  ctx.rotate(-swingAngle);
+  ctx.fillStyle = style.wallBottom;
+  ctx.fillRect(-leafW, 0, leafW, leafH);
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(-leafW + 2, 2, leafW - 4, 4);
+  ctx.restore();
+}
+
+/** Left/right/bottom edge "jambs" (design doc §10.3). These three edges have no wall at
+ * all today, so this adds short partial trim framing each edge: where a neighbor tile
+ * exists, the gap gets a floor threshold strip (walk-through signal); where it doesn't,
+ * the gap closes into a short skirting-style rail stub (dead-end signal). Purely
+ * decorative, never affects tile-transition collision. */
+function drawEdgeJambs(ctx) {
+  const style = _activeStyle();
+  const gap = 130;
+  const jambDepth = 14;
+  const jambStub = 40;
+
+  // Bottom edge: horizontal, gap centered on the room's width.
+  {
+    const x0 = ROOM_WIDTH / 2 - gap / 2;
+    const x1 = ROOM_WIDTH / 2 + gap / 2;
+    drawJambPost(ctx, x0 - jambDepth, ROOM_HEIGHT - jambStub, jambDepth, jambStub, style);
+    drawJambPost(ctx, x1, ROOM_HEIGHT - jambStub, jambDepth, jambStub, style);
+    if (_neighbors.bottom) {
+      ctx.fillStyle = style.floorDark;
+      ctx.fillRect(x0, ROOM_HEIGHT - jambDepth, gap, jambDepth);
+    } else {
+      drawSkirtingRail(ctx, x0, ROOM_HEIGHT - 10, gap, 'horizontal', style);
+    }
+  }
+
+  // Left/right edges: vertical, gap centered on the floor's vertical span.
+  const floorCenterY = WALL_HEIGHT + (ROOM_HEIGHT - WALL_HEIGHT) / 2;
+  const y0 = floorCenterY - gap / 2;
+  const y1 = floorCenterY + gap / 2;
+
+  drawJambPost(ctx, 0, y0 - jambDepth, jambStub, jambDepth, style);
+  drawJambPost(ctx, 0, y1, jambStub, jambDepth, style);
+  if (_neighbors.left) {
+    ctx.fillStyle = style.floorDark;
+    ctx.fillRect(0, y0, jambDepth, gap);
+  } else {
+    drawSkirtingRail(ctx, 4, y0, gap, 'vertical', style);
+  }
+
+  drawJambPost(ctx, ROOM_WIDTH - jambStub, y0 - jambDepth, jambStub, jambDepth, style);
+  drawJambPost(ctx, ROOM_WIDTH - jambStub, y1, jambStub, jambDepth, style);
+  if (_neighbors.right) {
+    ctx.fillStyle = style.floorDark;
+    ctx.fillRect(ROOM_WIDTH - jambDepth, y0, jambDepth, gap);
+  } else {
+    drawSkirtingRail(ctx, ROOM_WIDTH - 4 - gap, y0, gap, 'vertical', style);
+  }
+}
+
+/** A short solid wall-trim stub framing one side of an edge opening. */
+function drawJambPost(ctx, x, y, w, h, style) {
+  ctx.fillStyle = style.wallBottom;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(x, y, w, 2);
+}
+
+/** A closed-edge rail/skirting stub (dead-end signal), echoing the existing top-wall
+ * skirting-board treatment: dark base, lit top edge, dark shadow line. */
+function drawSkirtingRail(ctx, x, y, length, orientation, style) {
+  const thickness = 10;
+  const w = orientation === 'horizontal' ? length : thickness;
+  const h = orientation === 'horizontal' ? thickness : length;
+
+  ctx.fillStyle = shadeColor(style.wallBottom, -28);
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  if (orientation === 'horizontal') ctx.fillRect(x, y, w, 1.5);
+  else ctx.fillRect(x, y, 1.5, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  if (orientation === 'horizontal') ctx.fillRect(x, y + h - 2, w, 2);
+  else ctx.fillRect(x + w - 2, y, 2, h);
 }
 
 /** Panelled lower wall (wainscoting) with a dado rail. Breaks up the flat
@@ -785,6 +930,20 @@ function drawBuilderObjects(ctx) {
 
     drawFurnitureSprite(ctx, obj);
 
+    if (obj.objectId === _selectedObjectId) {
+      // Selection highlight (design doc §8.1/§13): a bright, theme-agnostic
+      // dashed outline slightly outset from the object's bounds, so it reads
+      // clearly against any room style's wall/floor colors.
+      ctx.save();
+      ctx.strokeStyle = 'rgba(70, 190, 255, 0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.roundRect(-obj.width / 2 - 4, -obj.height / 2 - 4, obj.width + 8, obj.height + 8, 8);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (obj.isLocked) {
       // Frosted tint + dashed outline reads as "locked" without hiding the
       // sprite underneath the way an opaque black overlay did.
@@ -807,8 +966,13 @@ function drawBuilderObjects(ctx) {
   }
 }
 
-/** Draws a builder object as a stylized furniture sprite matching its type, in a front-elevation style consistent with the room's decorative furniture. */
-function drawFurnitureSprite(ctx, obj) {
+/** Draws a builder object as a stylized furniture sprite matching its type, in a front-elevation
+ * style consistent with the room's decorative furniture. Exported (design doc
+ * feature_designs/build_mode_ui_redesign_feature_design.md section 9/16 Phase 1) so it can be reused
+ * to render offscreen catalog-card/room-style thumbnails, not just the live room -- it already
+ * only needs `{ objectType, width, height, color }` on `obj` and an arbitrary target `ctx`, with
+ * no dependency on the live room's canvas size or the module-level `_builderObjects` list. */
+export function drawFurnitureSprite(ctx, obj) {
   const w = obj.width;
   const h = obj.height;
   const color = resolveObjectColor(obj.color);
@@ -843,6 +1007,27 @@ function drawFurnitureSprite(ctx, obj) {
       drawGenericSprite(ctx, w, h, obj.objectType, color);
       break;
   }
+}
+
+/** Renders a single catalog/room-object type as a small square thumbnail on an offscreen
+ * canvas (design doc section 9), for use in catalog cards without duplicating any drawing code --
+ * it's the same `drawFurnitureSprite` the live room uses, just aimed at a fresh canvas sized
+ * `size`x`size` instead of the room canvas. Returns `null` in non-DOM environments (e.g. this
+ * module's vitest suite, which runs under Node) since there's no `document` to create a canvas
+ * with. */
+export function renderObjectThumbnail({ objectType, color, width = 72, height = 72, size = 64 }) {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const scale = Math.min(size / width, size / height) * 0.86;
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.scale(scale, scale);
+  drawFurnitureSprite(ctx, { objectType, color, width, height });
+  ctx.restore();
+  return canvas;
 }
 
 /** Pure geometry for the table sprite's tabletop and legs, exported so the

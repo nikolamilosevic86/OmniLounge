@@ -133,6 +133,11 @@
             <div class="hud-pill build-mode-pill">
               <button id="build-mode-toggle" type="button" aria-pressed="false">Build Mode: Off</button>
             </div>
+            <div class="hud-pill grid-snap-pill hidden" id="grid-snap-pill">
+              <button id="grid-snap-toggle" type="button" aria-pressed="true" title="Toggle grid snapping" aria-label="Toggle grid snapping">
+                <span class="material-symbols-outlined" aria-hidden="true">grid_on</span>
+              </button>
+            </div>
             <div class="hud-pill minimap-pill">
               <div id="mini-map" class="mini-map"></div>
             </div>
@@ -186,6 +191,11 @@
               </select>
             </label>
             <button type="button" id="tile-configure-btn" class="builder-primary-btn">Save Tile</button>
+          </section>
+
+          <section class="builder-section hidden" id="room-style-section">
+            <h4>Room Style</h4>
+            <div class="room-style-swatches" id="room-style-swatches"></div>
           </section>
 
           <section class="builder-section">

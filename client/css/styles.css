@@ -969,6 +969,25 @@ a:focus-visible,
   border-color: transparent;
 }
 
+#grid-snap-toggle {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--md-shape-full);
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+#grid-snap-toggle .material-symbols-outlined {
+  font-size: 1.05rem;
+}
+
+#grid-snap-toggle[aria-pressed="true"] {
+  color: var(--md-primary);
+}
+
 #room-switch-btn {
   border: none;
   background: transparent;
@@ -1098,6 +1117,39 @@ a:focus-visible,
   text-transform: uppercase;
   color: var(--text-muted);
   margin: 0;
+}
+
+.room-style-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.room-style-swatch {
+  border: 2px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-medium);
+  height: 3.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+  padding: 0.3rem;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.room-style-swatch span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+}
+
+.room-style-swatch:hover {
+  border-color: var(--md-primary);
+}
+
+.room-style-swatch.active {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-1);
 }
 
 .builder-subheading {

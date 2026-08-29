@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTableLayout, tileTransitionDirection } from '../client/js/room-renderer.js';
+import { computeTableLayout, tileTransitionDirection, renderObjectThumbnail } from '../client/js/room-renderer.js';
 
 describe('computeTableLayout', () => {
   it('positions the legs flush against the underside of the tabletop with no gap', () => {
@@ -54,5 +54,11 @@ describe('tileTransitionDirection', () => {
   it('returns null when either tile is missing', () => {
     expect(tileTransitionDirection(null, { x: 0, y: 0 })).toBeNull();
     expect(tileTransitionDirection({ x: 0, y: 0 }, undefined)).toBeNull();
+  });
+});
+
+describe('renderObjectThumbnail (design doc build_mode_ui_redesign_feature_design.md section 9)', () => {
+  it('returns null outside a DOM environment (no document to create a canvas with)', () => {
+    expect(renderObjectThumbnail({ objectType: 'chair', color: 'navy' })).toBeNull();
   });
 });

@@ -1,15 +1,17 @@
 import { io } from 'socket.io-client';
 import { AVATAR_OPTIONS, renderAvatarSVG } from './avatar-renderer.js';
-import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, tileTransitionDirection } from './room-renderer.js';
+import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, setTileNeighbors, setSelectedBuilderObjectId, tileTransitionDirection } from './room-renderer.js';
 import { ROOM_STYLES, DEFAULT_ROOM_STYLE } from './room-styles.js';
 import { advanceWalkPhase } from './animation.js';
 import { getObjectAtPoint } from './room-objects.js';
-import { getBuilderObjectAtPoint, buildInteractionActions, objectTypeIcon } from './builder-objects.js';
+import { getBuilderObjectAtPoint, buildInteractionActions, objectTypeIcon, cycleSelectedObjectId } from './builder-objects.js';
+import { captureUndoableAction, buildUndoEmission } from './builder-undo.js';
+import { snapPoint } from './builder-grid-snap.js';
 import { showRadialMenu, dismissRadialMenu, hasActiveMenu } from './radial-menu.js';
 import { initCombat, destroyCombat, isBlocking } from './combat-ui.js';
 import { ATTACK_DURATIONS, computeAttackPhase, getPunchAngles, getKickAngles, getBlockAngles } from './attack-anim.js';
 import { normalizeRooms, buildRoomMetaLine, canJoinRoom, normalizeRoomFilters } from './room-discovery.js';
-import { buildMiniMapCells, normalizeTileList } from './world-map.js';
+import { buildMiniMapCells, normalizeTileList, neighborTileFlags } from './world-map.js';
 import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary } from './reader.js';
 import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem } from './media.js';
 import {
@@ -97,6 +99,9 @@ const state = {
   buildMode: false,
   builderState: { tiles: [], objects: [], zones: [], triggers: [] },
   builderVersions: [],
+  selectedBuilderObjectId: null,
+  lastBuilderAction: null,
+  gridSnapEnabled: true,
   builderBooks: {},       // objectId → books[]
   readerModalObjectId: null,
   readerCurrentBook: null,
@@ -174,6 +179,10 @@ const currentTileLabel = document.getElementById('current-tile-label');
 const miniMapEl = document.getElementById('mini-map');
 const buildModeToggle = document.getElementById('build-mode-toggle');
 const buildControls = document.getElementById('build-controls');
+const gridSnapPill = document.getElementById('grid-snap-pill');
+const gridSnapToggle = document.getElementById('grid-snap-toggle');
+const roomStyleSection = document.getElementById('room-style-section');
+const roomStyleSwatchesEl = document.getElementById('room-style-swatches');
 const configureControls = document.getElementById('configure-controls');
 const configureBookshelfSection = document.getElementById('configure-bookshelf-section');
 const configureTvSection = document.getElementById('configure-tv-section');
@@ -503,8 +512,11 @@ function initGame() {
     // of moving the player or opening the normal interaction menu.
     if (state.buildMode) {
       const configTarget = getBuilderObjectAtPoint(currentTileBuilderObjects(), coords.x, coords.y);
-      if (configTarget && selectBuilderObjectForConfiguration(configTarget)) {
-        return;
+      if (configTarget) {
+        selectBuilderObject(configTarget.objectId);
+        if (selectBuilderObjectForConfiguration(configTarget)) {
+          return;
+        }
       }
     }
 
@@ -548,7 +560,46 @@ function initGame() {
 
   // Escape dismisses the menu
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') dismissRadialMenu();
+    if (e.key === 'Escape') {
+      dismissRadialMenu();
+      if (state.buildMode) clearBuilderObjectSelection();
+    }
+  });
+
+  // Build Mode keyboard-only selection/undo (design doc
+  // feature_designs/build_mode_ui_redesign_feature_design.md §8.6/§13).
+  // Tab/Shift+Tab cycles the selected builder object on the current tile;
+  // Delete/Backspace removes the selected object (capturing its undo
+  // snapshot first); Ctrl+Z/⌘Z reverts the single most recent mutation.
+  window.addEventListener('keydown', (e) => {
+    if (!state.buildMode || isTypingContext()) return;
+
+    if (e.key === 'Tab') {
+      const objects = currentTileBuilderObjects();
+      if (!objects.length) return;
+      e.preventDefault();
+      selectBuilderObject(cycleSelectedObjectId(objects, state.selectedBuilderObjectId, e.shiftKey ? -1 : 1));
+      return;
+    }
+
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedBuilderObjectId) {
+      const obj = state.builderState.objects.find((o) => o.objectId === state.selectedBuilderObjectId);
+      if (!obj) return;
+      e.preventDefault();
+      state.lastBuilderAction = captureUndoableAction('delete', obj);
+      state.socket?.emit('room:object:delete', { objectId: obj.objectId });
+      clearBuilderObjectSelection();
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const emission = buildUndoEmission(state.lastBuilderAction);
+      if (!emission) return;
+      e.preventDefault();
+      state.socket?.emit(emission.event, emission.payload);
+      state.lastBuilderAction = null;
+      addSystemMessage('Undid last build action.');
+    }
   });
 
   document.getElementById('mode-public').addEventListener('click', () => setChatMode('public'));
@@ -648,8 +699,10 @@ function initGame() {
 
   objectAddBtn?.addEventListener('click', () => {
     const me = state.players.get(state.playerId);
-    const x = me?.position?.x ?? 400;
-    const y = me?.position?.y ?? 300;
+    const { x, y } = snapPoint(
+      { x: me?.position?.x ?? 400, y: me?.position?.y ?? 300 },
+      state.gridSnapEnabled,
+    );
     state.socket?.emit('room:object:create', {
       objectType: objectTypeSelect?.value || 'table',
       x,
@@ -663,6 +716,18 @@ function initGame() {
 
   objectTypeSelect?.addEventListener('change', updateObjectSizeFieldVisibility);
   updateObjectSizeFieldVisibility();
+
+  roomStyleSwatchesEl?.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('button[data-style-id]');
+    if (!btn) return;
+    state.socket?.emit('room:style:set', { styleId: btn.getAttribute('data-style-id') });
+  });
+
+  gridSnapToggle?.addEventListener('click', () => {
+    state.gridSnapEnabled = !state.gridSnapEnabled;
+    updateGridSnapUi();
+  });
+  updateGridSnapUi();
 
   zoneAddBtn?.addEventListener('click', () => {
     state.socket?.emit('room:zone:create', {
@@ -779,6 +844,8 @@ function initGame() {
     } else if (action === 'duplicate') {
       state.socket?.emit('room:object:duplicate', { objectId });
     } else if (action === 'delete') {
+      const obj = state.builderState.objects.find((o) => o.objectId === objectId);
+      if (obj) state.lastBuilderAction = captureUndoableAction('delete', obj);
       state.socket?.emit('room:object:delete', { objectId });
     } else if (action === 'front' || action === 'back') {
       state.socket?.emit('room:object:layer', { objectId, action });
@@ -801,17 +868,21 @@ function initGame() {
     }
     const value = Number(input.value);
     if (Number.isNaN(value)) return;
+    const priorObj = state.builderState.objects.find((o) => o.objectId === objectId);
     if (field === 'x' || field === 'y') {
       const other = row.querySelector(`input[data-field="${field === 'x' ? 'y' : 'x'}"]`);
       const x = field === 'x' ? value : Number(other?.value ?? 0);
       const y = field === 'y' ? value : Number(other?.value ?? 0);
+      if (priorObj) state.lastBuilderAction = captureUndoableAction('move', priorObj);
       state.socket?.emit('room:object:move', { objectId, x, y });
     } else if (field === 'width' || field === 'height') {
       const other = row.querySelector(`input[data-field="${field === 'width' ? 'height' : 'width'}"]`);
       const width = field === 'width' ? value : Number(other?.value ?? 1);
       const height = field === 'height' ? value : Number(other?.value ?? 1);
+      if (priorObj) state.lastBuilderAction = captureUndoableAction('resize', priorObj);
       state.socket?.emit('room:object:resize', { objectId, width, height });
     } else if (field === 'rotation') {
+      if (priorObj) state.lastBuilderAction = captureUndoableAction('rotate', priorObj);
       state.socket?.emit('room:object:rotate', { objectId, rotation: value });
     }
   });
@@ -1657,6 +1728,8 @@ function connectSocket() {
     refreshInventory();
     refreshPuzzleList();
     refreshPuzzleTemplates();
+    roomStyleSection?.classList.toggle('hidden', state.currentRoomId === 'lobby');
+    renderRoomStyleSwatches();
   }
 
   state.socket.on('room:joined', (payload) => {
@@ -1698,12 +1771,23 @@ function connectSocket() {
 
   state.socket.on('room:builder:state', (payload) => {
     if (payload.roomId !== state.currentRoomId) return;
+    if (payload.roomStyle) {
+      state.currentRoomStyle = payload.roomStyle;
+      setRoomStyle(state.currentRoomStyle);
+      renderRoomStyleSwatches();
+    }
     state.builderState = {
       tiles: payload.tiles || [],
       objects: payload.objects || [],
       zones: payload.zones || [],
       triggers: payload.triggers || [],
     };
+    // The selected object may have just been deleted (by this user or
+    // another builder) -- drop a now-stale selection instead of leaving the
+    // canvas highlight/keyboard shortcuts pointed at nothing.
+    if (state.selectedBuilderObjectId && !state.builderState.objects.some((o) => o.objectId === state.selectedBuilderObjectId)) {
+      clearBuilderObjectSelection();
+    }
     for (const obj of state.builderState.objects) {
       if (obj.objectType === 'ai_character' && obj.character) {
         state.builderCharacters[obj.objectId] = obj.character;
@@ -1820,6 +1904,9 @@ function connectSocket() {
       state.currentTile = me.tile;
       if (tileChanged) {
         playTileTransition(tileTransitionDirection(previousTile, me.tile));
+        // A selection made on the old tile shouldn't silently carry over --
+        // its object isn't even drawn once the canvas shows the new tile.
+        clearBuilderObjectSelection();
       }
       updateCurrentTileLabel();
       renderMiniMap();
@@ -2305,7 +2392,45 @@ function updateBuildModeUi() {
   buildModeToggle.setAttribute('aria-pressed', String(state.buildMode));
   buildModeToggle.textContent = `Build Mode: ${state.buildMode ? 'On' : 'Off'}`;
   buildControls.classList.toggle('hidden', !state.buildMode);
+  gridSnapPill?.classList.toggle('hidden', !state.buildMode);
+  if (!state.buildMode) clearBuilderObjectSelection();
   resetConfigureControlsSelection();
+}
+
+// Build Mode on-canvas/keyboard selection (design doc
+// feature_designs/build_mode_ui_redesign_feature_design.md section 8.1/13). A
+// thin wrapper keeping `state.selectedBuilderObjectId` and the renderer's
+// canvas highlight (`setSelectedBuilderObjectId`) in sync, since every
+// selection entry point (canvas click, Tab-cycle, clearing) needs both.
+function selectBuilderObject(objectId) {
+  state.selectedBuilderObjectId = objectId || null;
+  setSelectedBuilderObjectId(objectId || null);
+}
+
+function clearBuilderObjectSelection() {
+  selectBuilderObject(null);
+}
+
+// Room Style picker (design doc section 11). Renders the 5 ROOM_STYLES as
+// clickable gradient swatch cards built straight from each style's own
+// backdrop/wall/floor colors -- no thumbnail canvas needed for a flat
+// gradient preview, unlike the per-object-type thumbnails in section 9.
+function renderRoomStyleSwatches() {
+  if (!roomStyleSwatchesEl) return;
+  roomStyleSwatchesEl.innerHTML = ROOM_STYLES.map((style) => `
+    <button type="button" class="room-style-swatch${style.id === state.currentRoomStyle ? ' active' : ''}"
+      data-style-id="${style.id}" title="${escapeHtml(style.description)}" aria-label="${escapeHtml(style.label)}"
+      style="background: linear-gradient(160deg, ${style.wallTop} 0%, ${style.wallBottom} 45%, ${style.floorLight} 100%);">
+      <span>${escapeHtml(style.label)}</span>
+    </button>
+  `).join('');
+}
+
+function updateGridSnapUi() {
+  if (!gridSnapToggle) return;
+  gridSnapToggle.setAttribute('aria-pressed', String(state.gridSnapEnabled));
+  const icon = gridSnapToggle.querySelector('.material-symbols-outlined');
+  if (icon) icon.textContent = state.gridSnapEnabled ? 'grid_on' : 'grid_off';
 }
 
 // The configure-object panel is only meaningful once you've clicked a
@@ -3521,6 +3646,7 @@ function renderBuilderVersionList() {
 
 function renderMiniMap() {
   if (!miniMapEl) return;
+  setTileNeighbors(neighborTileFlags(state.roomTiles, state.currentTile));
   const cells = buildMiniMapCells(state.roomTiles, state.currentTile);
   miniMapEl.innerHTML = '';
   cells.forEach((cell) => {

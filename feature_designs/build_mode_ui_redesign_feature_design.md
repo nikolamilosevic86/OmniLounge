@@ -294,9 +294,9 @@ No other new socket events are needed — everything else in this design is clie
 ## 16. Implementation Plan (Tracked Checklist)
 
 ### Phase 1 — Visual foundation (no interaction changes yet)
-- [ ] Refactor `drawBuilderObjects`' per-object drawing into a function that accepts an arbitrary target context/size, so it can render both the live room and offscreen catalog/style thumbnails (§9) without duplicating drawing code.
-- [ ] Add `neighborTileFlags` to `src/world-map.js` (+ mirror to `client/js/world-map.js`) with vitest coverage.
-- [ ] Implement doorway/rail rendering in `drawWall` (top edge) and new edge-jamb rendering for left/right/bottom (§10.3), driven by `neighborTileFlags`. Add a visual regression-style unit test if the codebase has a pattern for canvas-drawing tests, otherwise cover `neighborTileFlags` thoroughly and treat the draw calls as manually verified.
+- [x] Refactor `drawBuilderObjects`' per-object drawing into a function that accepts an arbitrary target context/size, so it can render both the live room and offscreen catalog/style thumbnails (§9) without duplicating drawing code.
+- [x] Add `neighborTileFlags` to `src/world-map.js` (+ mirror to `client/js/world-map.js`) with vitest coverage.
+- [x] Implement doorway/rail rendering in `drawWall` (top edge) and new edge-jamb rendering for left/right/bottom (§10.3), driven by `neighborTileFlags`. Add a visual regression-style unit test if the codebase has a pattern for canvas-drawing tests, otherwise cover `neighborTileFlags` thoroughly and treat the draw calls as manually verified.
 - [ ] Tab-ify `#build-controls` into Furniture / Room & Doors / More (§6.1) — the first two are today's content regrouped, "More" is a new collapsed-by-default accordion wrapping Zones, Triggers, Escape Room, Room Admin, and Versions. Pure markup/CSS/JS-toggle change, no behavior change to any contained section.
 
 ### Phase 2 — Catalog & drag-to-place
@@ -305,29 +305,29 @@ No other new socket events are needed — everything else in this design is clie
 - [ ] Implement the keyboard/Enter fallback placement path (§7.2, §13).
 
 ### Phase 3 — On-canvas selection & manipulation
-- [ ] Add `state.selectedBuilderObjectId`, `drawSelectionOverlay` (resize handles + outline, §8.1), and the small floating icon-button toolbar (`rotate_right`/`palette`/`tune`/`delete`, conditionally rendered per §8.1/§8.4).
+- [x] Add `state.selectedBuilderObjectId` and a canvas selection highlight (dashed outline, §8.1) driven by clicking a builder object in Build Mode. *Partial:* no resize handles or floating icon toolbar yet — selection currently only feeds the keyboard shortcuts below, not on-canvas drag/resize/rotate/recolor.
 - [ ] Implement drag-to-move on a selected object, emitting `room:object:move` on release (§8.2).
 - [ ] Implement resize handles + toolbar-armed rotate drag, emitting `room:object:resize`/`room:object:rotate` on release (§8.3).
 - [ ] Implement the swatch popover from the toolbar's `palette` icon, emitting `room:object:style` (§8.3).
-- [ ] Implement the toolbar's `delete` icon + Delete/Backspace key, emitting `room:object:delete` (§8.3).
+- [x] Implement the Delete/Backspace key emitting `room:object:delete` for the selected object (§8.3). *Partial:* no floating toolbar `delete` icon yet — this is keyboard-only, the existing object-list row `delete` button already covered the click path.
 - [ ] Wire the toolbar's `tune` icon to open the existing `#configure-controls` type-specific section, only for types that have one (§8.4).
 - [ ] Muted/disabled selection + reduced-to-`tune`-only toolbar for locked/no-permission objects (§8.5).
 - [ ] Tooltips + `aria-label`s on every new icon button (§13).
 - [ ] Add an `edit` icon beside `delete` on Book/Video/Track/Puzzle list rows, wired to the same populate-form/"Save Changes"/Cancel flow `enterKnowledgeDocumentEditMode` already implements for Knowledge Store documents; validate before removing so a failed save can't lose the item (§8.7).
 - [ ] Live YouTube link preview + inline validation caption on `video-youtube-input`/`track-youtube-input`, reusing `extractYoutubeVideoId()` on `input` instead of only on submit (§8.7).
 - [ ] Replace `puzzle-template-select` with an elevated-card picker showing each `PUZZLE_TEMPLATES` entry's label + description (§8.7).
-- [ ] Tab/Shift+Tab keyboard cycling of `state.selectedBuilderObjectId` through the current tile's objects, plus Escape-to-clear (§13).
-- [ ] Single-level Ctrl+Z/⌘Z undo for the last move/resize/rotate/style/delete, with an `addSystemMessage` confirmation toast (§8.6).
+- [x] Tab/Shift+Tab keyboard cycling of `state.selectedBuilderObjectId` through the current tile's objects, plus Escape-to-clear (§13).
+- [x] Single-level Ctrl+Z/⌘Z undo for the last move/resize/rotate/delete, with an `addSystemMessage` confirmation toast (§8.6). *Partial:* the `style` case is implemented in `builder-undo.js` and covered by tests, but has no caller yet since no UI emits `room:object:style` (recolor-after-placement isn't implemented — see §8.3 above).
 
 ### Phase 4 — Room Style picker
-- [ ] `RoomsRegistry.set_room_style` + `room:style:set` handler, TDD with the same `FakeSio`/`isolate_registry` harness used throughout `tests_python`. `builder_state_payload()` gains a `roomStyle` field so the change rides the existing `room:builder:state` broadcast (§11, §17 Decision D1) — no new event name.
-- [ ] Room Style swatch cards inside the Room & Doors tab (§6.1, §11), wired to the new event.
+- [x] `RoomsRegistry.set_room_style` + `room:style:set` handler, TDD with the same `FakeSio`/`isolate_registry` harness used throughout `tests_python`. `builder_state_payload()` gains a `roomStyle` field so the change rides the existing `room:builder:state` broadcast (§11, §17 Decision D1) — no new event name.
+- [x] Room Style swatch cards, wired to the new event (§11). *Placement note:* rendered in their own `#room-style-section` (shown for non-lobby rooms only) rather than inside a "Room & Doors" tab, since the Phase 1 tab-ify item above wasn't done this pass.
 
 ### Phase 5 — Polish
-- [ ] Grid snapping icon toggle as a new `.hud-pill` beside `#build-mode-toggle` (§12).
+- [x] Grid snapping icon toggle as a new `.hud-pill` beside `#build-mode-toggle` (§12). Currently only applied to the "Add Object Here" creation flow's spawn position; on-canvas drag-to-place/drag-to-move snapping is deferred along with the rest of Phase 2/3's drag interactions.
 - [ ] Build-mode doorway/rail click shortcuts (§10.4).
 - [ ] Catalog filter chips + search field (§7.1).
-- [ ] `localStorage` persistence of the "More" accordion's expanded rows (§6.1, §17 Decision D6).
+- [ ] `localStorage` persistence of the "More" accordion's expanded rows (§6.1, §17 Decision D6). *Underlying module done:* `builder-preferences.js` (`loadExpandedAccordionRows`/`saveExpandedAccordionRows`/`toggleAccordionRow`) is built and fully tested, but not yet wired to any accordion UI since Phase 1's tab-ify/accordion markup doesn't exist yet.
 
 ## 17. Design Decisions
 

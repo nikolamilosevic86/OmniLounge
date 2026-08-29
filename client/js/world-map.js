@@ -28,3 +28,22 @@ export function buildMiniMapCells(tiles = [], currentTile = { x: 0, y: 0 }) {
 
   return cells;
 }
+
+/**
+ * Per-edge neighbor-tile presence for `currentTile` (design doc
+ * feature_designs/build_mode_ui_redesign_feature_design.md §10.2). Drives
+ * whether room-renderer.js draws a walkable doorway (neighbor exists) or a
+ * capped wall/rail (no neighbor) on each of the four tile edges. Reuses the
+ * exact same `tiles`/`currentTile` pairing buildMiniMapCells already consumes
+ * -- no new event or payload is needed.
+ */
+export function neighborTileFlags(tiles = [], currentTile = { x: 0, y: 0 }) {
+  const active = new Set(normalizeTileList(tiles).map(tileKey));
+  const { x, y } = currentTile;
+  return {
+    top: active.has(tileKey({ x, y: y - 1 })),
+    bottom: active.has(tileKey({ x, y: y + 1 })),
+    left: active.has(tileKey({ x: x - 1, y })),
+    right: active.has(tileKey({ x: x + 1, y })),
+  };
+}

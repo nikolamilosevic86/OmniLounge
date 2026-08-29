@@ -4,6 +4,7 @@ import {
   resolveObjectColor,
   objectTypeIcon,
   buildInteractionActions,
+  cycleSelectedObjectId,
 } from '../src/builder-objects.js';
 
 describe('getBuilderObjectAtPoint', () => {
@@ -98,5 +99,46 @@ describe('buildInteractionActions', () => {
     for (const action of actions) {
       expect(action.icon).toBeTruthy();
     }
+  });
+});
+
+describe('cycleSelectedObjectId (design doc build_mode_ui_redesign_feature_design.md section 13)', () => {
+  const objects = [
+    { objectId: 'a' },
+    { objectId: 'b' },
+    { objectId: 'c' },
+  ];
+
+  it('returns null for an empty object list', () => {
+    expect(cycleSelectedObjectId([], 'a', 1)).toBeNull();
+  });
+
+  it('selects the first object when nothing is currently selected', () => {
+    expect(cycleSelectedObjectId(objects, null, 1)).toBe('a');
+  });
+
+  it('selects the last object when nothing is selected and cycling backward', () => {
+    expect(cycleSelectedObjectId(objects, null, -1)).toBe('c');
+  });
+
+  it('advances to the next object id in stable array order', () => {
+    expect(cycleSelectedObjectId(objects, 'a', 1)).toBe('b');
+    expect(cycleSelectedObjectId(objects, 'b', 1)).toBe('c');
+  });
+
+  it('wraps from the last object back to the first when cycling forward', () => {
+    expect(cycleSelectedObjectId(objects, 'c', 1)).toBe('a');
+  });
+
+  it('cycles backward with Shift+Tab semantics', () => {
+    expect(cycleSelectedObjectId(objects, 'b', -1)).toBe('a');
+  });
+
+  it('wraps from the first object back to the last when cycling backward', () => {
+    expect(cycleSelectedObjectId(objects, 'a', -1)).toBe('c');
+  });
+
+  it('starts from the first object when the currently selected id is no longer in the list', () => {
+    expect(cycleSelectedObjectId(objects, 'stale-id', 1)).toBe('a');
   });
 });

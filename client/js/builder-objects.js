@@ -83,3 +83,24 @@ export function buildInteractionActions(interactions) {
     actionState: interaction.actionState ?? null,
   }));
 }
+
+/**
+ * Keyboard Tab-cycle selection (design doc
+ * feature_designs/build_mode_ui_redesign_feature_design.md §13). Advances
+ * (direction=1) or retreats (direction=-1) through `objects` in the stable
+ * order they're already given -- the same order the server returns them in --
+ * wrapping around at either end. Falls back to selecting the first (or last,
+ * when cycling backward) object when nothing is currently selected, or when
+ * the previously-selected id no longer exists in the list (e.g. it was just
+ * deleted).
+ */
+export function cycleSelectedObjectId(objects, currentSelectedId, direction = 1) {
+  if (!Array.isArray(objects) || objects.length === 0) return null;
+  const ids = objects.map((obj) => obj.objectId);
+  const currentIndex = ids.indexOf(currentSelectedId);
+  if (currentIndex === -1) {
+    return direction < 0 ? ids[ids.length - 1] : ids[0];
+  }
+  const nextIndex = (currentIndex + direction + ids.length) % ids.length;
+  return ids[nextIndex];
+}

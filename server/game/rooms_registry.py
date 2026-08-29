@@ -6,7 +6,7 @@ from server.game.moderation import ModerationState
 from server.game.movement import clamp_position, create_position
 from server.game.room import Room
 from server.game.room_builder import RoomBuilderState
-from server.game.room_styles import DEFAULT_ROOM_STYLE, resolve_room_style
+from server.game.room_styles import DEFAULT_ROOM_STYLE, is_valid_room_style, resolve_room_style
 from server.game.tile_navigation import (
     can_add_neighbor_tile,
     detect_edge_transition,
@@ -127,6 +127,24 @@ class RoomsRegistry:
     def get_room_style(self, room_id: str) -> str:
         meta = self.room_meta.get(room_id)
         return meta.get("roomStyle", DEFAULT_ROOM_STYLE) if meta else DEFAULT_ROOM_STYLE
+
+    def set_room_style(
+        self, room_id: str, style_id: str, requester_id: str | None = None, is_room_host: bool = False,
+    ) -> str:
+        """Change an existing room's ambient style after creation (design
+        doc feature_designs/build_mode_ui_redesign_feature_design.md §11,
+        §17 Decision D1). Room-host only, mirroring every other room-wide
+        mutator's permission gate; raises KeyError for an unknown room and
+        ValueError for a style id not in ROOM_STYLE_IDS."""
+        meta = self.room_meta.get(room_id)
+        if meta is None:
+            raise KeyError(f"unknown room: {room_id}")
+        if not is_room_host:
+            raise PermissionError("only the room host can change the room style")
+        if not is_valid_room_style(style_id):
+            raise ValueError(f"invalid room style: {style_id}")
+        meta["roomStyle"] = style_id
+        return style_id
 
     def reclaim_host(self, room_id: str, new_player_id: str, host_token: str | None) -> bool:
         """Re-establish `new_player_id` as the owner/host of `room_id` if
