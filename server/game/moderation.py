@@ -89,6 +89,11 @@ class ModerationState:
 
     def mute(self, target_id: str, actor_id: str) -> None:
         self.require_permission(actor_id, "moderate")
+        # Same owner guard `kick`/`ban` already have -- without it a
+        # moderator the owner appointed can silence the owner in their own
+        # room (`chat_send` enforces `is_muted`).
+        if target_id == self._owner_id:
+            raise PermissionError("cannot mute the room owner")
         self._muted.add(target_id)
         self._log(actor_id, "mute", target_id)
 

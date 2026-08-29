@@ -247,8 +247,13 @@ class RoomsRegistry:
 
         if meta.get("access") == "invite":
             expected_code = meta.get("inviteCode")
-            if expected_code and invite_code != expected_code and player_id != meta.get("hostId"):
-                return "forbidden"
+            if expected_code and player_id != meta.get("hostId"):
+                # Constant-time compare: a plain `!=` on a secret short code
+                # leaks match length through timing, which is exactly the
+                # signal needed to guess it character by character.
+                supplied = invite_code if isinstance(invite_code, str) else ""
+                if not secrets.compare_digest(supplied, str(expected_code)):
+                    return "forbidden"
 
         return None
 

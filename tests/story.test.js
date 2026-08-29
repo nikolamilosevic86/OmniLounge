@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   CHARACTER_ROLES,
+  CHARACTER_ROLE_CARDS,
+  characterRoleCardOptions,
+  APPEARANCE_FIELDS,
+  appearanceWithOption,
+  appearanceOptionCards,
   isValidCharacterRole,
   formatModeLabel,
   parseChoicesInput,
@@ -16,6 +21,125 @@ import {
 describe('CHARACTER_ROLES', () => {
   it('includes the five design-doc roles', () => {
     expect(CHARACTER_ROLES).toEqual(['guide', 'quiz_master', 'narrator', 'historical_persona', 'mentor']);
+  });
+});
+
+describe('CHARACTER_ROLE_CARDS', () => {
+  it('describes every allowed role, so no role is left as a bare id', () => {
+    expect(CHARACTER_ROLE_CARDS.map((c) => c.role)).toEqual(CHARACTER_ROLES);
+  });
+
+  it('gives every role a label, a description of what changes, and a sample line', () => {
+    CHARACTER_ROLE_CARDS.forEach((card) => {
+      expect(card.label.length).toBeGreaterThan(0);
+      expect(card.description.length).toBeGreaterThan(0);
+      expect(card.sampleLine.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('gives each role a distinct sample line, so the preview differentiates them', () => {
+    const lines = CHARACTER_ROLE_CARDS.map((c) => c.sampleLine);
+    expect(new Set(lines).size).toBe(lines.length);
+  });
+});
+
+describe('characterRoleCardOptions', () => {
+  it('marks exactly the selected role active', () => {
+    const cards = characterRoleCardOptions('narrator');
+    expect(cards.filter((c) => c.active).map((c) => c.role)).toEqual(['narrator']);
+  });
+
+  it('falls back to the default role when the selection is unknown or missing', () => {
+    expect(characterRoleCardOptions('wizard').find((c) => c.active).role).toBe('guide');
+    expect(characterRoleCardOptions().find((c) => c.active).role).toBe('guide');
+  });
+
+  it('returns one card per role', () => {
+    expect(characterRoleCardOptions('guide')).toHaveLength(CHARACTER_ROLES.length);
+  });
+});
+
+describe('APPEARANCE_FIELDS', () => {
+  it('covers all seven appearance fields the server accepts', () => {
+    expect(APPEARANCE_FIELDS.map((f) => f.key)).toEqual([
+      'skinColor', 'gender', 'hair', 'beard', 'glasses', 'clothes', 'accessory',
+    ]);
+  });
+
+  it('gives every field a human label and a non-empty option list', () => {
+    APPEARANCE_FIELDS.forEach((field) => {
+      expect(field.label.length).toBeGreaterThan(0);
+      expect(field.options.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('marks only the skin colour field as a colour swatch', () => {
+    expect(APPEARANCE_FIELDS.filter((f) => f.isColor).map((f) => f.key)).toEqual(['skinColor']);
+  });
+});
+
+describe('appearanceWithOption', () => {
+  const base = {
+    skinColor: '#FFDBAC', gender: 'neutral', hair: 'short',
+    beard: 'none', glasses: 'none', clothes: 'tshirt', accessory: 'none',
+  };
+
+  it('changes only the requested field', () => {
+    const next = appearanceWithOption(base, 'hair', 'mohawk');
+    expect(next.hair).toBe('mohawk');
+    expect({ ...next, hair: 'short' }).toEqual(base);
+  });
+
+  it('does not mutate the original appearance', () => {
+    appearanceWithOption(base, 'hair', 'mohawk');
+    expect(base.hair).toBe('short');
+  });
+
+  it('fills in defaults for a partial appearance, so a preview never renders half-blank', () => {
+    const next = appearanceWithOption({ hair: 'curly' }, 'clothes', 'suit');
+    expect(next.clothes).toBe('suit');
+    expect(next.hair).toBe('curly');
+    APPEARANCE_FIELDS.forEach((f) => expect(next[f.key]).toBeTruthy());
+  });
+
+  it('tolerates a null appearance', () => {
+    expect(appearanceWithOption(null, 'hair', 'bald').hair).toBe('bald');
+  });
+});
+
+describe('appearanceOptionCards', () => {
+  const base = {
+    skinColor: '#FFDBAC', gender: 'neutral', hair: 'short',
+    beard: 'none', glasses: 'none', clothes: 'tshirt', accessory: 'none',
+  };
+
+  it('returns one card per option for the field', () => {
+    const cards = appearanceOptionCards('hair', base);
+    expect(cards.map((c) => c.value)).toEqual(['short', 'long', 'curly', 'mohawk', 'bald', 'ponytail']);
+  });
+
+  it('gives each card the full appearance it would produce, for a real preview', () => {
+    const cards = appearanceOptionCards('hair', base);
+    const mohawk = cards.find((c) => c.value === 'mohawk');
+    expect(mohawk.appearance.hair).toBe('mohawk');
+    // Everything else must match the character as it stands, so the swatch
+    // previews *this* character wearing the option, not a generic model.
+    expect(mohawk.appearance.clothes).toBe('tshirt');
+    expect(mohawk.appearance.skinColor).toBe('#FFDBAC');
+  });
+
+  it('marks exactly the current value active', () => {
+    const cards = appearanceOptionCards('hair', base);
+    expect(cards.filter((c) => c.active).map((c) => c.value)).toEqual(['short']);
+  });
+
+  it('gives every option a readable label instead of a raw id', () => {
+    const cards = appearanceOptionCards('clothes', base);
+    expect(cards.find((c) => c.value === 'tshirt').label).toBe('T-shirt');
+  });
+
+  it('returns an empty list for an unknown field rather than throwing', () => {
+    expect(appearanceOptionCards('nope', base)).toEqual([]);
   });
 });
 

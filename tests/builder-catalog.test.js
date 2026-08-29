@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CATALOG_ENTRIES,
   CATALOG_FILTER_CHIPS,
+  PUZZLE_PROP_TYPES,
   catalogFilterGroup,
   filterCatalogEntries,
   CATALOG_COLOR_DOT_HEXES,
@@ -12,12 +13,30 @@ describe('CATALOG_ENTRIES (design doc build_mode_ui_redesign_feature_design.md s
     const types = CATALOG_ENTRIES.map((e) => e.objectType);
     expect(types).toEqual([
       'table', 'chair', 'bar', 'sofa', 'bookshelf', 'tv', 'music_player', 'ai_character', 'escape_door', 'hidden_item',
+      'cipher_box', 'digital_lock', 'combination_dial', 'riddle_tablet', 'clue_board',
     ]);
   });
 
   it('gives every entry a non-empty label', () => {
     CATALOG_ENTRIES.forEach((e) => expect(typeof e.label).toBe('string'));
     expect(CATALOG_ENTRIES.every((e) => e.label.length > 0)).toBe(true);
+  });
+});
+
+describe('PUZZLE_PROP_TYPES (escape_room_feature_design.md section 5.4)', () => {
+  it('mirrors the server catalog\'s five prop shapes, in the same order', () => {
+    expect(PUZZLE_PROP_TYPES).toEqual([
+      'cipher_box', 'digital_lock', 'combination_dial', 'riddle_tablet', 'clue_board',
+    ]);
+  });
+
+  it('has a catalog entry for every prop shape, so each is placeable', () => {
+    const types = new Set(CATALOG_ENTRIES.map((e) => e.objectType));
+    PUZZLE_PROP_TYPES.forEach((prop) => expect(types.has(prop)).toBe(true));
+  });
+
+  it('files every prop shape under the escape-room chip, not generic Interactive', () => {
+    PUZZLE_PROP_TYPES.forEach((prop) => expect(catalogFilterGroup(prop)).toBe('escape-room'));
   });
 });
 
@@ -44,7 +63,7 @@ describe('catalogFilterGroup', () => {
 
 describe('filterCatalogEntries', () => {
   it('returns every entry for the "all" group with no search', () => {
-    expect(filterCatalogEntries(CATALOG_ENTRIES, { group: 'all', search: '' })).toHaveLength(10);
+    expect(filterCatalogEntries(CATALOG_ENTRIES, { group: 'all', search: '' })).toHaveLength(15);
   });
 
   it('narrows to exactly the 4 furniture-group entries', () => {
@@ -52,9 +71,12 @@ describe('filterCatalogEntries', () => {
     expect(result.map((e) => e.objectType)).toEqual(['table', 'chair', 'bar', 'sofa']);
   });
 
-  it('narrows to exactly the 2 escape-room-group entries', () => {
+  it('narrows to exactly the escape-room-group entries, puzzle props included', () => {
     const result = filterCatalogEntries(CATALOG_ENTRIES, { group: 'escape-room' });
-    expect(result.map((e) => e.objectType)).toEqual(['escape_door', 'hidden_item']);
+    expect(result.map((e) => e.objectType)).toEqual([
+      'escape_door', 'hidden_item',
+      'cipher_box', 'digital_lock', 'combination_dial', 'riddle_tablet', 'clue_board',
+    ]);
   });
 
   it('narrows by a case-insensitive label search regardless of active group', () => {
@@ -68,7 +90,7 @@ describe('filterCatalogEntries', () => {
   });
 
   it('defaults to the "all" group and empty search when omitted', () => {
-    expect(filterCatalogEntries(CATALOG_ENTRIES)).toHaveLength(10);
+    expect(filterCatalogEntries(CATALOG_ENTRIES)).toHaveLength(15);
   });
 
   it('tolerates a missing/undefined entries list', () => {

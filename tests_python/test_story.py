@@ -567,6 +567,73 @@ class TestGenerativeAnswer:
         assert "Owls live in forests." in captured["knowledge_base"]
         assert "https://example.com/owls" in captured["knowledge_base"]
 
+    def test_the_system_prompt_states_the_characters_role_and_name(self):
+        # A role that never reaches the model is just a label that changes
+        # nothing -- the role picker promises a behavior change, so the
+        # persona must actually be sent.
+        self.engine.set_character_profile("npc-1", "char-1", name="Owl", role="quiz_master", start_node_id="node-1")
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        captured = {}
+
+        def fake_caller(api_base_url, api_key, system_prompt, user_message):
+            captured["prompt"] = system_prompt
+            return "answer"
+
+        self.engine.ask_generative("npc-1", "char-1", "hello", caller=fake_caller)
+        assert "Owl" in captured["prompt"]
+        assert "quiz" in captured["prompt"].lower()
+
+    def test_changing_the_role_changes_the_system_prompt(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        prompts = []
+
+        def fake_caller(api_base_url, api_key, system_prompt, user_message):
+            prompts.append(system_prompt)
+            return "answer"
+
+        for role in ("guide", "quiz_master", "narrator", "historical_persona", "mentor"):
+            self.engine.set_character_profile("npc-1", "char-1", name="Owl", role=role, start_node_id="node-1")
+            self.engine.ask_generative("npc-1", "char-1", "hello", caller=fake_caller)
+
+        assert len(set(prompts)) == 5, "every role must produce a distinct persona"
+
+    def test_persona_is_combined_with_the_knowledge_base(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "Habitat", "text", content="Owls live in forests.")
+        captured = {}
+
+        def fake_caller(api_base_url, api_key, system_prompt, user_message):
+            captured["prompt"] = system_prompt
+            return "answer"
+
+        self.engine.ask_generative("npc-1", "char-1", "hello", caller=fake_caller)
+        assert "Owls live in forests." in captured["prompt"]
+        assert "Owl" in captured["prompt"]
+
+    def test_persona_never_leaks_into_the_predefined_fallback_answer(self):
+        # `_build_knowledge_context` doubles as the *user-visible* fallback
+        # answer, so persona instructions must not be folded into it -- a
+        # visitor would otherwise be told "You are Owl, a quiz master..."
+        # as if it were the character's own reply.
+        self.engine.add_knowledge_document("npc-1", "char-1", "doc-1", "Habitat", "text", content="Owls live in forests.")
+        result = self.engine.ask_generative("npc-1", "char-1", "hi", caller=lambda *a: "ignored")
+
+        assert result["mode"] == "predefined"
+        assert "Owls live in forests." in result["answer"]
+        assert "You are" not in result["answer"]
+
+    def test_a_character_with_no_knowledge_still_gets_a_persona_prompt(self):
+        self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
+        captured = {}
+
+        def fake_caller(api_base_url, api_key, system_prompt, user_message):
+            captured["prompt"] = system_prompt
+            return "answer"
+
+        self.engine.ask_generative("npc-1", "char-1", "hello", caller=fake_caller)
+        assert captured["prompt"]
+        assert "Owl" in captured["prompt"]
+
     def test_ask_generative_calls_caller_and_returns_its_answer_when_enabled(self):
         self.engine.configure_generative_mode("npc-1", "char-1", api_base_url="https://api.example.com", api_key="secret")
         captured = {}

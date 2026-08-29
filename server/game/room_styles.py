@@ -1,4 +1,4 @@
-"""Phase K+: the 5 selectable "empty room" visual styles a user can choose
+"""Phase K+: the 8 selectable "empty room" visual styles a user can choose
 from when creating a custom room.
 
 Kept in sync with `client/js/room-styles.js` / `src/room-styles.js`, which
@@ -13,6 +13,9 @@ ROOM_STYLE_IDS: tuple[str, ...] = (
     "sunlit-studio",
     "midnight-lounge",
     "minimalist-white",
+    "beach-cabana",
+    "retro-arcade",
+    "enchanted-garden",
 )
 
 DEFAULT_ROOM_STYLE = "modern-loft"

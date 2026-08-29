@@ -27,6 +27,7 @@ PUZZLE_TEMPLATES: dict[str, dict[str, Any]] = {
         "promptTemplate": "I have keys but open no locks. I have space but no room. What am I?",
         "answerPlaceholder": "a keyboard",
         "matchMode": "exact",
+        "propType": "riddle_tablet",
         "hints": [
             "You use it every day.",
             "It sits on a desk.",
@@ -41,6 +42,7 @@ PUZZLE_TEMPLATES: dict[str, dict[str, Any]] = {
         ),
         "answerPlaceholder": "red door",
         "matchMode": "exact",
+        "propType": "cipher_box",
         "hints": [
             "Every letter moved one step through the alphabet.",
             "Shift each letter back by one to read it.",
@@ -52,6 +54,7 @@ PUZZLE_TEMPLATES: dict[str, dict[str, Any]] = {
         "promptTemplate": "What number comes next? 2, 4, 8, 16, ...",
         "answerPlaceholder": "32",
         "matchMode": "numeric",
+        "propType": "combination_dial",
         "hints": [
             "Look at what happens from one number to the next.",
             "Each number is double the one before it.",
@@ -65,6 +68,7 @@ PUZZLE_TEMPLATES: dict[str, dict[str, Any]] = {
         # `numeric` so leading zeros / stray whitespace in a typed combination
         # still match the authored answer.
         "matchMode": "numeric",
+        "propType": "digital_lock",
         "hints": [
             "The digits are hidden on objects around the room.",
             "Read them in the order the room's story suggests.",
@@ -79,6 +83,7 @@ PUZZLE_TEMPLATES: dict[str, dict[str, Any]] = {
         # keyword still passes -- this archetype rewards finding the fact,
         # not phrasing it precisely.
         "matchMode": "contains",
+        "propType": "clue_board",
         "hints": [
             "Search the room for something with writing on it.",
             "Only one word matters -- the rest is decoration.",
@@ -106,14 +111,16 @@ def build_puzzle_from_template(
     prompt: str | None = None,
     hints: list[str] | None = None,
     match_mode: str | None = None,
+    prop_type: str | None = None,
 ) -> dict[str, Any]:
     """Resolve a template plus the creator's own answer into
     `PuzzleEngine.add_puzzle` keyword arguments.
 
     The template supplies defaults only: any explicitly provided `prompt`,
-    `hints` or `match_mode` wins, so a preset is a smart starting point
-    rather than a cage. Note `hints` falls back to the template's list only
-    when it is `None` -- passing `[]` explicitly means "no hints".
+    `hints`, `match_mode` or `prop_type` wins, so a preset is a smart
+    starting point rather than a cage. Note `hints` falls back to the
+    template's list only when it is `None` -- passing `[]` explicitly means
+    "no hints".
     """
     template = get_template(template_id)
     if not answer or not answer.strip():
@@ -123,4 +130,5 @@ def build_puzzle_from_template(
         "answer": answer,
         "hints": list(hints) if hints is not None else list(template["hints"]),
         "match_mode": match_mode if match_mode is not None else template["matchMode"],
+        "prop_type": prop_type if prop_type is not None else template["propType"],
     }

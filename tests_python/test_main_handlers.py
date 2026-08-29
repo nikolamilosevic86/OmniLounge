@@ -169,15 +169,23 @@ class TestRoomBuilderHandlers:
         avatar = create_default_avatar("Alice")
         rooms.join_room(player_id, avatar, "lobby")
 
+    async def _join_as_host(self, rooms, player_id="p1"):
+        """Tile/zone/trigger/version authoring is host-only, and the shared
+        lobby's host is the sentinel "system" (no real user), so these need
+        a room the caller actually owns."""
+        room = rooms.create_room(host_id=player_id, name="Host Room")
+        rooms.join_room(player_id, create_default_avatar("Alice"), room["id"])
+        return room["id"]
+
     def _builder_state_events(self, fake_sio):
         return [e for e in fake_sio.emitted if e[0] == "room:builder:state"]
 
     async def test_tile_clone_and_configure_and_delete(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await self._join(rooms)
+        room_id = await self._join_as_host(rooms)
 
         await main_module.room_tile_configure("p1", {"x": 0, "y": 0, "label": "Entrance"})
-        builder = rooms.get_builder("lobby")
+        builder = rooms.get_builder(room_id)
         assert builder.get_tile((0, 0))["label"] == "Entrance"
 
         await main_module.room_tile_clone("p1", {"direction": "right"})
@@ -514,7 +522,7 @@ class TestRoomBuilderHandlers:
 
     async def test_zone_and_trigger_create_delete(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await self._join(rooms)
+        room_id = await self._join_as_host(rooms)
 
         zone = await main_module.room_zone_create("p1", {
             "zoneId": "z1", "zoneType": "interaction",
@@ -527,14 +535,14 @@ class TestRoomBuilderHandlers:
         })
         assert trigger["triggerId"] == "t1"
 
-        builder = rooms.get_builder("lobby")
+        builder = rooms.get_builder(room_id)
         await main_module.room_trigger_delete("p1", {"triggerId": "t1"})
         await main_module.room_zone_delete("p1", {"zoneId": "z1"})
         assert builder.get_zone("z1") is None
 
     async def test_version_save_publish_rollback(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await self._join(rooms)
+        await self._join_as_host(rooms)
 
         v1 = await main_module.room_version_save("p1", {"snapshot": {"tiles": []}})
         assert v1["versionNumber"] == 1
@@ -772,7 +780,7 @@ class TestRoomBuilderHandlers:
 
     async def test_builder_request_sends_state_and_versions_to_caller_only(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await self._join(rooms)
+        await self._join_as_host(rooms)
         await main_module.room_object_create("p1", {
             "objectType": "chair", "x": 10, "y": 10, "width": 20, "height": 20,
         })

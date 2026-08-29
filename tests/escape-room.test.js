@@ -12,6 +12,7 @@ import {
   puzzleDifficultySignal,
   validatePuzzleInput,
   puzzleTemplateCardOptions,
+  puzzlePropCardOptions,
 } from '../src/escape-room.js';
 
 describe('escapeStatusLabel', () => {
@@ -206,23 +207,32 @@ describe('puzzleTemplateFormValues', () => {
 
 describe('puzzleTemplateCardOptions (design doc build_mode_ui_redesign_feature_design.md section 8.7, Gap 3)', () => {
   const templates = [
-    { templateId: 'riddle', label: 'Riddle', description: 'A word riddle with a single specific answer.' },
-    { templateId: 'cipher', label: 'Cipher', description: 'A coded message the player must decode into plain text.' },
+    { templateId: 'riddle', label: 'Riddle', description: 'A word riddle with a single specific answer.', propType: 'riddle_tablet' },
+    { templateId: 'cipher', label: 'Cipher', description: 'A coded message the player must decode into plain text.', propType: 'cipher_box' },
   ];
 
   it('always leads with a "Custom (blank)" card', () => {
     const cards = puzzleTemplateCardOptions(templates);
     expect(cards[0]).toEqual({
-      templateId: '', label: 'Custom (blank)', description: 'Start from a blank puzzle.', active: true,
+      templateId: '', label: 'Custom (blank)', description: 'Start from a blank puzzle.', propType: '', active: true,
     });
   });
 
   it('maps every template onto a card with its label and description', () => {
     const cards = puzzleTemplateCardOptions(templates);
     expect(cards.slice(1)).toEqual([
-      { templateId: 'riddle', label: 'Riddle', description: 'A word riddle with a single specific answer.', active: false },
-      { templateId: 'cipher', label: 'Cipher', description: 'A coded message the player must decode into plain text.', active: false },
+      { templateId: 'riddle', label: 'Riddle', description: 'A word riddle with a single specific answer.', propType: 'riddle_tablet', active: false },
+      { templateId: 'cipher', label: 'Cipher', description: 'A coded message the player must decode into plain text.', propType: 'cipher_box', active: false },
     ]);
+  });
+
+  it('carries each template\'s paired prop shape so the card can preview it', () => {
+    const cards = puzzleTemplateCardOptions(templates, 'cipher');
+    expect(cards.find((c) => c.templateId === 'cipher').propType).toBe('cipher_box');
+  });
+
+  it('leaves the Custom card without a prop shape, since a blank puzzle picks its own', () => {
+    expect(puzzleTemplateCardOptions(templates)[0].propType).toBe('');
   });
 
   it('marks the Custom card active when no template id is selected', () => {
@@ -240,8 +250,45 @@ describe('puzzleTemplateCardOptions (design doc build_mode_ui_redesign_feature_d
 
   it('tolerates a missing templates list', () => {
     expect(puzzleTemplateCardOptions(undefined)).toEqual([
-      { templateId: '', label: 'Custom (blank)', description: 'Start from a blank puzzle.', active: true },
+      { templateId: '', label: 'Custom (blank)', description: 'Start from a blank puzzle.', propType: '', active: true },
     ]);
+  });
+});
+
+describe('puzzlePropCardOptions (escape_room_feature_design.md section 5.4)', () => {
+  it('offers a "no shape" card first, so a puzzle need not wear a prop at all', () => {
+    const cards = puzzlePropCardOptions();
+    expect(cards[0].propType).toBe('');
+    expect(cards[0].active).toBe(true);
+  });
+
+  it('offers all five prop shapes after the "no shape" card', () => {
+    const cards = puzzlePropCardOptions();
+    expect(cards.slice(1).map((c) => c.propType)).toEqual([
+      'cipher_box', 'digital_lock', 'combination_dial', 'riddle_tablet', 'clue_board',
+    ]);
+  });
+
+  it('gives every shape a human label and a description of how it reads', () => {
+    puzzlePropCardOptions().forEach((card) => {
+      expect(card.label.length).toBeGreaterThan(0);
+      expect(card.description.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('marks exactly the selected shape active', () => {
+    const cards = puzzlePropCardOptions('digital_lock');
+    expect(cards.filter((c) => c.active).map((c) => c.propType)).toEqual(['digital_lock']);
+  });
+
+  it('falls back to the "no shape" card when the selection is unknown', () => {
+    const cards = puzzlePropCardOptions('not_a_prop');
+    expect(cards.filter((c) => c.active).map((c) => c.propType)).toEqual(['']);
+  });
+
+  it('treats null and undefined selections as no shape', () => {
+    expect(puzzlePropCardOptions(null)[0].active).toBe(true);
+    expect(puzzlePropCardOptions(undefined)[0].active).toBe(true);
   });
 });
 

@@ -784,12 +784,24 @@ a:focus-visible,
   flex: 1;
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  gap: 1.25rem;
   background:
     radial-gradient(ellipse at center, rgba(100, 80, 140, 0.06) 0%, transparent 60%),
     var(--bg-deep);
   padding: 1.5rem;
+  overflow: auto;
+}
+
+/* Groups the canvas with the HUD pills that don't fit in the left column
+   (movement/combat hints, escape timer/inventory) so they render BELOW the
+   room instead of floating on top of it and hiding part of the scene. */
+.room-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .room-frame {
@@ -961,13 +973,25 @@ a:focus-visible,
   color: var(--md-on-surface-variant);
 }
 
+/* Sits beside the canvas as a real layout column (not an absolute overlay),
+   so these pills no longer render on top of the room scene. */
 .room-hud {
-  position: absolute;
-  top: 1.5rem;
-  left: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  width: 12rem;
+  flex-shrink: 0;
+}
+
+/* The movement/combat hints and escape-run status don't need to sit next to
+   the canvas at all times, so they flow in a wrapping row underneath the
+   room instead of competing for space in the left column. */
+.room-hud-below {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 800px;
 }
 
 .hud-pill {
@@ -1463,6 +1487,57 @@ a:focus-visible,
   margin-top: 0.2rem;
 }
 
+/* Puzzle shape picker (escape_room_feature_design.md §5.4). Narrower than the
+   template cards because a shape is chosen by its silhouette, not by reading:
+   the sprite preview carries the meaning and the description lives in the
+   tooltip/aria-label instead of taking up card space. */
+.puzzle-shape-cards {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.puzzle-shape-card {
+  flex: 0 0 auto;
+  width: 4.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  border: 2px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-medium);
+  background: var(--md-surface, transparent);
+  box-shadow: var(--md-elevation-1);
+  padding: 0.4rem 0.3rem;
+  cursor: pointer;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard),
+    box-shadow var(--md-duration-short) var(--md-easing-standard);
+}
+
+.puzzle-shape-card:hover,
+.puzzle-shape-card.active {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-2);
+}
+
+/* Fixed height so the "No shape" card (which has no canvas inside) lines up
+   with the sprite cards instead of collapsing shorter than them. */
+.puzzle-shape-card__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.puzzle-shape-card__label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.15;
+}
+
 .builder-subheading {
   font-size: 0.68rem;
   font-weight: 600;
@@ -1488,8 +1563,17 @@ a:focus-visible,
 
 .character-avatar-preview-panel {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
   padding: 0.35rem 0 0.15rem;
+}
+
+.character-avatar-preview-hint {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  margin: 0;
+  text-align: center;
 }
 
 .character-avatar-preview {
@@ -1509,6 +1593,184 @@ a:focus-visible,
   width: 72px;
   height: 108px;
   overflow: visible;
+}
+
+/* AI character role picker (docs/08-ai-characters.md §1). Replaces a bare
+   <select> whose five option ids ("quiz_master", "historical_persona") told
+   the author nothing about how the character would actually behave. Each card
+   states the behaviour change and shows an example reply. */
+.character-role-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.character-role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  border: 2px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-medium);
+  background: var(--md-surface, transparent);
+  box-shadow: var(--md-elevation-1);
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard),
+    box-shadow var(--md-duration-short) var(--md-easing-standard);
+}
+
+.character-role-card:hover,
+.character-role-card.selected {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-2);
+}
+
+.character-role-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.character-role-card-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.character-role-card-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.character-role-card-desc {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+}
+
+/* The example reply is the part that makes the choice concrete, so it stays
+   readable rather than being truncated to one line. */
+.character-role-card-sample {
+  font-size: 0.64rem;
+  font-style: italic;
+  color: var(--md-on-surface-variant);
+  border-left: 2px solid var(--md-outline-variant);
+  padding-left: 0.4rem;
+  margin-top: 0.15rem;
+}
+
+.character-role-card.selected .character-role-card-sample {
+  border-left-color: var(--md-primary);
+}
+
+/* Appearance pickers. Every option renders a miniature of the character
+   wearing that option, so "mohawk" or "goatee" is something the author sees
+   rather than a word they have to imagine. */
+.character-appearance-pickers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.appearance-picker-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.appearance-picker-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.appearance-picker-options.is-color {
+  gap: 0.35rem;
+}
+
+.appearance-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  width: 3.4rem;
+  border: 2px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-medium);
+  background: var(--md-surface-container-highest);
+  padding: 0.25rem 0.15rem;
+  cursor: pointer;
+  color: inherit;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard),
+    box-shadow var(--md-duration-short) var(--md-easing-standard);
+}
+
+.appearance-option:hover,
+.appearance-option.selected {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-2);
+}
+
+/* renderAvatarSVG only emits two sizes (120x180 "large" and 60x90 otherwise),
+   so the thumbnail is the 60x90 output scaled down here rather than a third
+   size branch in the shared avatar renderer. The wrapper is sized to the
+   *scaled* result so the buttons do not reserve 90px of empty height. */
+.appearance-option-thumb {
+  display: block;
+  width: 34px;
+  height: 44px;
+  overflow: hidden;
+  position: relative;
+}
+
+.appearance-option-thumb .avatar-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 90px;
+  transform: translate(-50%, -50%) scale(0.62);
+  overflow: visible;
+  /* The global `.avatar-svg` idleBob keyframes animate `transform`, which
+     would win over the line above and undo the centering + scale. Thumbnails
+     are static on purpose anyway: ~27 of them animating at once turns the
+     picker into a wall of movement. */
+  animation: none;
+}
+
+.appearance-option-thumb .avatar-svg .eye-l,
+.appearance-option-thumb .avatar-svg .eye-r {
+  animation: none;
+}
+
+.appearance-option-caption {
+  font-size: 0.58rem;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.appearance-color-swatch {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 2px solid var(--md-outline-variant);
+  cursor: pointer;
+  padding: 0;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard),
+    transform var(--md-duration-short) var(--md-easing-standard);
+}
+
+.appearance-color-swatch:hover,
+.appearance-color-swatch.selected {
+  border-color: var(--md-primary);
+  transform: scale(1.1);
+}
+
+.builder-field-hint {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  margin: 0.1rem 0 0.35rem;
 }
 
 /* Secondary builder action: same shape as .builder-primary-btn but visually
@@ -2734,6 +2996,8 @@ canvas.waypoint-picking {
   .chat-panel { width: 100%; height: 38vh; }
   .builder-panel { width: 100%; max-height: 40vh; border-left: none; border-top: 1px solid var(--md-outline-variant); }
   .room-container { padding: 0.5rem; }
+  .room-container { flex-direction: column; align-items: center; }
+  .room-hud { width: 100%; max-width: 800px; flex-direction: row; flex-wrap: wrap; justify-content: center; }
   .room-create-row { grid-template-columns: 1fr; }
   .room-filter-row { grid-template-columns: 1fr; }
 }

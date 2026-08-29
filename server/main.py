@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from server.config import MOVE_SPEED, PORT, TICK_RATE
+from server.config import ALLOWED_ORIGINS, MOVE_SPEED, PORT, TICK_RATE
 from server.db.database import Database
 from server.game.avatar import validate_avatar
 from server.game.chat import create_message, filter_messages_for_user
@@ -33,7 +33,7 @@ from server.game.tile_navigation import tiles_within_radius
 DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 
 logger  = logging.getLogger(__name__)
-sio     = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+sio     = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=ALLOWED_ORIGINS)
 db      = Database()
 rooms   = RoomsRegistry()
 ai_bot  = AIBot()
@@ -516,9 +516,7 @@ async def player_join(sid, data):
 
     db_messages = await db.get_recent_messages("lobby", 50)
     visible = filter_messages_for_user(db_messages, sid)
-    for msg in visible:
-        lobby.add_message(msg)
-    await sio.emit("chat:history", lobby.get_messages_for_player(sid), room=sid)
+    await sio.emit("chat:history", visible, room=sid)
 
     await sio.emit(
         "player:entered",
@@ -622,6 +620,7 @@ async def chat_send(sid, data):
     if not player:
         return
 
+    data = data or {}
     text = (data.get("text") or "").strip()[:200]
     if not text:
         return
@@ -635,7 +634,12 @@ async def chat_send(sid, data):
         await sio.emit("error", {"message": "External links are not allowed in this room"}, room=sid)
         return
 
+    # Only the two known kinds are accepted; an unrecognised client-supplied
+    # type would otherwise be persisted and re-broadcast verbatim, and every
+    # non-"public" value silently falls through to the private routing path.
     msg_type = data.get("type", "public")
+    if msg_type not in ("public", "private"):
+        msg_type = "public"
     recipient_id = data.get("recipientId") if msg_type == "private" else None
 
     message = create_message(
@@ -872,7 +876,17 @@ async def room_join(sid, data):
     )
     await sio.emit(
         "room:builder:state",
-        {"roomId": room_id, **builder_state_payload(room_id)},
+        {
+            "roomId": room_id,
+            # Must be personalized: the default `requester_id=None` means
+            # "trusted internal caller" to `_is_visible_to`, which would ship
+            # every unrevealed `hidden_item` (id + coordinates) to a joining
+            # visitor -- the exact disclosure `broadcast_builder_state`
+            # exists to prevent.
+            **builder_state_payload(
+                room_id, requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+            ),
+        },
         room=sid,
     )
     await sio.emit("room:list", {"rooms": rooms.list_rooms()}, room=sid)
@@ -887,6 +901,10 @@ async def room_tile_add(sid, data):
     room_id = rooms.get_player_room_id(sid)
     if not room_id:
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage tiles"}, room=sid)
         return
 
     direction = data.get("direction")
@@ -1046,6 +1064,10 @@ async def room_tile_clone(sid, data):
         await sio.emit("error", {"message": "Invalid direction"}, room=sid)
         return
 
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage tiles"}, room=sid)
+        return
+
     cloned = rooms.clone_tile(room_id, tile, direction)
     if not cloned:
         await sio.emit("error", {"message": "Cannot clone tile in this direction"}, room=sid)
@@ -1069,6 +1091,10 @@ async def room_tile_delete(sid, data):
         return
 
     coord = (x, y)
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage tiles"}, room=sid)
+        return
+
     if not rooms.delete_tile(room_id, coord):
         await sio.emit("error", {"message": "Cannot delete this tile"}, room=sid)
         return
@@ -1091,6 +1117,10 @@ async def room_tile_configure(sid, data):
         return
 
     coord = (x, y)
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage tiles"}, room=sid)
+        return
+
     ok = rooms.configure_tile(
         room_id,
         coord,
@@ -1980,8 +2010,11 @@ async def room_object_duplicate(sid, data):
     data = data or {}
     new_object_id = data.get("newObjectId") or f"obj-{uuid.uuid4().hex[:8]}"
     try:
-        obj = builder.duplicate_object(data["objectId"], new_object_id, requester_id=sid)
-    except (KeyError, ValueError) as exc:
+        obj = builder.duplicate_object(
+            data["objectId"], new_object_id,
+            requester_id=sid, is_room_host=_is_room_host(sid, room_id),
+        )
+    except (KeyError, PermissionError, ValueError) as exc:
         await sio.emit("error", {"message": str(exc)}, room=sid)
         return
 
@@ -2066,6 +2099,14 @@ async def room_zone_create(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
+    # Host-only: zones + triggers are layout authoring, and an ungated
+    # `reveal_object` trigger is an outright escape-room bypass (a visitor
+    # could reveal a `hidden_item` they never solved for, which then
+    # satisfies a door's `requiredItemId`).
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage zones"}, room=sid)
+        return
+
     data = data or {}
     try:
         zone = builder.create_zone(
@@ -2092,6 +2133,10 @@ async def room_zone_delete(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage zones"}, room=sid)
+        return
+
     if not builder.delete_zone((data or {}).get("zoneId")):
         await sio.emit("error", {"message": "Unknown zone"}, room=sid)
         return
@@ -2105,6 +2150,10 @@ async def room_trigger_create(sid, data):
     room_id, tile, builder = _current_room_and_builder(sid)
     if not room_id:
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage triggers"}, room=sid)
         return
 
     data = data or {}
@@ -2133,6 +2182,10 @@ async def room_trigger_delete(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage triggers"}, room=sid)
+        return
+
     if not builder.delete_trigger((data or {}).get("triggerId")):
         await sio.emit("error", {"message": "Unknown trigger"}, room=sid)
         return
@@ -2148,9 +2201,19 @@ async def room_version_save(sid, data):
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
         return
 
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage versions"}, room=sid)
+        return
+
     data = data or {}
     version = builder.save_draft(
-        snapshot=data.get("snapshot", builder_state_payload(room_id)),
+        # Personalized even though this is host-only, so a stored snapshot
+        # never becomes a second copy of hidden-item positions that
+        # `room:version:rollback` would hand back out.
+        snapshot=data.get(
+            "snapshot",
+            builder_state_payload(room_id, requester_id=sid, is_room_host=True),
+        ),
         created_by=sid,
         change_notes=data.get("changeNotes"),
     )
@@ -2167,6 +2230,10 @@ async def room_version_publish(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)
     if not room_id:
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage versions"}, room=sid)
         return
 
     try:
@@ -2188,6 +2255,10 @@ async def room_version_rollback(sid, data):
     room_id, _tile, builder = _current_room_and_builder(sid)
     if not room_id:
         await sio.emit("error", {"message": "Join a room first"}, room=sid)
+        return
+
+    if not _is_room_host(sid, room_id):
+        await sio.emit("error", {"message": "Only the room host can manage versions"}, room=sid)
         return
 
     try:
@@ -2561,6 +2632,9 @@ async def room_puzzle_add(sid, data):
             # fallback lives in RoomBuilderState.add_puzzle instead.
             match_mode=data.get("matchMode"), max_attempts=data.get("maxAttempts"),
             template_id=data.get("templateId"),
+            # Same "no default here" reasoning as matchMode: a template
+            # supplies its own paired prop shape (§5.4).
+            prop_type=data.get("propType"),
             requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
     except (KeyError, PermissionError, ValueError) as exc:

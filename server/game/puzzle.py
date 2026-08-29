@@ -93,6 +93,7 @@ class PuzzleEngine:
         unlock_door_id: str | None = None,
         match_mode: str = "exact",
         max_attempts: int | None = None,
+        prop_type: str | None = None,
     ) -> dict[str, Any]:
         if puzzle_id in self._puzzles:
             raise ValueError(f"puzzle id already exists: {puzzle_id}")
@@ -113,6 +114,12 @@ class PuzzleEngine:
             "unlockDoorId": unlock_door_id,
             "matchMode": match_mode,
             "maxAttempts": max_attempts,
+            # Purely descriptive here: which prop shape this puzzle is meant
+            # to wear in the room (design doc §5.4). Stored as an opaque
+            # string so this engine keeps its "no reference to room objects"
+            # independence -- RoomBuilderState validates it against the
+            # object catalog before calling in.
+            "propType": prop_type,
         }
         self._puzzles[puzzle_id] = record
         return self.get_puzzle_public(puzzle_id)

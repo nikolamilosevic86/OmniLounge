@@ -110,26 +110,6 @@
 
       <div class="game-layout">
         <div class="room-container">
-          <div class="room-frame">
-            <canvas id="room-canvas" width="800" height="600"></canvas>
-            <div id="players-layer" class="players-layer"></div>
-            <div id="tile-transition-overlay" class="tile-transition-overlay" aria-hidden="true"></div>
-            <div id="builder-object-toolbar" class="builder-object-toolbar hidden" role="toolbar" aria-label="Selected object actions">
-              <button type="button" data-toolbar-action="rotate_right" title="Rotate" aria-label="Rotate">
-                <span class="material-symbols-outlined" aria-hidden="true">rotate_right</span>
-              </button>
-              <button type="button" data-toolbar-action="palette" title="Color &amp; material" aria-label="Color and material">
-                <span class="material-symbols-outlined" aria-hidden="true">palette</span>
-              </button>
-              <button type="button" data-toolbar-action="tune" title="Edit details" aria-label="Edit details">
-                <span class="material-symbols-outlined" aria-hidden="true">tune</span>
-              </button>
-              <button type="button" data-toolbar-action="delete" title="Delete" aria-label="Delete">
-                <span class="material-symbols-outlined" aria-hidden="true">delete</span>
-              </button>
-            </div>
-          </div>
-
           <div class="room-hud">
             <div class="hud-pill online-pill">
               <span class="pulse-dot"></span>
@@ -155,19 +135,44 @@
             <div class="hud-pill minimap-pill">
               <div id="mini-map" class="mini-map"></div>
             </div>
-            <div class="hud-pill controls-pill">
-              <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · click to walk
+          </div>
+
+          <div class="room-column">
+            <div class="room-frame">
+              <canvas id="room-canvas" width="800" height="600"></canvas>
+              <div id="players-layer" class="players-layer"></div>
+              <div id="tile-transition-overlay" class="tile-transition-overlay" aria-hidden="true"></div>
+              <div id="builder-object-toolbar" class="builder-object-toolbar hidden" role="toolbar" aria-label="Selected object actions">
+                <button type="button" data-toolbar-action="rotate_right" title="Rotate" aria-label="Rotate">
+                  <span class="material-symbols-outlined" aria-hidden="true">rotate_right</span>
+                </button>
+                <button type="button" data-toolbar-action="palette" title="Color &amp; material" aria-label="Color and material">
+                  <span class="material-symbols-outlined" aria-hidden="true">palette</span>
+                </button>
+                <button type="button" data-toolbar-action="tune" title="Edit details" aria-label="Edit details">
+                  <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+                </button>
+                <button type="button" data-toolbar-action="delete" title="Delete" aria-label="Delete">
+                  <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+                </button>
+              </div>
             </div>
-            <div class="hud-pill controls-pill">
-              <kbd>SPACE</kbd> punch · <kbd>CTRL</kbd> kick · <kbd>B</kbd> block
-            </div>
-            <div class="hud-pill escape-timer-pill hidden" id="escape-timer-pill">
-              <span class="material-symbols-outlined" aria-hidden="true">timer</span>
-              <span id="escape-timer-label">00:00</span>
-            </div>
-            <div class="hud-pill escape-inventory-pill hidden" id="escape-inventory-pill">
-              <span class="material-symbols-outlined" aria-hidden="true">key</span>
-              <span id="escape-inventory-label">0 items</span>
+
+            <div class="room-hud-below">
+              <div class="hud-pill controls-pill">
+                <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · click to walk
+              </div>
+              <div class="hud-pill controls-pill">
+                <kbd>SPACE</kbd> punch · <kbd>CTRL</kbd> kick · <kbd>B</kbd> block
+              </div>
+              <div class="hud-pill escape-timer-pill hidden" id="escape-timer-pill">
+                <span class="material-symbols-outlined" aria-hidden="true">timer</span>
+                <span id="escape-timer-label">00:00</span>
+              </div>
+              <div class="hud-pill escape-inventory-pill hidden" id="escape-inventory-pill">
+                <span class="material-symbols-outlined" aria-hidden="true">key</span>
+                <span id="escape-inventory-label">0 items</span>
+              </div>
             </div>
           </div>
         </div>
@@ -321,6 +326,10 @@
               <span>Start From Template</span>
             </label>
             <div class="puzzle-template-cards" id="puzzle-template-cards" role="listbox" aria-label="Puzzle template"></div>
+            <label class="builder-field">
+              <span>Shape In Room</span>
+            </label>
+            <div class="puzzle-shape-cards" id="puzzle-shape-cards" role="listbox" aria-label="Puzzle shape in room"></div>
             <label class="builder-field">
               <span>Puzzle ID</span>
               <input type="text" id="puzzle-id-input" placeholder="puzzle-1" />
@@ -537,16 +546,11 @@
               <span>Name</span>
               <input type="text" id="character-name-input" maxlength="80" placeholder="Character name" />
             </label>
-            <label class="builder-field">
+            <div class="builder-field">
               <span>Role</span>
-              <select id="character-role-select">
-                <option value="guide">Guide</option>
-                <option value="quiz_master">Quiz Master</option>
-                <option value="narrator">Narrator</option>
-                <option value="historical_persona">Historical Persona</option>
-                <option value="mentor">Mentor</option>
-              </select>
-            </label>
+              <p class="builder-field-hint">Sets how this character talks to visitors. Pick one to see an example reply.</p>
+              <div id="character-role-cards" class="character-role-cards"></div>
+            </div>
             <label class="builder-field">
               <span>Start Node ID</span>
               <input type="text" id="character-start-node-input" placeholder="node-1" />
@@ -560,35 +564,9 @@
             <h5 class="builder-subheading">Appearance</h5>
             <div class="character-avatar-preview-panel">
               <div id="character-appearance-preview" class="character-avatar-preview"></div>
+              <p class="character-avatar-preview-hint">This is how your character will look in the room.</p>
             </div>
-            <label class="builder-field">
-              <span>Skin Color</span>
-              <select id="character-skin-color-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Body Type</span>
-              <select id="character-gender-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Hair</span>
-              <select id="character-hair-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Beard</span>
-              <select id="character-beard-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Glasses</span>
-              <select id="character-glasses-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Clothes</span>
-              <select id="character-clothes-select"></select>
-            </label>
-            <label class="builder-field">
-              <span>Accessory</span>
-              <select id="character-accessory-select"></select>
-            </label>
+            <div id="character-appearance-pickers" class="character-appearance-pickers"></div>
             <button type="button" id="character-appearance-btn" class="builder-primary-btn">Save Appearance</button>
 
             <div class="kb-panel" id="knowledge-store-panel">

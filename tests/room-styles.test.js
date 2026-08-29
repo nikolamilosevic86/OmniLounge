@@ -7,8 +7,8 @@ import {
 } from '../src/room-styles.js';
 
 describe('ROOM_STYLES', () => {
-  it('offers exactly 5 selectable empty-room styles', () => {
-    expect(ROOM_STYLES).toHaveLength(5);
+  it('offers exactly 8 selectable empty-room styles', () => {
+    expect(ROOM_STYLES).toHaveLength(8);
   });
 
   it('gives every style a unique id and label', () => {

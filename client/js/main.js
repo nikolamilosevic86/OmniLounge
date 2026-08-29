@@ -19,6 +19,8 @@ import {
   formatModeLabel, parseChoicesInput, resolveCharacterMode,
   validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
   MAX_KNOWLEDGE_DOCUMENTS, isKnowledgeBaseFull,
+  DEFAULT_CHARACTER_ROLE, characterRoleCardOptions,
+  APPEARANCE_FIELDS, appearanceOptionCards,
 } from './story.js';
 import {
   canSendChatMessage,
@@ -37,7 +39,7 @@ import {
 import {
   escapeStatusLabel, formatCountdown, isLowTime, puzzleAttemptMessage, formatLeaderboardEntry, doorAttemptMessage,
   formatGlobalLeaderboardEntry, puzzleTemplateFormValues, formatPuzzleAnalytics, puzzleDifficultySignal,
-  validatePuzzleInput, puzzleTemplateCardOptions,
+  validatePuzzleInput, puzzleTemplateCardOptions, puzzlePropCardOptions,
 } from './escape-room.js';
 
 const BUBBLE_DURATION = 6000;
@@ -154,6 +156,15 @@ const state = {
   puzzles: [],
   puzzleTemplates: [],
   selectedPuzzleTemplateId: '',
+  // Which prop shape the puzzle being authored will wear in the room
+  // (escape_room_feature_design.md §5.4). '' means "no shape".
+  selectedPuzzlePropType: '',
+
+  // The AI character identity/appearance currently being edited. The role and
+  // appearance pickers are buttons rather than <select>s, so their value can no
+  // longer be read back out of the DOM -- it lives here instead.
+  editingCharacterRole: DEFAULT_CHARACTER_ROLE,
+  editingCharacterAppearance: null,
   puzzleModalPuzzleId: null,
 };
 
@@ -293,17 +304,11 @@ const mediaSyncStatus = document.getElementById('media-sync-status');
 const mediaSyncToggleBtn = document.getElementById('media-sync-toggle-btn');
 const characterNpcSelect = document.getElementById('character-npc-select');
 const characterNameInput = document.getElementById('character-name-input');
-const characterRoleSelect = document.getElementById('character-role-select');
+const characterRoleCardsEl = document.getElementById('character-role-cards');
 const characterStartNodeInput = document.getElementById('character-start-node-input');
 const characterPortraitInput = document.getElementById('character-portrait-input');
 const characterConfigureBtn = document.getElementById('character-configure-btn');
-const characterSkinColorSelect = document.getElementById('character-skin-color-select');
-const characterGenderSelect = document.getElementById('character-gender-select');
-const characterHairSelect = document.getElementById('character-hair-select');
-const characterBeardSelect = document.getElementById('character-beard-select');
-const characterGlassesSelect = document.getElementById('character-glasses-select');
-const characterClothesSelect = document.getElementById('character-clothes-select');
-const characterAccessorySelect = document.getElementById('character-accessory-select');
+const characterAppearancePickersEl = document.getElementById('character-appearance-pickers');
 const characterAppearancePreview = document.getElementById('character-appearance-preview');
 const characterAppearanceBtn = document.getElementById('character-appearance-btn');
 const characterKnowledgeBaseTitleInput = document.getElementById('character-knowledge-base-title-input');
@@ -372,6 +377,7 @@ const puzzleCancelBtn = document.getElementById('puzzle-cancel-btn');
 const puzzleErrorEl = document.getElementById('puzzle-error');
 const puzzleListEl = document.getElementById('puzzle-list');
 const puzzleTemplateCardsEl = document.getElementById('puzzle-template-cards');
+const puzzleShapeCardsEl = document.getElementById('puzzle-shape-cards');
 const puzzleAnalyticsBtn = document.getElementById('puzzle-analytics-btn');
 const puzzleAnalyticsListEl = document.getElementById('puzzle-analytics-list');
 const escapeLeaderboardBtn = document.getElementById('escape-leaderboard-btn');
@@ -417,8 +423,6 @@ function initCreator() {
   buildOptionButtons('glasses-options', AVATAR_OPTIONS.glasses, 'glasses');
   buildOptionButtons('clothes-options', AVATAR_OPTIONS.clothes, 'clothes');
   buildOptionButtons('accessory-options', AVATAR_OPTIONS.accessories, 'accessory');
-  populateCharacterAppearanceSelects();
-
   usernameInput.addEventListener('input', () => {
     state.avatar.username = usernameInput.value.trim();
     enterRoomBtn.disabled = state.avatar.username.length === 0;
@@ -426,21 +430,6 @@ function initCreator() {
 
   enterRoomBtn.addEventListener('click', enterRoom);
   updateAvatarPreview();
-}
-
-function populateSelectOptions(selectEl, options) {
-  if (!selectEl) return;
-  selectEl.innerHTML = options.map((opt) => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('');
-}
-
-function populateCharacterAppearanceSelects() {
-  populateSelectOptions(characterSkinColorSelect, AVATAR_OPTIONS.skinColors);
-  populateSelectOptions(characterGenderSelect, AVATAR_OPTIONS.gender);
-  populateSelectOptions(characterHairSelect, AVATAR_OPTIONS.hair);
-  populateSelectOptions(characterBeardSelect, AVATAR_OPTIONS.beards);
-  populateSelectOptions(characterGlassesSelect, AVATAR_OPTIONS.glasses);
-  populateSelectOptions(characterClothesSelect, AVATAR_OPTIONS.clothes);
-  populateSelectOptions(characterAccessorySelect, AVATAR_OPTIONS.accessories);
 }
 
 function buildColorSwatches() {
@@ -495,16 +484,114 @@ function updateAvatarPreview() {
 
 function updateCharacterAppearancePreview() {
   if (!characterAppearancePreview) return;
-  const appearance = {
-    skinColor: characterSkinColorSelect?.value,
-    gender: characterGenderSelect?.value,
-    hair: characterHairSelect?.value,
-    beard: characterBeardSelect?.value,
-    glasses: characterGlassesSelect?.value,
-    clothes: characterClothesSelect?.value,
-    accessory: characterAccessorySelect?.value,
-  };
-  characterAppearancePreview.innerHTML = renderAvatarSVG(appearance, 'normal');
+  characterAppearancePreview.innerHTML = renderAvatarSVG(currentCharacterAppearance(), 'normal');
+}
+
+function currentCharacterAppearance() {
+  return state.editingCharacterAppearance || defaultCharacterAppearance();
+}
+
+/**
+ * Role picker. Each card spells out how the role changes the character's
+ * replies and shows an example line, so the author can see what a role does
+ * before committing to it.
+ */
+function renderCharacterRoleCards() {
+  if (!characterRoleCardsEl) return;
+  characterRoleCardsEl.innerHTML = '';
+  characterRoleCardOptions(state.editingCharacterRole).forEach((option) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'character-role-card' + (option.active ? ' selected' : '');
+    card.setAttribute('aria-pressed', String(option.active));
+    card.setAttribute('aria-label', `Role: ${option.label}. ${option.description}`);
+    card.title = option.description;
+
+    const head = document.createElement('span');
+    head.className = 'character-role-card-head';
+    const icon = document.createElement('span');
+    icon.className = 'character-role-card-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = option.icon;
+    const label = document.createElement('span');
+    label.className = 'character-role-card-label';
+    label.textContent = option.label;
+    head.append(icon, label);
+
+    const description = document.createElement('span');
+    description.className = 'character-role-card-desc';
+    description.textContent = option.description;
+
+    const sample = document.createElement('span');
+    sample.className = 'character-role-card-sample';
+    sample.textContent = `\u201c${option.sampleLine}\u201d`;
+
+    card.append(head, description, sample);
+    card.addEventListener('click', () => {
+      state.editingCharacterRole = option.role;
+      renderCharacterRoleCards();
+    });
+    characterRoleCardsEl.appendChild(card);
+  });
+}
+
+/**
+ * Appearance pickers. Every option renders a miniature of *this* character
+ * wearing that option, so the author sees the exact change before clicking
+ * rather than choosing an abstract word from a dropdown.
+ */
+function renderCharacterAppearancePickers() {
+  if (!characterAppearancePickersEl) return;
+  const appearance = currentCharacterAppearance();
+  characterAppearancePickersEl.innerHTML = '';
+
+  APPEARANCE_FIELDS.forEach((field) => {
+    const row = document.createElement('div');
+    row.className = 'appearance-picker';
+
+    const heading = document.createElement('div');
+    heading.className = 'appearance-picker-label';
+    heading.textContent = field.label;
+    row.appendChild(heading);
+
+    const options = document.createElement('div');
+    options.className = 'appearance-picker-options' + (field.isColor ? ' is-color' : '');
+
+    appearanceOptionCards(field.key, appearance).forEach((option) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('aria-pressed', String(option.active));
+      btn.setAttribute('aria-label', `${field.label}: ${option.label}`);
+      btn.title = option.label;
+
+      if (field.isColor) {
+        btn.className = 'appearance-color-swatch' + (option.active ? ' selected' : '');
+        btn.style.backgroundColor = option.value;
+      } else {
+        btn.className = 'appearance-option' + (option.active ? ' selected' : '');
+        const thumb = document.createElement('span');
+        thumb.className = 'appearance-option-thumb';
+        thumb.setAttribute('aria-hidden', 'true');
+        thumb.innerHTML = renderAvatarSVG(option.appearance, 'normal');
+        const caption = document.createElement('span');
+        caption.className = 'appearance-option-caption';
+        caption.textContent = option.label;
+        btn.append(thumb, caption);
+      }
+
+      btn.addEventListener('click', () => {
+        state.editingCharacterAppearance = option.appearance;
+        // Re-render every row, not just this one: changing skin tone or body
+        // type alters what the other rows' miniatures should be showing.
+        renderCharacterAppearancePickers();
+        updateCharacterAppearancePreview();
+      });
+      options.appendChild(btn);
+    });
+
+    row.appendChild(options);
+    characterAppearancePickersEl.appendChild(row);
+  });
 }
 
 function enterRoom() {
@@ -1582,7 +1669,7 @@ function initGame() {
   characterConfigureBtn?.addEventListener('click', () => {
     const objectId = characterNpcSelect?.value;
     const name = characterNameInput?.value?.trim();
-    const role = characterRoleSelect?.value;
+    const role = state.editingCharacterRole;
     const startNodeId = characterStartNodeInput?.value?.trim();
     if (!objectId || !name || !startNodeId) {
       addSystemMessage('Enter a name and start node ID for this character.');
@@ -1602,29 +1689,13 @@ function initGame() {
       addSystemMessage('Select an AI character first.');
       return;
     }
-    const appearance = {
-      skinColor: characterSkinColorSelect?.value,
-      gender: characterGenderSelect?.value,
-      hair: characterHairSelect?.value,
-      beard: characterBeardSelect?.value,
-      glasses: characterGlassesSelect?.value,
-      clothes: characterClothesSelect?.value,
-      accessory: characterAccessorySelect?.value,
-    };
+    const appearance = currentCharacterAppearance();
     state.socket?.emit('room:character:appearance', { objectId, appearance }, (character) => {
       if (!character) return;
       state.builderCharacters[objectId] = character;
       renderAiCharacters();
     });
   });
-
-  // Live-update the appearance preview as the user picks options, instead of
-  // only reflecting the saved appearance after clicking "Save Appearance".
-  [
-    characterSkinColorSelect, characterGenderSelect, characterHairSelect,
-    characterBeardSelect, characterGlassesSelect, characterClothesSelect,
-    characterAccessorySelect,
-  ].forEach((selectEl) => selectEl?.addEventListener('change', updateCharacterAppearancePreview));
 
 
   characterKnowledgeBaseTitleBtn?.addEventListener('click', () => {
@@ -1888,7 +1959,19 @@ function initGame() {
     if (puzzleMatchModeSelect) puzzleMatchModeSelect.value = values.matchMode;
     // Only a placeholder: the creator always authors their own answer.
     if (puzzleAnswerInput) puzzleAnswerInput.placeholder = values.answerPlaceholder || 'a piano';
+    // Each template is paired 1:1 with a prop shape, so picking "Number Lock"
+    // should pre-select the digital lock -- but only as a default the creator
+    // can immediately override in the shape picker below.
+    state.selectedPuzzlePropType = template?.propType || '';
     renderPuzzleTemplateCards();
+    renderPuzzleShapeCards();
+  });
+
+  puzzleShapeCardsEl?.addEventListener('click', (evt) => {
+    const card = evt.target.closest('button[data-prop-type]');
+    if (!card) return;
+    state.selectedPuzzlePropType = card.getAttribute('data-prop-type');
+    renderPuzzleShapeCards();
   });
 
   puzzleAddBtn?.addEventListener('click', () => {
@@ -1912,8 +1995,30 @@ function initGame() {
         maxAttempts: maxAttemptsRaw ? Number(maxAttemptsRaw) : undefined,
         revealItemId: puzzleRevealItemSelect?.value || undefined,
         unlockDoorId: puzzleUnlockDoorSelect?.value || undefined,
+        propType: state.selectedPuzzlePropType || undefined,
       }, (puzzle) => {
         if (!puzzle) return;
+        // Give the puzzle a body (escape_room_feature_design.md §5.4). This
+        // reuses the ordinary, fully-validated `room:object:create` path
+        // rather than adding a server-side auto-spawn, so tile budget,
+        // permissions and placement rules all still apply -- and binding
+        // `config.puzzleId` is what grows the prop its "Solve" interaction.
+        // Creation only: an edit is a remove+re-add of the same puzzle id, so
+        // the existing prop stays bound and must not be duplicated.
+        if (!editingPuzzleId && puzzle.propType) {
+          const me = state.players.get(state.playerId);
+          const { x, y } = snapPoint(
+            { x: me?.position?.x ?? 400, y: me?.position?.y ?? 300 },
+            state.gridSnapEnabled,
+          );
+          state.socket?.emit('room:object:create', {
+            objectType: puzzle.propType,
+            x,
+            y,
+            editPermission: objectEditAnyoneInput?.checked ? 'anyone' : 'owner_only',
+            config: { puzzleId: puzzle.puzzleId },
+          });
+        }
         refreshPuzzleList();
       });
       if (editingPuzzleId) exitPuzzleEditMode();
@@ -1925,7 +2030,9 @@ function initGame() {
         if (puzzleHintsInput) puzzleHintsInput.value = '';
         if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
         state.selectedPuzzleTemplateId = '';
+        state.selectedPuzzlePropType = '';
         renderPuzzleTemplateCards();
+        renderPuzzleShapeCards();
       }
     };
     if (editingPuzzleId) {
@@ -2632,16 +2739,24 @@ function renderPlayers() {
     if (bubble) {
       const lockIcon = bubble.type === 'private' ? '<span class="bubble-lock">🔒</span>' : '';
       const desiredText = lockIcon + escapeHtml(bubble.text);
+      // Diff against a stored key of the SOURCE text rather than against
+      // `bubbleEl.innerHTML`: the browser re-serializes innerHTML without
+      // escaping quotes, so comparing to our (correctly quote-escaped)
+      // `desiredText` would mismatch on every tick for any message
+      // containing an apostrophe, defeating the whole point of this check.
+      const bubbleKey = `${bubble.type}\u0000${bubble.text}`;
 
       if (!bubbleEl) {
         // First appearance — create and animate in
         bubbleEl = document.createElement('div');
         bubbleEl.className = 'speech-bubble' + (bubble.type === 'private' ? ' private' : '');
         bubbleEl.innerHTML = desiredText;
+        bubbleEl.dataset.bubbleKey = bubbleKey;
         el.insertBefore(bubbleEl, el.firstChild);
-      } else if (bubbleEl.innerHTML !== desiredText) {
+      } else if (bubbleEl.dataset.bubbleKey !== bubbleKey) {
         // Text updated (shouldn't happen often) — update in place, no animation restart
         bubbleEl.innerHTML = desiredText;
+        bubbleEl.dataset.bubbleKey = bubbleKey;
       }
     } else if (bubbleEl) {
       // Bubble expired — fade out then remove
@@ -3484,7 +3599,11 @@ function enterPuzzleEditMode(puzzle) {
   if (puzzleRevealItemSelect) puzzleRevealItemSelect.value = puzzle.revealItemId || '';
   if (puzzleUnlockDoorSelect) puzzleUnlockDoorSelect.value = puzzle.unlockDoorId || '';
   state.selectedPuzzleTemplateId = '';
+  // Unlike the answer, propType *is* in the public payload, so an edit can
+  // pre-fill it -- otherwise saving would silently strip the puzzle's shape.
+  state.selectedPuzzlePropType = puzzle.propType || '';
   renderPuzzleTemplateCards();
+  renderPuzzleShapeCards();
   showPuzzleFormError('');
   if (puzzleAddBtn) puzzleAddBtn.textContent = 'Save Changes';
   puzzleCancelBtn?.classList.remove('hidden');
@@ -3501,7 +3620,9 @@ function exitPuzzleEditMode() {
   if (puzzleRevealItemSelect) puzzleRevealItemSelect.value = '';
   if (puzzleUnlockDoorSelect) puzzleUnlockDoorSelect.value = '';
   state.selectedPuzzleTemplateId = '';
+  state.selectedPuzzlePropType = '';
   renderPuzzleTemplateCards();
+  renderPuzzleShapeCards();
   showPuzzleFormError('');
   if (puzzleAddBtn) puzzleAddBtn.textContent = 'Add Puzzle';
   puzzleCancelBtn?.classList.add('hidden');
@@ -3545,6 +3666,10 @@ function refreshPuzzleTemplates() {
   state.socket?.emit('room:puzzle:templates', {}, (templates) => {
     state.puzzleTemplates = templates || [];
     renderPuzzleTemplateCards();
+    // The shape picker is static content (it doesn't depend on the template
+    // list), but this is the first point at which the puzzle form is live,
+    // so it's where the picker gets its initial paint.
+    renderPuzzleShapeCards();
   });
 }
 
@@ -3556,6 +3681,27 @@ function renderPuzzleTemplateCards() {
       <span class="puzzle-template-card__label">${escapeHtml(c.label)}</span>
       <span class="puzzle-template-card__description">${escapeHtml(c.description)}</span>
     </button>`).join('');
+}
+
+/** The shape picker (escape_room_feature_design.md §5.4). Each card previews
+ * the *actual* prop sprite via `renderObjectThumbnail`, so what the creator
+ * picks here is literally what appears in the room -- no separate icon set to
+ * drift out of sync with the canvas. The thumbnail canvas is appended rather
+ * than templated in, since it's a DOM node, not markup. */
+function renderPuzzleShapeCards() {
+  if (!puzzleShapeCardsEl) return;
+  const cards = puzzlePropCardOptions(state.selectedPuzzlePropType);
+  puzzleShapeCardsEl.innerHTML = cards.map((c) => `
+    <button type="button" class="puzzle-shape-card${c.active ? ' active' : ''}" data-prop-type="${escapeHtml(c.propType)}" role="option" aria-selected="${c.active}" title="${escapeHtml(c.description)}" aria-label="${escapeHtml(c.label)}: ${escapeHtml(c.description)}">
+      <span class="puzzle-shape-card__preview" data-preview-for="${escapeHtml(c.propType)}"></span>
+      <span class="puzzle-shape-card__label">${escapeHtml(c.label)}</span>
+    </button>`).join('');
+  cards.forEach((c) => {
+    if (!c.propType) return;
+    const slot = puzzleShapeCardsEl.querySelector(`[data-preview-for="${c.propType}"]`);
+    const thumb = renderObjectThumbnail({ objectType: c.propType, size: 40 });
+    if (slot && thumb) slot.appendChild(thumb);
+  });
 }
 
 // Door/item "Configure" selects mirror renderBookShelfSelect: scoped to the
@@ -4083,17 +4229,12 @@ function renderCharacterConfigFields() {
   const objectId = characterNpcSelect?.value;
   const character = objectId ? state.builderCharacters[objectId] : null;
   if (characterNameInput) characterNameInput.value = character?.name || '';
-  if (characterRoleSelect) characterRoleSelect.value = character?.role || 'guide';
+  state.editingCharacterRole = character?.role || DEFAULT_CHARACTER_ROLE;
+  renderCharacterRoleCards();
   if (characterStartNodeInput) characterStartNodeInput.value = character?.startNodeId || '';
   if (characterPortraitInput) characterPortraitInput.value = character?.portraitUrl || '';
-  const appearance = character?.appearance || defaultCharacterAppearance();
-  if (characterSkinColorSelect) characterSkinColorSelect.value = appearance.skinColor;
-  if (characterGenderSelect) characterGenderSelect.value = appearance.gender;
-  if (characterHairSelect) characterHairSelect.value = appearance.hair;
-  if (characterBeardSelect) characterBeardSelect.value = appearance.beard;
-  if (characterGlassesSelect) characterGlassesSelect.value = appearance.glasses;
-  if (characterClothesSelect) characterClothesSelect.value = appearance.clothes;
-  if (characterAccessorySelect) characterAccessorySelect.value = appearance.accessory;
+  state.editingCharacterAppearance = character?.appearance || defaultCharacterAppearance();
+  renderCharacterAppearancePickers();
   updateCharacterAppearancePreview();
   if (characterKnowledgeBaseTitleInput) characterKnowledgeBaseTitleInput.value = character?.knowledgeBase?.title || '';
   exitKnowledgeDocumentEditMode();
@@ -4524,10 +4665,25 @@ function requestRoomList() {
   state.socket.emit('room:list', state.roomFilters);
 }
 
+/** HTML-escapes `text` for interpolation into an innerHTML template.
+ *
+ * SECURITY: this must escape quotes, not just `&<>`. The old implementation
+ * was `div.textContent = text; return div.innerHTML`, which leaves `"` and
+ * `'` intact -- safe in element-text position but NOT in attribute position,
+ * and several call sites interpolate into attributes (e.g. the YouTube
+ * `<iframe ... title="${escapeHtml(item.title)}">`). A room-host-supplied
+ * title of `" srcdoc="&lt;img src=x onerror=...&gt;` could break out of the
+ * `title` attribute and inject an `srcdoc` attribute; because srcdoc's value
+ * is HTML-entity-decoded before being parsed as a document, even the
+ * `&lt;`-escaped payload would execute -- stored XSS. Escaping quotes here
+ * closes that for every call site at once. */
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 const THEME_STORAGE_KEY = 'hobboverse-theme';

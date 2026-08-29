@@ -96,21 +96,65 @@ export function puzzleTemplateFormValues(template) {
  * empty form -- `puzzleTemplateFormValues(null)` already implements that
  * behavior once selected. `active` marks exactly one card: the one whose
  * `templateId` equals `selectedTemplateId` (or Custom, when it's blank).
+ * Each card carries the template's paired `propType` (escape_room_feature_design.md
+ * §5.4) so the card can preview the shape the puzzle will wear, and so
+ * choosing a template can pre-select that shape in the picker.
  */
 export function puzzleTemplateCardOptions(templates, selectedTemplateId = '') {
   const customCard = {
     templateId: '',
     label: 'Custom (blank)',
     description: 'Start from a blank puzzle.',
+    // Deliberately blank: a blank puzzle shouldn't inherit some other
+    // archetype's shape, it picks its own from the shape picker.
+    propType: '',
     active: !selectedTemplateId,
   };
   const templateCards = (templates || []).map((t) => ({
     templateId: t.templateId,
     label: t.label,
     description: t.description || '',
+    propType: t.propType || '',
     active: t.templateId === selectedTemplateId,
   }));
   return [customCard, ...templateCards];
+}
+
+/**
+ * The puzzle prop shapes a creator can choose from (escape_room_feature_design.md
+ * §5.4), mirroring `PUZZLE_PROP_TYPES` in server/game/room_object_catalog.py --
+ * same ids, same order, so the shape picker and the builder catalog agree.
+ * The descriptions say what each shape *reads as* from across the room, which
+ * is the whole point of giving a puzzle a body.
+ */
+export const PUZZLE_PROP_SHAPES = [
+  { propType: 'cipher_box', label: 'Cipher Box', description: 'Stacked glyph rings -- reads as a coded message.' },
+  { propType: 'digital_lock', label: 'Digital Lock', description: 'Keypad and LED display -- reads as a numeric code.' },
+  { propType: 'combination_dial', label: 'Combination Dial', description: 'A safe dial -- reads as a sequence to turn through.' },
+  { propType: 'riddle_tablet', label: 'Riddle Tablet', description: 'An engraved standing stone -- reads as words to solve.' },
+  { propType: 'clue_board', label: 'Clue Board', description: 'Pinned notes and red string -- reads as clues to connect.' },
+];
+
+/**
+ * View-model for the puzzle shape picker. Leads with a "No shape" card because
+ * a puzzle is still perfectly valid bodiless -- it can be bound to any
+ * existing object by hand -- and marks exactly one card active. An unknown or
+ * missing `selectedPropType` falls back to "No shape" rather than leaving the
+ * row with nothing selected, so the picker can never render in a state the
+ * creator can't interpret.
+ */
+export function puzzlePropCardOptions(selectedPropType = '') {
+  const known = PUZZLE_PROP_SHAPES.some((s) => s.propType === selectedPropType);
+  const selected = known ? selectedPropType : '';
+  return [
+    {
+      propType: '',
+      label: 'No shape',
+      description: 'Bind this puzzle to an object yourself.',
+      active: selected === '',
+    },
+    ...PUZZLE_PROP_SHAPES.map((shape) => ({ ...shape, active: shape.propType === selected })),
+  ];
 }
 
 /** One-line summary of a puzzle's attempt analytics for the builder panel. */

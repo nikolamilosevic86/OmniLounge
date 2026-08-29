@@ -19,6 +19,19 @@ from server.game.url_safety import is_safe_external_url
 
 ALLOWED_ROLES = {"guide", "quiz_master", "narrator", "historical_persona", "mentor"}
 
+# What each role actually *does* to the character's behaviour in generative
+# mode. Without these, `role` would be a stored-but-unused label and the
+# role picker in the builder UI would promise a change it never delivers.
+# Kept in lockstep with `CHARACTER_ROLE_CARDS` in src/story.js, which shows
+# the author a plain-language description of each of these personas.
+ROLE_PERSONAS = {
+    "guide": "a warm, welcoming guide who helps visitors get their bearings and explains what is around them",
+    "quiz_master": "a playful quiz master who checks understanding by asking the visitor a question back before giving the answer",
+    "narrator": "a narrator who describes people, places and events in a vivid, story-like voice",
+    "historical_persona": "a figure from history who stays in character, speaking from your own era and point of view",
+    "mentor": "a patient mentor who breaks things down step by step and encourages the visitor as they learn",
+}
+
 # An `ai_character` room object is provisioned with this placeholder profile
 # the moment it is placed, so that appearance/knowledge/generative editing
 # works immediately instead of failing until the author happens to press
@@ -298,6 +311,27 @@ class StoryEngine:
             return None
         return "\n\n".join(parts)[:MAX_KNOWLEDGE_CONTEXT_LENGTH]
 
+    @staticmethod
+    def _build_system_prompt(record: dict[str, Any]) -> str | None:
+        """Persona + knowledge, for the generative caller only.
+
+        Deliberately kept separate from `_build_knowledge_context`, which
+        doubles as the *user-visible* predefined fallback answer: folding
+        persona instructions in there would reply to a visitor with
+        "You are Owl, a warm, welcoming guide..." as though the character
+        had said it. This is the only place the two are combined.
+        """
+        persona = ROLE_PERSONAS.get(record["role"])
+        knowledge = StoryEngine._build_knowledge_context(record)
+        parts = []
+        if persona:
+            parts.append(f"You are {record['name']}, {persona}. Stay in character.")
+        if knowledge:
+            parts.append(knowledge)
+        if not parts:
+            return None
+        return "\n\n".join(parts)
+
     def configure_generative_mode(
         self, object_id: str, character_id: str, api_base_url: str | None = None, api_key: str | None = None,
     ) -> dict[str, Any]:
@@ -414,7 +448,7 @@ class StoryEngine:
                 return {"answer": _RATE_LIMITED_ANSWER, "mode": "rate_limited"}
         user_message = (user_message or "")[:200]
         try:
-            answer = caller(record["apiBaseUrl"], record["apiKey"], knowledge_context, user_message)
+            answer = caller(record["apiBaseUrl"], record["apiKey"], self._build_system_prompt(record), user_message)
         except Exception:
             return {"answer": self._fallback_answer(knowledge_context), "mode": "predefined"}
         return {"answer": answer, "mode": "generative"}

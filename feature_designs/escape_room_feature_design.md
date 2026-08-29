@@ -148,6 +148,28 @@ Whether the item is currently revealed is **not** stored on the object at all �
 - Deleting an **`escape_door`**: clear any `open_door`/`has_opened` entries for that `object_id` on `EscapeSessionEngine` for every visitor, and if the door was the sole win condition for the room, no special handling is needed beyond that — a visitor who already won keeps their recorded leaderboard entry (§8.4), since `record_attempt` has already fired and is not retroactively undone by a later edit.
 - Deleting **any object with a bound `config.get("puzzleId")`** (§6.2): if no other object still references that `puzzle_id`, call `self._puzzles.remove_puzzle(puzzle_id)` so a dangling puzzle definition doesn't accumulate; if another object (or an `ai_character`'s `guardsPuzzleId`, §6.5) still references the same `puzzle_id`, the puzzle definition is left intact.
 
+### 5.4 Puzzle Prop Shapes
+
+A puzzle used to be invisible: it existed only as a record, discoverable only by clicking whatever object a creator happened to bind it to. Five **puzzle props** give a puzzle a readable silhouette, so a player can tell a number lock from a riddle from across the room without clicking anything.
+
+| `objectType` | Size | Reads as |
+| --- | --- | --- |
+| `cipher_box` | S | Stacked glyph rings — a coded message |
+| `digital_lock` | S | Keypad + LED display — a numeric code |
+| `combination_dial` | S | A safe dial — a sequence to turn through |
+| `riddle_tablet` | M | An engraved standing stone — words to solve |
+| `clue_board` | L | Pinned notes and red string — clues to connect |
+
+**Props declare no static `interactions`.** An unbound prop is scenery; it is binding `config.puzzleId` that grows it a "Solve" action, via the existing `RoomBuilderState._interactions_for` branch (§6.2). A static catalog entry would instead offer a dead "Solve" action on an unconfigured prop.
+
+**`propType` is stored on the puzzle, validated by the orchestrator.** `PuzzleEngine` keeps `propType` as an opaque string and performs no validation, preserving its design rule of having no reference to room objects (§6.1). `RoomBuilderState.add_puzzle` validates it against `is_puzzle_prop` — and, like `unlock_door_id`, *before* calling into `PuzzleEngine`, so a rejected shape leaves no dangling puzzle definition behind. Because `get_puzzle_public` strips only `answer`, `propType` propagates into the public payload for free.
+
+**Each template is paired 1:1 with a shape**, so every shape is reachable from some template and picking a template pre-selects a sensible body: `riddle`→`riddle_tablet`, `cipher`→`cipher_box`, `sequence`→`combination_dial`, `number_lock`→`digital_lock`, `keyword_search`→`clue_board`. The pairing is a default the creator can immediately override in the shape picker.
+
+**The picker previews the real sprite.** The shape cards render via `renderObjectThumbnail`, the same `drawFurnitureSprite` the live room canvas uses, so what a creator picks is literally what appears — there is no second icon set that could drift out of sync with the canvas. The fiddly sprite geometry (`computeKeypadLayout`, `computeDialTicks`, `computeCipherRings`) is factored into exported pure helpers, following the `computeTableLayout` precedent, so layout is unit-testable under Node with no canvas.
+
+**Placement reuses `room:object:create`.** On creating a puzzle with a shape, the client places the bound prop through the ordinary object-creation event rather than a server-side auto-spawn, so tile budget, permissions and placement validation all still apply, and no new socket event is introduced. Placement happens on creation only: an edit is a remove + re-add of the same puzzle id, so the existing prop stays bound and must not be duplicated.
+
 ## 6. Puzzle Authoring Paths (reusing existing systems)
 
 ### 6.1 New `PuzzleEngine` domain module

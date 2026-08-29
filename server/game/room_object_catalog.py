@@ -131,7 +131,57 @@ OBJECT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
             {"interactionType": "pick_up", "label": "Pick Up", "actionState": None},
         ],
     },
+    # Puzzle props (design doc §5.4): physical shapes that give an otherwise
+    # abstract puzzle a recognizable form in the room. Every one is an
+    # ordinary catalog entry so placement/resize/rotate/delete work for free.
+    #
+    # All five deliberately declare NO static interactions. A prop with no
+    # puzzle bound is scenery; binding `config.puzzleId` is what grows it a
+    # "Solve" action, appended by RoomBuilderState._interactions_for (§6.2).
+    # A static entry here would instead offer a dead action on an
+    # unconfigured prop.
+    "cipher_box": {
+        "category": "interactive",
+        "defaultSizePreset": "S",
+        "interactions": [],
+    },
+    "digital_lock": {
+        "category": "interactive",
+        "defaultSizePreset": "S",
+        "interactions": [],
+    },
+    "combination_dial": {
+        "category": "interactive",
+        "defaultSizePreset": "S",
+        "interactions": [],
+    },
+    "riddle_tablet": {
+        "category": "interactive",
+        "defaultSizePreset": "M",
+        "interactions": [],
+    },
+    "clue_board": {
+        "category": "interactive",
+        "defaultSizePreset": "L",
+        "interactions": [],
+    },
 }
+
+# Ordered so the builder catalog and the puzzle-shape picker present the five
+# prop shapes identically -- roughly simplest-to-most-elaborate.
+PUZZLE_PROP_TYPES: tuple[str, ...] = (
+    "cipher_box",
+    "digital_lock",
+    "combination_dial",
+    "riddle_tablet",
+    "clue_board",
+)
+
+
+def is_puzzle_prop(object_type: str) -> bool:
+    """Whether an object type is one of the puzzle-prop shapes (§5.4), i.e.
+    a valid value for a puzzle's `propType`."""
+    return object_type in PUZZLE_PROP_TYPES
 
 
 def is_valid_object_type(object_type: str) -> bool:

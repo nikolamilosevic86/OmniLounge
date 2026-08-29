@@ -36,24 +36,49 @@ function shade(hex, amt) {
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
 }
 
+/** SVG gradient ids are document-global, so every avatar on screen needs its
+ * OWN ids or the first-rendered avatar's colours would leak into all the
+ * others. Derived deterministically from the avatar's appearance (rather
+ * than a counter) so re-rendering the same avatar produces a byte-identical
+ * string -- the room:state handler diffs avatar markup on every movement
+ * tick and would otherwise churn the DOM constantly. */
+function gradientKey(avatar, size) {
+  const raw = [
+    avatar.username || '', avatar.skinColor || '', avatar.hair || '',
+    avatar.clothes || '', avatar.gender || '', size,
+  ].join('|');
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
+  return hash.toString(36);
+}
+
 // ─── hair (back layer – drawn behind head) ────────────────────────────────────
 
 function buildHairBack(style, w, hcx, hcy, hrx, hry, hairC) {
   if (style === 'bald') return '';
+  const hl = shade(hairC, 46);
   switch (style) {
+    // Strands stop around chest height. Anything much longer reads as two
+    // curtains hanging past the knees rather than as hair.
     case 'long':
       return `
         <path d="M${hcx - hrx * 0.88},${hcy - hry * 0.2}
-                 Q${hcx - hrx * 1.1},${hcy + hry * 1.3} ${hcx - hrx * 0.52},${hcy + hry * 3.7}"
-              stroke="${hairC}" stroke-width="${w * 0.12}" stroke-linecap="round" fill="none"/>
+                 Q${hcx - hrx * 1.14},${hcy + hry * 1.0} ${hcx - hrx * 0.66},${hcy + hry * 2.15}"
+              stroke="${hairC}" stroke-width="${w * 0.13}" stroke-linecap="round" fill="none"/>
         <path d="M${hcx + hrx * 0.88},${hcy - hry * 0.2}
-                 Q${hcx + hrx * 1.1},${hcy + hry * 1.3} ${hcx + hrx * 0.52},${hcy + hry * 3.7}"
-              stroke="${hairC}" stroke-width="${w * 0.12}" stroke-linecap="round" fill="none"/>`;
+                 Q${hcx + hrx * 1.14},${hcy + hry * 1.0} ${hcx + hrx * 0.66},${hcy + hry * 2.15}"
+              stroke="${hairC}" stroke-width="${w * 0.13}" stroke-linecap="round" fill="none"/>
+        <path d="M${hcx - hrx * 0.92},${hcy + hry * 0.15}
+                 Q${hcx - hrx * 1.08},${hcy + hry * 1.05} ${hcx - hrx * 0.74},${hcy + hry * 1.85}"
+              stroke="${hl}" stroke-width="${w * 0.026}" stroke-linecap="round" fill="none" opacity="0.5"/>`;
     case 'ponytail':
       return `
         <path d="M${hcx + hrx * 0.8},${hcy - hry * 0.05}
-                 Q${hcx + hrx * 1.38},${hcy + hry * 1.15} ${hcx + hrx * 0.58},${hcy + hry * 3.3}"
-              stroke="${hairC}" stroke-width="${w * 0.1}" stroke-linecap="round" fill="none"/>`;
+                 Q${hcx + hrx * 1.42},${hcy + hry * 0.95} ${hcx + hrx * 0.72},${hcy + hry * 2.25}"
+              stroke="${hairC}" stroke-width="${w * 0.11}" stroke-linecap="round" fill="none"/>
+        <path d="M${hcx + hrx * 0.9},${hcy + hry * 0.2}
+                 Q${hcx + hrx * 1.34},${hcy + hry * 1.0} ${hcx + hrx * 0.82},${hcy + hry * 1.95}"
+              stroke="${hl}" stroke-width="${w * 0.022}" stroke-linecap="round" fill="none" opacity="0.5"/>`;
     default:
       return '';
   }
@@ -69,30 +94,46 @@ function buildHairFront(style, w, hcx, hcy, hrx, hry, hairC) {
   switch (style) {
     case 'short':
       return `
-        <path d="M${hcx - hrx},${hcy - hry * 0.24}
-                 Q${hcx - hrx * 0.86},${hcy - hry * 1.48} ${hcx},${hcy - hry * 1.52}
-                 Q${hcx + hrx * 0.86},${hcy - hry * 1.48} ${hcx + hrx},${hcy - hry * 0.24}
-                 Q${hcx + hrx * 0.6},${hcy - hry * 0.54} ${hcx},${hcy - hry * 0.5}
-                 Q${hcx - hrx * 0.6},${hcy - hry * 0.54} ${hcx - hrx},${hcy - hry * 0.24}Z"
+        <path d="M${hcx - hrx * 1.02},${hcy - hry * 0.18}
+                 Q${hcx - hrx * 0.92},${hcy - hry * 1.5} ${hcx},${hcy - hry * 1.54}
+                 Q${hcx + hrx * 0.92},${hcy - hry * 1.5} ${hcx + hrx * 1.02},${hcy - hry * 0.18}
+                 L${hcx + hrx * 0.86},${hcy - hry * 0.24}
+                 Q${hcx + hrx * 0.72},${hcy - hry * 0.62} ${hcx + hrx * 0.1},${hcy - hry * 0.72}
+                 Q${hcx - hrx * 0.6},${hcy - hry * 0.66} ${hcx - hrx * 0.86},${hcy - hry * 0.24}Z"
               fill="${hairC}"/>
-        <path d="M${hcx - hrx * 0.35},${hcy - hry * 1.42}
-                 Q${hcx - hrx * 0.1},${hcy - hry * 1.2} ${hcx + hrx * 0.22},${hcy - hry * 1.34}"
-              fill="none" stroke="${hl}" stroke-width="${w * 0.025}" opacity="0.52" stroke-linecap="round"/>`;
+        <path d="M${hcx - hrx * 0.5},${hcy - hry * 1.46}
+                 Q${hcx + hrx * 0.16},${hcy - hry * 1.1} ${hcx + hrx * 0.2},${hcy - hry * 0.7}
+                 Q${hcx - hrx * 0.3},${hcy - hry * 0.98} ${hcx - hrx * 0.86},${hcy - hry * 0.3}
+                 Q${hcx - hrx * 0.98},${hcy - hry * 1.16} ${hcx - hrx * 0.5},${hcy - hry * 1.46}Z"
+              fill="${dk}" opacity="0.55"/>
+        <path d="M${hcx - hrx * 1.0},${hcy - hry * 0.2} L${hcx - hrx * 0.92},${hcy + hry * 0.24}
+                 L${hcx - hrx * 0.78},${hcy - hry * 0.22}Z" fill="${hairC}"/>
+        <path d="M${hcx + hrx * 1.0},${hcy - hry * 0.2} L${hcx + hrx * 0.92},${hcy + hry * 0.24}
+                 L${hcx + hrx * 0.78},${hcy - hry * 0.22}Z" fill="${hairC}"/>
+        <path d="M${hcx - hrx * 0.42},${hcy - hry * 1.44}
+                 Q${hcx - hrx * 0.05},${hcy - hry * 1.24} ${hcx + hrx * 0.32},${hcy - hry * 1.3}"
+              fill="none" stroke="${hl}" stroke-width="${w * 0.028}" opacity="0.6" stroke-linecap="round"/>`;
 
     case 'long':
       return `
-        <path d="M${hcx - hrx},${hcy - hry * 0.24}
-                 Q${hcx - hrx * 0.86},${hcy - hry * 1.48} ${hcx},${hcy - hry * 1.55}
-                 Q${hcx + hrx * 0.86},${hcy - hry * 1.48} ${hcx + hrx},${hcy - hry * 0.24}
-                 Q${hcx + hrx * 0.6},${hcy - hry * 0.54} ${hcx},${hcy - hry * 0.5}
-                 Q${hcx - hrx * 0.6},${hcy - hry * 0.54} ${hcx - hrx},${hcy - hry * 0.24}Z"
+        <path d="M${hcx - hrx * 1.04},${hcy - hry * 0.1}
+                 Q${hcx - hrx * 0.9},${hcy - hry * 1.52} ${hcx},${hcy - hry * 1.58}
+                 Q${hcx + hrx * 0.9},${hcy - hry * 1.52} ${hcx + hrx * 1.04},${hcy - hry * 0.1}
+                 L${hcx + hrx * 0.88},${hcy - hry * 0.2}
+                 Q${hcx + hrx * 0.66},${hcy - hry * 0.5} ${hcx + hrx * 0.06},${hcy - hry * 0.62}
+                 Q${hcx - hrx * 0.62},${hcy - hry * 0.5} ${hcx - hrx * 0.88},${hcy - hry * 0.2}Z"
               fill="${hairC}"/>
-        <path d="M${hcx - hrx * 0.35},${hcy - hry * 1.42}
-                 Q${hcx - hrx * 0.1},${hcy - hry * 1.2} ${hcx + hrx * 0.22},${hcy - hry * 1.34}"
-              fill="none" stroke="${hl}" stroke-width="${w * 0.025}" opacity="0.52" stroke-linecap="round"/>
-        <path d="M${hcx + hrx * 0.24},${hcy - hry * 1.52}
-                 Q${hcx + hrx * 0.18},${hcy - hry * 0.52} ${hcx + hrx * 0.52},${hcy - hry * 0.06}"
-              fill="none" stroke="${dk}" stroke-width="${w * 0.028}" opacity="0.38" stroke-linecap="round"/>`;
+        <path d="M${hcx - hrx * 0.06},${hcy - hry * 1.56}
+                 Q${hcx - hrx * 0.72},${hcy - hry * 1.14} ${hcx - hrx * 0.9},${hcy - hry * 0.2}
+                 L${hcx - hrx * 1.04},${hcy - hry * 0.1}
+                 Q${hcx - hrx * 1.0},${hcy - hry * 1.3} ${hcx - hrx * 0.06},${hcy - hry * 1.56}Z"
+              fill="${dk}" opacity="0.45"/>
+        <path d="M${hcx - hrx * 0.4},${hcy - hry * 1.46}
+                 Q${hcx - hrx * 0.05},${hcy - hry * 1.2} ${hcx + hrx * 0.3},${hcy - hry * 1.32}"
+              fill="none" stroke="${hl}" stroke-width="${w * 0.028}" opacity="0.6" stroke-linecap="round"/>
+        <path d="M${hcx + hrx * 0.22},${hcy - hry * 1.54}
+                 Q${hcx + hrx * 0.14},${hcy - hry * 0.6} ${hcx + hrx * 0.56},${hcy - hry * 0.02}"
+              fill="none" stroke="${dk}" stroke-width="${w * 0.03}" opacity="0.42" stroke-linecap="round"/>`;
 
     case 'curly':
       return `
@@ -123,16 +164,23 @@ function buildHairFront(style, w, hcx, hcy, hrx, hry, hairC) {
 
     case 'ponytail':
       return `
-        <path d="M${hcx - hrx},${hcy - hry * 0.24}
-                 Q${hcx - hrx * 0.86},${hcy - hry * 1.48} ${hcx},${hcy - hry * 1.52}
-                 Q${hcx + hrx * 0.86},${hcy - hry * 1.48} ${hcx + hrx},${hcy - hry * 0.24}
-                 Q${hcx + hrx * 0.6},${hcy - hry * 0.54} ${hcx},${hcy - hry * 0.5}
-                 Q${hcx - hrx * 0.6},${hcy - hry * 0.54} ${hcx - hrx},${hcy - hry * 0.24}Z"
+        <path d="M${hcx - hrx * 1.02},${hcy - hry * 0.14}
+                 Q${hcx - hrx * 0.88},${hcy - hry * 1.5} ${hcx},${hcy - hry * 1.56}
+                 Q${hcx + hrx * 0.88},${hcy - hry * 1.5} ${hcx + hrx * 1.02},${hcy - hry * 0.14}
+                 L${hcx + hrx * 0.86},${hcy - hry * 0.22}
+                 Q${hcx + hrx * 0.6},${hcy - hry * 0.72} ${hcx},${hcy - hry * 0.82}
+                 Q${hcx - hrx * 0.6},${hcy - hry * 0.72} ${hcx - hrx * 0.86},${hcy - hry * 0.22}Z"
               fill="${hairC}"/>
-        <circle cx="${hcx + hrx * 0.74}" cy="${hcy - hry * 0.1}" r="${hrx * 0.14}" fill="${dk}"/>
-        <path d="M${hcx - hrx * 0.35},${hcy - hry * 1.42}
-                 Q${hcx - hrx * 0.1},${hcy - hry * 1.2} ${hcx + hrx * 0.22},${hcy - hry * 1.34}"
-              fill="none" stroke="${hl}" stroke-width="${w * 0.025}" opacity="0.52" stroke-linecap="round"/>`;
+        <g stroke="${dk}" stroke-width="${w * 0.018}" fill="none" opacity="0.42" stroke-linecap="round">
+          <path d="M${hcx - hrx * 0.62},${hcy - hry * 0.5} Q${hcx - hrx * 0.3},${hcy - hry * 1.36} ${hcx + hrx * 0.34},${hcy - hry * 1.48}"/>
+          <path d="M${hcx - hrx * 0.2},${hcy - hry * 0.78} Q${hcx + hrx * 0.12},${hcy - hry * 1.3} ${hcx + hrx * 0.62},${hcy - hry * 1.3}"/>
+          <path d="M${hcx + hrx * 0.28},${hcy - hry * 0.76} Q${hcx + hrx * 0.6},${hcy - hry * 1.1} ${hcx + hrx * 0.86},${hcy - hry * 0.96}"/>
+        </g>
+        <circle cx="${hcx + hrx * 0.82}" cy="${hcy - hry * 0.16}" r="${hrx * 0.17}" fill="${dk}"/>
+        <circle cx="${hcx + hrx * 0.78}" cy="${hcy - hry * 0.22}" r="${hrx * 0.06}" fill="${hl}" opacity="0.5"/>
+        <path d="M${hcx - hrx * 0.44},${hcy - hry * 1.44}
+                 Q${hcx - hrx * 0.08},${hcy - hry * 1.26} ${hcx + hrx * 0.28},${hcy - hry * 1.36}"
+              fill="none" stroke="${hl}" stroke-width="${w * 0.028}" opacity="0.6" stroke-linecap="round"/>`;
 
     default:
       return '';
@@ -141,9 +189,11 @@ function buildHairFront(style, w, hcx, hcy, hrx, hry, hairC) {
 
 // ─── beard ────────────────────────────────────────────────────────────────────
 
-function buildBeard(style, w, hcx, hcy, hrx, hry, skin) {
+function buildBeard(style, w, hcx, hcy, hrx, hry, skin, hairC) {
   const mBot = hcy + hry * 0.54;
-  const bc   = '#3b2f2f';
+  // Beard tracks the hair colour (a black-haired avatar with a chestnut beard
+  // was one of the more obviously "off" details); bald falls back to dark brown.
+  const bc   = hairC && hairC !== 'none' ? shade(hairC, -12) : '#3b2f2f';
   switch (style) {
     case 'stubble':
       return `<ellipse cx="${hcx}" cy="${mBot + hry * 0.09}" rx="${hrx * 0.56}" ry="${hry * 0.19}" fill="${bc}" opacity="0.17"/>`;
@@ -362,6 +412,20 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
   const clothDk = shade(clothC, -38);
   const clothHL = shade(clothC, 40);
 
+  // Per-avatar gradient ids (see gradientKey) + the fills that reference them.
+  const uid     = gradientKey(avatar, size);
+  const gSkin   = `url(#sk-${uid})`;
+  const gCloth  = `url(#cl-${uid})`;
+  const gSleeve = `url(#sl-${uid})`;
+  const gLeg    = `url(#lg-${uid})`;
+  const gShadow = `url(#sh-${uid})`;
+  // A hair-thin darker outline around the silhouette. Without it the flat
+  // fills dissolve into similarly-toned room walls/floors; with it the
+  // character reads as a distinct figure against ANY room style.
+  const inkSkin  = shade(skin, -78);
+  const inkCloth = shade(clothC, -70);
+  const inkW     = w * 0.014;
+
   // ── head geometry ──────────────────────────────────────────────────────────
   const hcx = w * 0.5;
   const hcy = h * 0.215;
@@ -383,7 +447,9 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
   // ── arms ───────────────────────────────────────────────────────────────────
   const armW   = w * 0.13;
   const armH   = h * 0.258;
-  const armTop = bodyTop + h * 0.008;
+  // Sits a touch below the torso top so the rounded shoulder overlaps the
+  // sleeve cap (arms are drawn behind the body) rather than butting into it.
+  const armTop = bodyTop + h * 0.03;
   const lAX    = bL - armW * 0.66;
   const rAX    = bL + bodyW - armW * 0.34;
 
@@ -440,9 +506,11 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
 
   // ── SVG fragments — vary by actionState ───────────────────────────────────
 
+  // Soft radial contact shadow — a flat-opacity ellipse reads as a sticker
+  // cut-out, a falloff gradient reads as the figure actually standing there.
   const svgShadow = `
-    <ellipse cx="${hcx}" cy="${h * 0.978}" rx="${w * 0.28}" ry="${h * 0.022}"
-             fill="rgba(0,0,0,0.18)"/>`;
+    <ellipse cx="${hcx}" cy="${h * 0.978}" rx="${w * 0.3}" ry="${h * 0.026}"
+             fill="${gShadow}"/>`;
 
   // ── Legs ──────────────────────────────────────────────────────────────────
   const isSitting = actionState === 'sitting' || actionState === 'lounging';
@@ -462,18 +530,22 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
 
     svgLegs = `
       <rect x="${lThighX}" y="${seatY - thighH * 0.5}" width="${thighLen}" height="${thighH}"
-            rx="${thighH * 0.46}" fill="${legC}"/>
+            rx="${thighH * 0.46}" fill="${gLeg}" stroke="${shade(legC, -60)}" stroke-width="${inkW}" stroke-opacity="0.26"/>
       <rect x="${lThighX}" y="${seatY - thighH * 0.48}" width="${thighLen * 0.38}" height="${thighH * 0.88}"
             rx="${thighH * 0.35}" fill="${legHL}" opacity="0.28"/>
-      <rect x="${lShinX}" y="${shinY}" width="${legW}" height="${shinH}" rx="${legW * 0.46}" fill="${legC}"/>
-      <ellipse cx="${lShinX + legW * 0.5}" cy="${shinY + shinH}" rx="${legW * 0.6}" ry="${h * 0.03}" fill="${shoeC}"/>
+      <rect x="${lShinX}" y="${shinY}" width="${legW}" height="${shinH}" rx="${legW * 0.46}" fill="${gLeg}"
+            stroke="${shade(legC, -60)}" stroke-width="${inkW}" stroke-opacity="0.26"/>
+      <ellipse cx="${lShinX + legW * 0.5}" cy="${shinY + shinH}" rx="${legW * 0.6}" ry="${h * 0.03}" fill="${shoeC}"
+               stroke="${shade(shoeC, -40)}" stroke-width="${inkW}" stroke-opacity="0.4"/>
 
       <rect x="${rThighX}" y="${seatY - thighH * 0.5}" width="${thighLen}" height="${thighH}"
-            rx="${thighH * 0.46}" fill="${legC}"/>
+            rx="${thighH * 0.46}" fill="${gLeg}" stroke="${shade(legC, -60)}" stroke-width="${inkW}" stroke-opacity="0.26"/>
       <rect x="${rThighX}" y="${seatY - thighH * 0.48}" width="${thighLen * 0.38}" height="${thighH * 0.88}"
             rx="${thighH * 0.35}" fill="${legHL}" opacity="0.28"/>
-      <rect x="${rShinX}" y="${shinY}" width="${legW}" height="${shinH}" rx="${legW * 0.46}" fill="${legC}"/>
-      <ellipse cx="${rShinX + legW * 0.5}" cy="${shinY + shinH}" rx="${legW * 0.6}" ry="${h * 0.03}" fill="${shoeC}"/>`;
+      <rect x="${rShinX}" y="${shinY}" width="${legW}" height="${shinH}" rx="${legW * 0.46}" fill="${gLeg}"
+            stroke="${shade(legC, -60)}" stroke-width="${inkW}" stroke-opacity="0.26"/>
+      <ellipse cx="${rShinX + legW * 0.5}" cy="${shinY + shinH}" rx="${legW * 0.6}" ry="${h * 0.03}" fill="${shoeC}"
+               stroke="${shade(shoeC, -40)}" stroke-width="${inkW}" stroke-opacity="0.4"/>`;
   } else {
     // Normal walking legs — override with attack angles if present
     const leftLegAngle  = attackAngles ? attackAngles.leftLegAngle.toFixed(2)  : ls;
@@ -481,23 +553,31 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
     svgLegs = `
       <g transform="rotate(${leftLegAngle}, ${lHipX}, ${hipY})">
         <rect x="${lLX}" y="${legTop}" width="${legW}" height="${legH}" rx="${legW * 0.46}"
-              fill="${legC}"/>
+              fill="${gLeg}" stroke="${shade(legC, -60)}" stroke-width="${inkW}" stroke-opacity="0.26"/>
         <rect x="${lLX + legW * 0.17}" y="${legTop + legH * 0.04}" width="${legW * 0.24}" height="${legH * 0.58}"
               rx="${legW * 0.12}" fill="${legHL}" opacity="0.3"/>
+        <rect x="${lLX}" y="${legTop + legH * 0.82}" width="${legW}" height="${legH * 0.1}"
+              rx="${legW * 0.2}" fill="${shade(legC, -34)}" opacity="0.55"/>
         <ellipse cx="${lSX - legW * 0.07}" cy="${shoeY}" rx="${legW * 0.64}" ry="${h * 0.034}"
-                 fill="${shoeC}"/>
+                 fill="${shoeC}" stroke="${shade(shoeC, -40)}" stroke-width="${inkW}" stroke-opacity="0.4"/>
         <ellipse cx="${lSX - legW * 0.14}" cy="${shoeY - h * 0.004}" rx="${legW * 0.56}" ry="${h * 0.022}"
                  fill="${shade(shoeC, 30)}"/>
+        <ellipse cx="${lSX - legW * 0.24}" cy="${shoeY - h * 0.009}" rx="${legW * 0.26}" ry="${h * 0.008}"
+                 fill="${shade(shoeC, 78)}" opacity="0.5"/>
       </g>
       <g transform="rotate(${rightLegAngle}, ${rHipX}, ${hipY})">
         <rect x="${rLX}" y="${legTop}" width="${legW}" height="${legH}" rx="${legW * 0.46}"
-              fill="${legC}"/>
+              fill="${gLeg}" stroke="${shade(legC, -60)}" stroke-width="${inkW}" stroke-opacity="0.26"/>
         <rect x="${rLX + legW * 0.17}" y="${legTop + legH * 0.04}" width="${legW * 0.24}" height="${legH * 0.58}"
               rx="${legW * 0.12}" fill="${legHL}" opacity="0.3"/>
+        <rect x="${rLX}" y="${legTop + legH * 0.82}" width="${legW}" height="${legH * 0.1}"
+              rx="${legW * 0.2}" fill="${shade(legC, -34)}" opacity="0.55"/>
         <ellipse cx="${rSX + legW * 0.07}" cy="${shoeY}" rx="${legW * 0.64}" ry="${h * 0.034}"
-                 fill="${shoeC}"/>
+                 fill="${shoeC}" stroke="${shade(shoeC, -40)}" stroke-width="${inkW}" stroke-opacity="0.4"/>
         <ellipse cx="${rSX + legW * 0.14}" cy="${shoeY - h * 0.004}" rx="${legW * 0.56}" ry="${h * 0.022}"
                  fill="${shade(shoeC, 30)}"/>
+        <ellipse cx="${rSX + legW * 0.24}" cy="${shoeY - h * 0.009}" rx="${legW * 0.26}" ry="${h * 0.008}"
+                 fill="${shade(shoeC, 78)}" opacity="0.5"/>
       </g>`;
   }
 
@@ -544,101 +624,193 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
   const svgArms = `
     <g transform="rotate(${lArmRot}, ${lShoX}, ${shoY})">
       <rect x="${lAX}" y="${armTop}" width="${armW}" height="${armH}" rx="${armW * 0.48}"
-            fill="${clothC}"/>
+            fill="${gSleeve}" stroke="${inkCloth}" stroke-width="${inkW}" stroke-opacity="0.26"/>
       <rect x="${lAX + armW * 0.18}" y="${armTop + armH * 0.04}" width="${armW * 0.28}" height="${armH * 0.62}"
             rx="${armW * 0.1}" fill="${clothHL}" opacity="0.26"/>
-      <ellipse cx="${lAX + armW * 0.5}" cy="${armTop + armH + h * 0.002}" rx="${armW * 0.46}" ry="${h * 0.03}"
-               fill="${skin}"/>
-      <ellipse cx="${lAX + armW * 0.5}" cy="${armTop + armH}" rx="${armW * 0.36}" ry="${h * 0.02}"
-               fill="${skinDk}" opacity="0.25"/>
+      <rect x="${lAX}" y="${armTop + armH * 0.6}" width="${armW}" height="${armW * 0.34}"
+            rx="${armW * 0.16}" fill="${clothDk}" opacity="0.3"/>
+      <circle cx="${lAX + armW * 0.5}" cy="${armTop + armH + h * 0.006}" r="${armW * 0.5}"
+              fill="${gSkin}" stroke="${inkSkin}" stroke-width="${inkW}" stroke-opacity="0.28"/>
+      <ellipse cx="${lAX + armW * 0.22}" cy="${armTop + armH + h * 0.002}" rx="${armW * 0.19}" ry="${armW * 0.3}"
+               fill="${skinDk}" opacity="0.28"/>
     </g>
     <g transform="rotate(${rArmRot}, ${rShoX}, ${shoY})">
       <rect x="${rAX}" y="${armTop}" width="${armW}" height="${armH}" rx="${armW * 0.48}"
-            fill="${clothC}"/>
+            fill="${gSleeve}" stroke="${inkCloth}" stroke-width="${inkW}" stroke-opacity="0.26"/>
       <rect x="${rAX + armW * 0.18}" y="${armTop + armH * 0.04}" width="${armW * 0.28}" height="${armH * 0.62}"
             rx="${armW * 0.1}" fill="${clothHL}" opacity="0.26"/>
-      <ellipse cx="${rAX + armW * 0.5}" cy="${armTop + armH + h * 0.002}" rx="${armW * 0.46}" ry="${h * 0.03}"
-               fill="${skin}"/>
-      <ellipse cx="${rAX + armW * 0.5}" cy="${armTop + armH}" rx="${armW * 0.36}" ry="${h * 0.02}"
-               fill="${skinDk}" opacity="0.25"/>
+      <rect x="${rAX}" y="${armTop + armH * 0.6}" width="${armW}" height="${armW * 0.34}"
+            rx="${armW * 0.16}" fill="${clothDk}" opacity="0.3"/>
+      <circle cx="${rAX + armW * 0.5}" cy="${armTop + armH + h * 0.006}" r="${armW * 0.5}"
+              fill="${gSkin}" stroke="${inkSkin}" stroke-width="${inkW}" stroke-opacity="0.28"/>
+      <ellipse cx="${rAX + armW * 0.78}" cy="${armTop + armH + h * 0.002}" rx="${armW * 0.19}" ry="${armW * 0.3}"
+               fill="${skinDk}" opacity="0.28"/>
     </g>
     ${drinkingExtra}
     ${djExtra}`;
 
-  // Body — trapezoid (body-shaped), flared for dress
+  // Body — rounded shoulders + a real neckline. A straight-topped trapezoid
+  // (what this used to be) is THE tell of a naive figure: shoulders are the
+  // silhouette feature the eye reads first, and square corners make the torso
+  // look like a signboard with arms pinned to it.
   const shoulderBroaden = avatar.gender === 'masculine' ? bodyW * 0.05 : 0;
   const hipFlare        = avatar.gender === 'feminine' ? bodyW * 0.12 : 0;
+  const shHalf   = bodyW * 0.44 + shoulderBroaden;
+  const hipHalf  = bodyW * 0.5 + hipFlare;
+  const shR      = bodyW * 0.22;
+  const neckHalf = neckW * 0.66;
+  const collarY  = bodyTop - bodyH * 0.06;
+  // Shared shoulder/neckline cap, reused by the dress so both silhouettes
+  // sit on the same anatomy.
+  const shoulderCap =
+    `M${hcx - shHalf},${bodyTop + shR}` +
+    ` C${hcx - shHalf},${bodyTop - shR * 0.42} ${hcx - shHalf * 0.6},${collarY} ${hcx - neckHalf},${collarY}` +
+    ` Q${hcx},${collarY + bodyH * 0.075} ${hcx + neckHalf},${collarY}` +
+    ` C${hcx + shHalf * 0.6},${collarY} ${hcx + shHalf},${bodyTop - shR * 0.42} ${hcx + shHalf},${bodyTop + shR}`;
   let svgBody = '';
   if (avatar.clothes === 'dress') {
-    const spread = bodyW * 0.3;
+    const spread = bodyW * 0.12;
+    const waistY = bodyTop + bodyH * 0.44;
+    const waistHalf = shHalf * 0.8;
+    const hemHalf = hipHalf + spread;
+    const hemY = bodyBot - bodyH * 0.06;
+    // A-line: taper to a waist, flare out on a smooth cubic, then close with a
+    // curved hem whose corners are ROUNDED. Straight lines into the hem
+    // corners produced sharp triangular "wings" wider than the avatar's arms.
     svgBody = `
-      <path d="M${bL + bodyW * 0.1},${bodyTop}
-               L${bL - spread},${bodyBot}
-               L${bL + bodyW + spread},${bodyBot}
-               L${bL + bodyW - bodyW * 0.1},${bodyTop}Z"
-            fill="${clothC}"/>
-      <path d="M${bL + bodyW * 0.18},${bodyTop}
-               Q${bL + bodyW * 0.12},${bodyTop + bodyH * 0.56} ${bL + bodyW * 0.06 - spread * 0.38},${bodyBot}"
-            fill="${clothHL}" opacity="0.26" stroke="none"/>`;
+      <path d="${shoulderCap}
+               L${hcx + waistHalf},${waistY}
+               C${hcx + waistHalf * 1.06},${waistY + bodyH * 0.16} ${hcx + hemHalf * 0.9},${bodyBot - bodyH * 0.2} ${hcx + hemHalf},${hemY}
+               Q${hcx + hemHalf},${bodyBot + bodyH * 0.03} ${hcx + hemHalf * 0.84},${bodyBot + bodyH * 0.045}
+               Q${hcx},${bodyBot + bodyH * 0.13} ${hcx - hemHalf * 0.84},${bodyBot + bodyH * 0.045}
+               Q${hcx - hemHalf},${bodyBot + bodyH * 0.03} ${hcx - hemHalf},${hemY}
+               C${hcx - hemHalf * 0.9},${bodyBot - bodyH * 0.2} ${hcx - waistHalf * 1.06},${waistY + bodyH * 0.16} ${hcx - waistHalf},${waistY}
+               L${hcx - shHalf},${bodyTop + shR}Z"
+            fill="${gCloth}" stroke="${inkCloth}" stroke-width="${inkW}" stroke-opacity="0.3"
+            stroke-linejoin="round"/>
+      <path d="M${hcx - waistHalf},${waistY} Q${hcx},${waistY + bodyH * 0.05} ${hcx + waistHalf},${waistY}"
+            fill="none" stroke="${clothDk}" stroke-width="${w * 0.028}" opacity="0.4" stroke-linecap="round"/>
+      <path d="M${hcx - shHalf * 0.56},${bodyTop + shR * 0.7}
+               Q${hcx - waistHalf * 0.9},${waistY} ${hcx - hemHalf * 0.62},${bodyBot}"
+            fill="none" stroke="${clothHL}" stroke-width="${w * 0.032}" opacity="0.3" stroke-linecap="round"/>
+      <g stroke="${clothDk}" stroke-width="${w * 0.016}" opacity="0.32" fill="none" stroke-linecap="round">
+        <path d="M${hcx - waistHalf * 0.45},${waistY + bodyH * 0.04} Q${hcx - hemHalf * 0.4},${bodyBot - bodyH * 0.16} ${hcx - hemHalf * 0.32},${bodyBot + bodyH * 0.03}"/>
+        <path d="M${hcx + waistHalf * 0.45},${waistY + bodyH * 0.04} Q${hcx + hemHalf * 0.4},${bodyBot - bodyH * 0.16} ${hcx + hemHalf * 0.32},${bodyBot + bodyH * 0.03}"/>
+      </g>`;
   } else {
     svgBody = `
-      <path d="M${bL + bodyW * 0.08 - shoulderBroaden},${bodyTop}
-               Q${bL - hipFlare * 0.6},${bodyTop + bodyH * 0.42} ${bL - hipFlare},${bodyBot}
-               L${bL + bodyW + hipFlare},${bodyBot}
-               Q${bL + bodyW + hipFlare * 0.6},${bodyTop + bodyH * 0.42} ${bL + bodyW - bodyW * 0.08 + shoulderBroaden},${bodyTop}Z"
-            fill="${clothC}"/>
-      <path d="M${bL + bodyW * 0.2},${bodyTop}
-               Q${bL + bodyW * 0.1},${bodyTop + bodyH * 0.56} ${bL + bodyW * 0.12},${bodyBot}"
-            fill="${clothHL}" opacity="0.24" stroke="none"/>`;
+      <path d="${shoulderCap}
+               Q${hcx + (shHalf + hipHalf) * 0.5},${bodyTop + bodyH * 0.55} ${hcx + hipHalf},${bodyBot}
+               L${hcx - hipHalf},${bodyBot}
+               Q${hcx - (shHalf + hipHalf) * 0.5},${bodyTop + bodyH * 0.55} ${hcx - shHalf},${bodyTop + shR}Z"
+            fill="${gCloth}" stroke="${inkCloth}" stroke-width="${inkW}" stroke-opacity="0.3"
+            stroke-linejoin="round"/>
+      <path d="M${hcx - shHalf * 0.56},${bodyTop + shR * 0.7}
+               Q${hcx - shHalf * 0.78},${bodyTop + bodyH * 0.56} ${hcx - hipHalf * 0.72},${bodyBot}"
+            fill="none" stroke="${clothHL}" stroke-width="${w * 0.032}" opacity="0.3" stroke-linecap="round"/>
+      <path d="M${hcx - shHalf * 0.86},${bodyTop + shR * 0.1}
+               Q${hcx - shHalf * 0.5},${bodyTop + bodyH * 0.24} ${hcx - shHalf * 0.2},${bodyTop + bodyH * 0.42}"
+            fill="none" stroke="${clothDk}" stroke-width="${w * 0.018}" opacity="0.3" stroke-linecap="round"/>
+      <path d="M${hcx + shHalf * 0.86},${bodyTop + shR * 0.1}
+               Q${hcx + shHalf * 0.5},${bodyTop + bodyH * 0.24} ${hcx + shHalf * 0.2},${bodyTop + bodyH * 0.42}"
+            fill="none" stroke="${clothDk}" stroke-width="${w * 0.018}" opacity="0.3" stroke-linecap="round"/>
+      <path d="M${hcx - hipHalf * 0.78},${bodyBot}
+               Q${hcx},${bodyBot - bodyH * 0.14} ${hcx + hipHalf * 0.78},${bodyBot}"
+            fill="none" stroke="${clothDk}" stroke-width="${w * 0.022}" opacity="0.34" stroke-linecap="round"/>`;
   }
+
+  // Shadow cast by the head/jaw onto the chest — the last thing keeping the
+  // head from looking like a sticker floating above the shoulders.
+  svgBody = `
+    <ellipse cx="${hcx}" cy="${collarY + bodyH * 0.02}" rx="${neckHalf * 2.1}" ry="${bodyH * 0.1}"
+             fill="rgba(0,0,0,0.16)"/>` + svgBody;
 
   // Per-clothes decorative details
   let svgClothDetail = '';
   if (avatar.clothes === 'suit') {
     svgClothDetail = `
-      <path d="M${hcx - bodyW * 0.14},${bodyTop}
-               L${hcx},${bodyTop + bodyH * 0.44}
-               L${hcx + bodyW * 0.14},${bodyTop}"
+      <path d="M${hcx - shHalf * 0.68},${collarY + bodyH * 0.02}
+               L${hcx},${bodyTop + bodyH * 0.5}
+               L${hcx + shHalf * 0.68},${collarY + bodyH * 0.02}
+               L${hcx + shHalf * 0.34},${collarY + bodyH * 0.04}
+               L${hcx},${bodyTop + bodyH * 0.22}
+               L${hcx - shHalf * 0.34},${collarY + bodyH * 0.04}Z"
+           fill="${shade(clothC, -52)}"/>
+      <path d="M${hcx - shHalf * 0.34},${collarY + bodyH * 0.04}
+               L${hcx},${bodyTop + bodyH * 0.46}
+               L${hcx + shHalf * 0.34},${collarY + bodyH * 0.04}"
            fill="white" opacity="0.92"/>
-      <rect x="${hcx - bodyW * 0.038}" y="${bodyTop + bodyH * 0.08}" width="${bodyW * 0.076}" height="${bodyH * 0.54}"
-            rx="${bodyW * 0.02}" fill="#dc2626"/>`;
+      <rect x="${hcx - bodyW * 0.042}" y="${bodyTop + bodyH * 0.06}" width="${bodyW * 0.084}" height="${bodyH * 0.52}"
+            rx="${bodyW * 0.02}" fill="#dc2626"/>
+      <path d="M${hcx - bodyW * 0.042},${bodyTop + bodyH * 0.06}
+               L${hcx},${bodyTop + bodyH * 0.02} L${hcx + bodyW * 0.042},${bodyTop + bodyH * 0.06}Z"
+            fill="#b91c1c"/>
+      <circle cx="${hcx + bodyW * 0.2}" cy="${bodyTop + bodyH * 0.58}" r="${w * 0.014}" fill="${shade(clothC, 60)}"/>`;
   } else if (avatar.clothes === 'hoodie') {
     svgClothDetail = `
-      <rect x="${hcx - bodyW * 0.17}" y="${bodyBot - bodyH * 0.32}" width="${bodyW * 0.34}" height="${bodyH * 0.3}"
-            rx="${bodyW * 0.07}" fill="${clothDk}" opacity="0.4"/>
-      <ellipse cx="${hcx}" cy="${bodyBot - bodyH * 0.1}" rx="${bodyW * 0.09}" ry="${bodyH * 0.065}"
-               fill="${clothDk}" opacity="0.38"/>`;
+      <path d="M${hcx - neckHalf * 1.5},${collarY}
+               Q${hcx},${bodyTop + bodyH * 0.2} ${hcx + neckHalf * 1.5},${collarY}
+               Q${hcx},${collarY + bodyH * 0.02} ${hcx - neckHalf * 1.5},${collarY}Z"
+            fill="${clothDk}" opacity="0.55"/>
+      <g stroke="${shade(clothC, 70)}" stroke-width="${w * 0.018}" stroke-linecap="round" fill="none">
+        <path d="M${hcx - neckHalf * 0.7},${bodyTop + bodyH * 0.1} L${hcx - neckHalf * 0.5},${bodyTop + bodyH * 0.3}"/>
+        <path d="M${hcx + neckHalf * 0.7},${bodyTop + bodyH * 0.1} L${hcx + neckHalf * 0.5},${bodyTop + bodyH * 0.3}"/>
+      </g>
+      <rect x="${hcx - bodyW * 0.19}" y="${bodyBot - bodyH * 0.34}" width="${bodyW * 0.38}" height="${bodyH * 0.3}"
+            rx="${bodyW * 0.07}" fill="${clothDk}" opacity="0.42"/>
+      <path d="M${hcx - bodyW * 0.19},${bodyBot - bodyH * 0.34}
+               L${hcx + bodyW * 0.19},${bodyBot - bodyH * 0.34}"
+            stroke="${clothDk}" stroke-width="${w * 0.016}" opacity="0.5"/>
+      <rect x="${hcx - bodyW * 0.02}" y="${bodyBot - bodyH * 0.04}" width="${bodyW * 0.04}" height="${bodyH * 0.04}"
+            fill="${clothDk}" opacity="0.4"/>`;
   } else if (avatar.clothes === 'jacket') {
     svgClothDetail = `
-      <line x1="${hcx - bodyW * 0.1}" y1="${bodyTop}" x2="${hcx - bodyW * 0.08}" y2="${bodyBot}"
-            stroke="${clothDk}" stroke-width="${w * 0.023}"/>
-      <line x1="${hcx + bodyW * 0.1}" y1="${bodyTop}" x2="${hcx + bodyW * 0.08}" y2="${bodyBot}"
-            stroke="${clothDk}" stroke-width="${w * 0.023}"/>
-      <line x1="${hcx - bodyW * 0.16}" y1="${bodyTop + bodyH * 0.36}"
-            x2="${hcx + bodyW * 0.16}" y2="${bodyTop + bodyH * 0.36}"
-            stroke="${clothDk}" stroke-width="${w * 0.018}" opacity="0.5"/>`;
+      <path d="M${hcx - neckHalf * 1.4},${collarY + bodyH * 0.01}
+               L${hcx - bodyW * 0.09},${bodyTop + bodyH * 0.16}
+               L${hcx},${bodyTop + bodyH * 0.08}
+               L${hcx + bodyW * 0.09},${bodyTop + bodyH * 0.16}
+               L${hcx + neckHalf * 1.4},${collarY + bodyH * 0.01}
+               Q${hcx},${collarY + bodyH * 0.06} ${hcx - neckHalf * 1.4},${collarY + bodyH * 0.01}Z"
+            fill="${clothDk}"/>
+      <line x1="${hcx}" y1="${bodyTop + bodyH * 0.08}" x2="${hcx}" y2="${bodyBot}"
+            stroke="${clothDk}" stroke-width="${w * 0.024}"/>
+      <line x1="${hcx + w * 0.008}" y1="${bodyTop + bodyH * 0.1}" x2="${hcx + w * 0.008}" y2="${bodyBot}"
+            stroke="${clothHL}" stroke-width="${w * 0.008}" opacity="0.5"/>
+      <g fill="${clothDk}" opacity="0.55">
+        <rect x="${hcx - bodyW * 0.34}" y="${bodyTop + bodyH * 0.52}" width="${bodyW * 0.2}" height="${bodyH * 0.16}" rx="${bodyW * 0.03}"/>
+        <rect x="${hcx + bodyW * 0.14}" y="${bodyTop + bodyH * 0.52}" width="${bodyW * 0.2}" height="${bodyH * 0.16}" rx="${bodyW * 0.03}"/>
+      </g>`;
   } else if (avatar.clothes === 'tshirt') {
     svgClothDetail = `
-      <path d="M${hcx - bodyW * 0.13},${bodyTop}
-               Q${hcx},${bodyTop + bodyH * 0.16} ${hcx + bodyW * 0.13},${bodyTop}"
-           fill="none" stroke="${clothDk}" stroke-width="${w * 0.026}" opacity="0.44"/>`;
+      <path d="M${hcx - neckHalf * 1.25},${collarY + bodyH * 0.01}
+               Q${hcx},${collarY + bodyH * 0.13} ${hcx + neckHalf * 1.25},${collarY + bodyH * 0.01}"
+           fill="none" stroke="${clothDk}" stroke-width="${w * 0.026}" opacity="0.5"
+           stroke-linecap="round"/>`;
   }
 
   // Neck
   const svgNeck = `
     <rect x="${hcx - neckW / 2}" y="${neckTop}" width="${neckW}" height="${neckH + h * 0.018}"
           rx="${neckW * 0.44}" fill="${skin}"/>
+    <rect x="${hcx - neckW / 2}" y="${neckTop}" width="${neckW}" height="${neckH * 0.5}"
+          rx="${neckW * 0.4}" fill="${skinDk}" opacity="0.38"/>
     <rect x="${hcx - neckW * 0.28}" y="${neckTop}" width="${neckW * 0.26}" height="${neckH}"
           rx="${neckW * 0.13}" fill="${skinLt}" opacity="0.3"/>`;
 
   // Head — large round chibi head with soft shading
   const svgHead = `
     <ellipse cx="${hcx}" cy="${hcy + hry * 0.045}" rx="${hrx}" ry="${hry}" fill="${skinDk}" opacity="0.2"/>
-    <ellipse cx="${hcx}" cy="${hcy}" rx="${hrx}" ry="${hry}" fill="${skin}"/>
+    <ellipse cx="${hcx - hrx * 0.57}" cy="${hcy}" rx="${hrx * 0.088}" ry="${hry * 0.44}" fill="${skin}"
+             stroke="${inkSkin}" stroke-width="${inkW * 0.7}" stroke-opacity="0.3"/>
+    <ellipse cx="${hcx + hrx * 0.57}" cy="${hcy}" rx="${hrx * 0.088}" ry="${hry * 0.44}" fill="${skin}"
+             stroke="${inkSkin}" stroke-width="${inkW * 0.7}" stroke-opacity="0.3"/>
+    <ellipse cx="${hcx}" cy="${hcy}" rx="${hrx}" ry="${hry}" fill="${gSkin}"
+             stroke="${inkSkin}" stroke-width="${inkW}" stroke-opacity="0.34"/>
     <ellipse cx="${hcx - hrx * 0.28}" cy="${hcy - hry * 0.12}" rx="${hrx * 0.55}" ry="${hry * 0.45}"
              fill="${skinLt}" opacity="0.2"/>
-    <ellipse cx="${hcx - hrx * 0.57}" cy="${hcy}" rx="${hrx * 0.088}" ry="${hry * 0.44}" fill="${skin}"/>
-    <ellipse cx="${hcx + hrx * 0.57}" cy="${hcy}" rx="${hrx * 0.088}" ry="${hry * 0.44}" fill="${skin}"/>`;
+    <path d="M${hcx - hrx * 0.82},${hcy + hry * 0.42}
+             Q${hcx},${hcy + hry * 1.12} ${hcx + hrx * 0.82},${hcy + hry * 0.42}"
+          fill="none" stroke="${skinDk}" stroke-width="${w * 0.02}" opacity="0.2"/>`;
 
   // Eyes — large sparkly chibi eyes with blink animation classes
   const svgEyes = `
@@ -701,10 +873,44 @@ export function renderAvatarSVG(avatar, size = 'normal', walkPhase = 0, talking 
 
   const hBack      = buildHairBack(avatar.hair, w, hcx, hcy, hrx, hry, hairC);
   const hFront     = buildHairFront(avatar.hair, w, hcx, hcy, hrx, hry, hairC);
-  const svgBeard   = buildBeard(avatar.beard, w, hcx, hcy, hrx, hry, skin);
+  const svgBeard   = buildBeard(avatar.beard, w, hcx, hcy, hrx, hry, skin, hairC);
   const svgGlasses = buildGlasses(avatar.glasses, w, hcx, eyeY, eSpr, eRX, eRY);
 
+  // Volumetric gradients: the previous flat single-colour fills gave the
+  // figure no sense of roundness. Light is treated as coming from the upper
+  // left throughout (matching the rooms' own ceiling fixtures), so the
+  // gradients all run light->base->dark on that same diagonal.
+  const svgDefs = `
+    <defs>
+      <radialGradient id="sk-${uid}" cx="36%" cy="30%" r="78%">
+        <stop offset="0%"   stop-color="${shade(skin, 34)}"/>
+        <stop offset="52%"  stop-color="${skin}"/>
+        <stop offset="100%" stop-color="${skinDk}"/>
+      </radialGradient>
+      <linearGradient id="cl-${uid}" x1="18%" y1="0%" x2="82%" y2="100%">
+        <stop offset="0%"   stop-color="${clothHL}"/>
+        <stop offset="42%"  stop-color="${clothC}"/>
+        <stop offset="100%" stop-color="${clothDk}"/>
+      </linearGradient>
+      <linearGradient id="sl-${uid}" x1="0%" y1="0%" x2="100%" y2="30%">
+        <stop offset="0%"   stop-color="${shade(clothC, 22)}"/>
+        <stop offset="60%"  stop-color="${clothC}"/>
+        <stop offset="100%" stop-color="${shade(clothC, -30)}"/>
+      </linearGradient>
+      <linearGradient id="lg-${uid}" x1="0%" y1="0%" x2="100%" y2="20%">
+        <stop offset="0%"   stop-color="${shade(legC, 26)}"/>
+        <stop offset="58%"  stop-color="${legC}"/>
+        <stop offset="100%" stop-color="${shade(legC, -26)}"/>
+      </linearGradient>
+      <radialGradient id="sh-${uid}" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(0,0,0,0.18)"/>
+        <stop offset="60%"  stop-color="rgba(0,0,0,0.10)"/>
+        <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+      </radialGradient>
+    </defs>`;
+
   return `<svg class="avatar-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+    ${svgDefs}
     ${svgShadow}
     ${accBack}
     ${svgLegs}

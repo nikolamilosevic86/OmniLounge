@@ -40,15 +40,23 @@ async def _join(rooms, player_id="p1"):
     rooms.join_room(player_id, avatar, "lobby")
 
 
+async def _join_as_host(rooms, player_id="p1"):
+    """Tile management is host-only and the shared lobby's host is the
+    sentinel "system", so happy-path tile edits need an owned room."""
+    room = rooms.create_room(host_id=player_id, name="Host Room")
+    rooms.join_room(player_id, create_default_avatar("Alice"), room["id"])
+    return room["id"]
+
+
 class TestRoomTileDeleteRejectsUnhashableCoordinates:
     async def test_delete_with_valid_coordinates_still_works(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await _join(rooms)
-        rooms.add_neighbor_tile("lobby", (0, 0), "right")
+        room_id = await _join_as_host(rooms)
+        rooms.add_neighbor_tile(room_id, (0, 0), "right")
 
         await main_module.room_tile_delete("p1", {"x": 1, "y": 0})
 
-        builder = rooms.get_builder("lobby")
+        builder = rooms.get_builder(room_id)
         assert builder.get_tile((1, 0)) is None
 
     async def test_delete_with_list_x_does_not_raise(self, isolate_registry):
@@ -67,11 +75,11 @@ class TestRoomTileDeleteRejectsUnhashableCoordinates:
 class TestRoomTileConfigureRejectsUnhashableCoordinates:
     async def test_configure_with_valid_coordinates_still_works(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        await _join(rooms)
+        room_id = await _join_as_host(rooms)
 
         await main_module.room_tile_configure("p1", {"x": 0, "y": 0, "label": "Entrance"})
 
-        builder = rooms.get_builder("lobby")
+        builder = rooms.get_builder(room_id)
         assert builder.get_tile((0, 0))["label"] == "Entrance"
 
     async def test_configure_with_list_x_does_not_raise(self, isolate_registry):

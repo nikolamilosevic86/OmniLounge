@@ -22,6 +22,7 @@ from server.game.room_object_catalog import (
     MATERIAL_PRESETS,
     get_catalog_entry,
     get_interaction_menu,
+    is_puzzle_prop,
     resolve_size_preset,
 )
 from server.game.story import (
@@ -512,8 +513,19 @@ class RoomBuilderState:
         new_object_id: str,
         offset: tuple[float, float] = (16.0, 16.0),
         requester_id: str | None = None,
+        is_room_host: bool = False,
     ) -> dict[str, Any]:
         record = self._require_object(object_id)
+        # Duplication must honour the same edit gate as every other
+        # mutation. Without it, a visitor could clone an `owner_only`
+        # object: the clone lands with `createdBy = requester_id` and
+        # `isLocked = False`, handing them full edit rights over a copy of
+        # the host's protected object.
+        #
+        # Deliberately NOT gated on `isLocked`: locking protects the
+        # original from being changed, and duplicating does not change it
+        # (see test_duplicate_object_creates_unlocked_offset_copy).
+        self._require_edit_permission(record, requester_id, is_room_host)
         if new_object_id in self._objects:
             raise ValueError(f"object id already exists: {new_object_id}")
         self._check_tile_object_budget(record["tile"])
@@ -1158,6 +1170,7 @@ class RoomBuilderState:
         match_mode: str | None = None,
         max_attempts: int | None = None,
         template_id: str | None = None,
+        prop_type: str | None = None,
         requester_id: str | None = None,
         is_room_host: bool = False,
     ) -> dict[str, Any]:
@@ -1169,24 +1182,35 @@ class RoomBuilderState:
         so a bad reference never leaves a dangling puzzle definition behind.
 
         `template_id` (Phase 3, §14) pre-fills `prompt`/`hints`/`match_mode`
-        from the `puzzle_templates` catalog -- most importantly the
-        `match_mode` preset each archetype needs. Any of those three fields
+        /`prop_type` from the `puzzle_templates` catalog -- most importantly
+        the `match_mode` preset each archetype needs. Any of those fields
         the caller supplies explicitly still wins, so a template is a
         starting point rather than a cage. Without a template the fields
         behave exactly as before (`prompt` required, `match_mode` defaults
-        to "exact").
+        to "exact", `prop_type` stays unset).
+
+        `prop_type` (§5.4) is the prop shape this puzzle wears in the room.
+        It is validated against the object catalog here rather than in
+        `PuzzleEngine`, which by design knows nothing about object types --
+        and, like `unlock_door_id`, *before* the puzzle is created so a bad
+        shape leaves nothing dangling behind.
         """
         self._require_room_host(requester_id, is_room_host)
         if template_id is not None:
             fields = build_puzzle_from_template(
                 template_id, answer=answer, prompt=prompt, hints=hints, match_mode=match_mode,
+                prop_type=prop_type,
             )
             prompt, hints, match_mode = fields["prompt"], fields["hints"], fields["match_mode"]
+            prop_type = fields["prop_type"]
+        if prop_type is not None and not is_puzzle_prop(prop_type):
+            raise ValueError(f"invalid puzzle prop shape: {prop_type}")
         if unlock_door_id is not None:
             self._require_object(unlock_door_id)
         result = self._puzzles.add_puzzle(
             puzzle_id, prompt, answer, hints=hints, reveal_item_id=reveal_item_id,
             unlock_door_id=unlock_door_id, match_mode=match_mode or "exact", max_attempts=max_attempts,
+            prop_type=prop_type,
         )
         if unlock_door_id is not None:
             door_config = self._objects[unlock_door_id]["config"]

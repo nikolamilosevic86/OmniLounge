@@ -16,9 +16,27 @@ export const CATALOG_ENTRIES = [
   { objectType: 'ai_character', label: 'AI Character', category: 'interactive' },
   { objectType: 'escape_door', label: 'Escape Door', category: 'interactive' },
   { objectType: 'hidden_item', label: 'Hidden Item', category: 'interactive' },
+  // Puzzle props (escape_room_feature_design.md §5.4) -- the physical
+  // shapes a puzzle can wear in the room.
+  { objectType: 'cipher_box', label: 'Cipher Box', category: 'interactive' },
+  { objectType: 'digital_lock', label: 'Digital Lock', category: 'interactive' },
+  { objectType: 'combination_dial', label: 'Combination Dial', category: 'interactive' },
+  { objectType: 'riddle_tablet', label: 'Riddle Tablet', category: 'interactive' },
+  { objectType: 'clue_board', label: 'Clue Board', category: 'interactive' },
 ];
 
-const ESCAPE_ROOM_TYPES = new Set(['escape_door', 'hidden_item']);
+/** The five puzzle-prop shapes, mirroring server/game/room_object_catalog.py's
+ * `PUZZLE_PROP_TYPES` (same order, so the catalog grid and the puzzle-shape
+ * picker present them identically). */
+export const PUZZLE_PROP_TYPES = [
+  'cipher_box',
+  'digital_lock',
+  'combination_dial',
+  'riddle_tablet',
+  'clue_board',
+];
+
+const ESCAPE_ROOM_TYPES = new Set(['escape_door', 'hidden_item', ...PUZZLE_PROP_TYPES]);
 
 export function catalogFilterGroup(objectType) {
   if (ESCAPE_ROOM_TYPES.has(objectType)) return 'escape-room';

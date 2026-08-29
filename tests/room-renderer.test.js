@@ -1,5 +1,91 @@
 import { describe, it, expect } from 'vitest';
-import { computeTableLayout, tileTransitionDirection, renderObjectThumbnail, edgeHotspotAtPoint } from '../client/js/room-renderer.js';
+import {
+  computeTableLayout,
+  computeKeypadLayout,
+  computeDialTicks,
+  computeCipherRings,
+  tileTransitionDirection,
+  renderObjectThumbnail,
+  edgeHotspotAtPoint,
+} from '../client/js/room-renderer.js';
+
+describe('computeKeypadLayout (digital_lock prop, escape_room_feature_design.md section 5.4)', () => {
+  it('lays out a 3-column, 4-row button grid', () => {
+    const { buttons, cols, rows } = computeKeypadLayout(60, 80);
+    expect(cols).toBe(3);
+    expect(rows).toBe(4);
+    expect(buttons).toHaveLength(12);
+  });
+
+  it('keeps the LED display above every button', () => {
+    const { display, buttons } = computeKeypadLayout(60, 80);
+    const displayBottom = display.y + display.h;
+    buttons.forEach((b) => expect(b.y).toBeGreaterThanOrEqual(displayBottom));
+  });
+
+  it('keeps the whole keypad inside the sprite bounds', () => {
+    const w = 60;
+    const h = 80;
+    const { display, buttons } = computeKeypadLayout(w, h);
+    expect(display.x).toBeGreaterThanOrEqual(-w / 2);
+    expect(display.x + display.w).toBeLessThanOrEqual(w / 2);
+    buttons.forEach((b) => {
+      expect(b.x).toBeGreaterThanOrEqual(-w / 2);
+      expect(b.x + b.size).toBeLessThanOrEqual(w / 2);
+      expect(b.y + b.size).toBeLessThanOrEqual(h / 2);
+    });
+  });
+
+  it('scales with the object size rather than using fixed pixels', () => {
+    const small = computeKeypadLayout(40, 40);
+    const large = computeKeypadLayout(120, 120);
+    expect(large.buttons[0].size).toBeGreaterThan(small.buttons[0].size);
+  });
+});
+
+describe('computeDialTicks (combination_dial prop)', () => {
+  it('returns one angle per tick', () => {
+    expect(computeDialTicks(12)).toHaveLength(12);
+  });
+
+  it('spaces ticks evenly around a full circle', () => {
+    const ticks = computeDialTicks(4);
+    const gaps = ticks.slice(1).map((t, i) => t - ticks[i]);
+    gaps.forEach((gap) => expect(gap).toBeCloseTo((Math.PI * 2) / 4));
+  });
+
+  it('starts at the top of the dial, where a real safe dial is read', () => {
+    expect(computeDialTicks(8)[0]).toBeCloseTo(-Math.PI / 2);
+  });
+
+  it('never wraps past a full turn', () => {
+    const ticks = computeDialTicks(16);
+    const span = ticks[ticks.length - 1] - ticks[0];
+    expect(span).toBeLessThan(Math.PI * 2);
+  });
+});
+
+describe('computeCipherRings (cipher_box prop)', () => {
+  it('returns one band per ring', () => {
+    expect(computeCipherRings(48, 48, 3)).toHaveLength(3);
+  });
+
+  it('stacks the rings without overlapping', () => {
+    const rings = computeCipherRings(48, 48, 3);
+    rings.slice(1).forEach((ring, i) => {
+      expect(ring.y).toBeGreaterThanOrEqual(rings[i].y + rings[i].h);
+    });
+  });
+
+  it('keeps every ring inside the box face', () => {
+    const h = 48;
+    const rings = computeCipherRings(48, h, 3);
+    rings.forEach((ring) => {
+      expect(ring.y).toBeGreaterThanOrEqual(-h / 2);
+      expect(ring.y + ring.h).toBeLessThanOrEqual(h / 2);
+    });
+  });
+});
 
 describe('computeTableLayout', () => {
   it('positions the legs flush against the underside of the tabletop with no gap', () => {

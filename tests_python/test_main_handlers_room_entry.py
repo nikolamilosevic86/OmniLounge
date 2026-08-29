@@ -73,6 +73,41 @@ class TestPlayerJoinSendsExistingBuilderState:
         assert joined_events
 
 
+class TestPlayerJoinDoesNotDuplicateChatHistory:
+    async def test_repeated_joins_do_not_pollute_lobby_messages_or_duplicate_history(self, isolate_registry, monkeypatch):
+        """Regression test: player_join used to re-append every persisted
+        message into the live in-memory Room on each join, so the Nth player
+        to connect saw the same history duplicated N times. It should just
+        forward the persisted, filtered history without mutating the room."""
+        rooms, fake_sio = isolate_registry
+
+        db_messages = [{
+            "id": "msg_1",
+            "senderId": "carol",
+            "senderName": "Carol",
+            "text": "hello",
+            "type": "public",
+            "recipientId": None,
+            "timestamp": 1000,
+        }]
+
+        async def fake_get_recent_messages(room_id="lobby", limit=50):
+            return list(db_messages)
+
+        monkeypatch.setattr(main_module.db, "get_recent_messages", fake_get_recent_messages)
+
+        await main_module.player_join("alice", {"avatar": create_default_avatar("Alice")})
+        fake_sio.emitted.clear()
+        await main_module.player_join("bob", {"avatar": create_default_avatar("Bob")})
+
+        lobby = rooms.get_room("lobby")
+        assert lobby.get_messages() == []
+
+        history_events = [e for e in fake_sio.emitted if e[0] == "chat:history" and e[2] == "bob"]
+        assert history_events
+        assert history_events[-1][1] == db_messages
+
+
 class TestRoomJoinSendsExistingBuilderState:
     async def test_room_join_sends_builder_state_snapshot_with_existing_objects(self, isolate_registry):
         rooms, fake_sio = isolate_registry

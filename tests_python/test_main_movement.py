@@ -266,8 +266,11 @@ class TestTileTransitionBroadcastsUpdatedTile:
 
     async def test_walking_into_a_newly_added_tile_broadcasts_the_new_tile(self, isolate_registry):
         rooms, fake_sio = isolate_registry
-        rooms.join_room("p1", create_default_avatar("Alice"), "lobby")
-        room = rooms.get_room("lobby")
+        # Adding a tile is host-only, and the shared lobby's host is the
+        # sentinel "system", so drive this in a room p1 actually owns.
+        room_id = rooms.create_room(host_id="p1", name="Host Room")["id"]
+        rooms.join_room("p1", create_default_avatar("Alice"), room_id)
+        room = rooms.get_room(room_id)
         player = room.get_player("p1")
         player["position"] = {"x": 500.0, "y": 300.0}
 
@@ -276,13 +279,13 @@ class TestTileTransitionBroadcastsUpdatedTile:
 
         player["direction"] = {"x": 0, "y": -1}
         for _ in range(300):
-            main_module.apply_player_movement(room, "lobby", player, now_ms=0)
+            main_module.apply_player_movement(room, room_id, player, now_ms=0)
             if player["tile"] != {"x": 0, "y": 0}:
                 break
 
         assert player["tile"] == {"x": 0, "y": -1}
 
-        await main_module.broadcast_room_state("lobby")
+        await main_module.broadcast_room_state(room_id)
         states = [e for e in fake_sio.emitted if e[0] == "room:state"]
         assert states, "no room:state broadcast reached the client"
         me = next(p for p in states[-1][1]["players"] if p["id"] == "p1")

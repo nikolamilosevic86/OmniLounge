@@ -1,5 +1,5 @@
 /**
- * Phase K+: the 5 selectable "empty room" visual styles a user can choose
+ * Phase K+: the 8 selectable "empty room" visual styles a user can choose
  * from when creating a custom room (Create Room panel). Unlike the fixed
  * Lobby (which keeps its own hardcoded look), a freshly created custom room
  * starts as a furniture-free shell — these presets control only the ambient
@@ -67,6 +67,42 @@ export const ROOM_STYLES = [
     floorLight: '#dcdcdc',
     floorDark: '#cfcfcf',
     lightColor: '245, 245, 250',
+  },
+  {
+    id: 'beach-cabana',
+    label: 'Beach Cabana',
+    description: 'Sunny turquoise sky and warm sand, a breezy tropical escape.',
+    backdropTop: '#8fd9e8',
+    backdropBottom: '#5bb8d4',
+    wallTop: '#eaf6f2',
+    wallBottom: '#bfe8dd',
+    floorLight: '#e8d5a8',
+    floorDark: '#d9c08a',
+    lightColor: '255, 235, 180',
+  },
+  {
+    id: 'retro-arcade',
+    label: 'Retro Arcade',
+    description: 'Neon magenta and cyan glowing against a moody 80s dark room.',
+    backdropTop: '#170a29',
+    backdropBottom: '#0a0414',
+    wallTop: '#2a1045',
+    wallBottom: '#4a1868',
+    floorLight: '#241238',
+    floorDark: '#180b26',
+    lightColor: '255, 60, 220',
+  },
+  {
+    id: 'enchanted-garden',
+    label: 'Enchanted Garden',
+    description: 'Soft pastel greens and dappled daylight, like a hidden grove.',
+    backdropTop: '#c9ead0',
+    backdropBottom: '#a3d9ae',
+    wallTop: '#e8f5e0',
+    wallBottom: '#c3e6c0',
+    floorLight: '#9fcf9a',
+    floorDark: '#88bf82',
+    lightColor: '210, 255, 200',
   },
 ];
 
