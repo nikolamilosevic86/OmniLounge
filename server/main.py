@@ -32,6 +32,26 @@ from server.game.tile_navigation import tiles_within_radius
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 
+
+def resolve_dist_file(full_path: str) -> Path | None:
+    """Resolve a request path to a real file inside DIST_DIR, or None.
+
+    The static catch-all route takes an arbitrary client-supplied path, so it
+    must never be joined onto DIST_DIR blindly: ``DIST_DIR / "../../etc/passwd"``
+    escapes the build directory and turns the route into an arbitrary file read.
+    Both sides are fully resolved (which also collapses symlinks) and the result
+    is required to stay within the build directory.
+    """
+    dist_root = DIST_DIR.resolve()
+    try:
+        candidate = (dist_root / full_path).resolve()
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if candidate != dist_root and dist_root not in candidate.parents:
+        return None
+    return candidate if candidate.is_file() else None
+
+
 logger  = logging.getLogger(__name__)
 sio     = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=ALLOWED_ORIGINS)
 db      = Database()
@@ -459,8 +479,8 @@ if DIST_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         if full_path:
-            file_path = DIST_DIR / full_path
-            if file_path.is_file():
+            file_path = resolve_dist_file(full_path)
+            if file_path is not None:
                 return FileResponse(file_path)
         return FileResponse(DIST_DIR / "index.html")
 
