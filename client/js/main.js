@@ -853,7 +853,7 @@ function initGame() {
   });
 
   objectListEl?.addEventListener('change', (evt) => {
-    const input = evt.target.closest('input[data-field]');
+    const input = evt.target.closest('input[data-field], select[data-field]');
     if (!input) return;
     const row = input.closest('[data-object-id]');
     const objectId = row?.getAttribute('data-object-id');
@@ -866,9 +866,17 @@ function initGame() {
       });
       return;
     }
+    const priorObj = state.builderState.objects.find((o) => o.objectId === objectId);
+    if (field === 'color' || field === 'material') {
+      const other = row.querySelector(`select[data-field="${field === 'color' ? 'material' : 'color'}"]`);
+      const color = field === 'color' ? input.value : (other?.value || undefined);
+      const material = field === 'material' ? input.value : (other?.value || undefined);
+      if (priorObj) state.lastBuilderAction = captureUndoableAction('style', priorObj);
+      state.socket?.emit('room:object:style', { objectId, color: color || undefined, material: material || undefined });
+      return;
+    }
     const value = Number(input.value);
     if (Number.isNaN(value)) return;
-    const priorObj = state.builderState.objects.find((o) => o.objectId === objectId);
     if (field === 'x' || field === 'y') {
       const other = row.querySelector(`input[data-field="${field === 'x' ? 'y' : 'x'}"]`);
       const x = field === 'x' ? value : Number(other?.value ?? 0);
@@ -2573,6 +2581,31 @@ function renderAiCharacters() {
   }
 }
 
+// Mirrors the <option> lists in #object-color-select/#object-material-select
+// (creation-time controls) so the post-placement recolor fields in each
+// object-list row offer the exact same choices (design doc §8.3's swatch
+// popover, implemented here as inline <select>s consistent with the existing
+// x/y/rotation/width/height row-field pattern rather than a floating popover).
+const OBJECT_COLOR_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'natural-wood', label: 'Natural Wood' },
+  { value: 'dark-wood', label: 'Dark Wood' },
+  { value: 'white', label: 'White' },
+  { value: 'black', label: 'Black' },
+  { value: 'navy', label: 'Navy' },
+  { value: 'forest-green', label: 'Forest Green' },
+  { value: 'burgundy', label: 'Burgundy' },
+  { value: 'gold-accent', label: 'Gold Accent' },
+];
+const OBJECT_MATERIAL_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'wood', label: 'Wood' },
+  { value: 'metal', label: 'Metal' },
+  { value: 'fabric', label: 'Fabric' },
+  { value: 'glass', label: 'Glass' },
+  { value: 'stone', label: 'Stone' },
+];
+
 function renderBuilderObjectList() {
   if (!objectListEl) return;
   const currentKey = tileKey(state.currentTile);
@@ -2623,6 +2656,16 @@ function renderBuilderObjectList() {
           <label>Rotation<input type="number" data-field="rotation" value="${obj.rotation ?? 0}" ${locked ? 'disabled' : ''} /></label>
           <label>Width<input type="number" data-field="width" value="${obj.width}" min="1" ${locked ? 'disabled' : ''} /></label>
           <label>Height<input type="number" data-field="height" value="${obj.height}" min="1" ${locked ? 'disabled' : ''} /></label>
+          <label>Color
+            <select data-field="color" ${locked ? 'disabled' : ''}>
+              ${OBJECT_COLOR_OPTIONS.map((opt) => `<option value="${opt.value}" ${obj.color === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('')}
+            </select>
+          </label>
+          <label>Material
+            <select data-field="material" ${locked ? 'disabled' : ''}>
+              ${OBJECT_MATERIAL_OPTIONS.map((opt) => `<option value="${opt.value}" ${obj.material === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('')}
+            </select>
+          </label>
         </div>
       </li>`;
   }).join('');

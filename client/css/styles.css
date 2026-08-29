@@ -1518,7 +1518,8 @@ canvas.waypoint-picking {
   color: var(--text-muted);
 }
 
-.builder-object-row-fields input {
+.builder-object-row-fields input,
+.builder-object-row-fields select {
   background: var(--md-surface-container-high);
   border: 1px solid var(--md-outline-variant);
   border-radius: var(--md-shape-xs);

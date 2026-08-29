@@ -308,16 +308,16 @@ No other new socket events are needed — everything else in this design is clie
 - [x] Add `state.selectedBuilderObjectId` and a canvas selection highlight (dashed outline, §8.1) driven by clicking a builder object in Build Mode. *Partial:* no resize handles or floating icon toolbar yet — selection currently only feeds the keyboard shortcuts below, not on-canvas drag/resize/rotate/recolor.
 - [ ] Implement drag-to-move on a selected object, emitting `room:object:move` on release (§8.2).
 - [ ] Implement resize handles + toolbar-armed rotate drag, emitting `room:object:resize`/`room:object:rotate` on release (§8.3).
-- [ ] Implement the swatch popover from the toolbar's `palette` icon, emitting `room:object:style` (§8.3).
+- [x] Implement recoloring, emitting `room:object:style` (§8.3). *Placement note:* implemented as inline Color/Material `<select>` fields in each object-list row (matching the existing x/y/rotation/width/height row-field pattern) rather than a floating popover anchored to an on-canvas toolbar, since the toolbar itself isn't built yet.
 - [x] Implement the Delete/Backspace key emitting `room:object:delete` for the selected object (§8.3). *Partial:* no floating toolbar `delete` icon yet — this is keyboard-only, the existing object-list row `delete` button already covered the click path.
 - [ ] Wire the toolbar's `tune` icon to open the existing `#configure-controls` type-specific section, only for types that have one (§8.4).
 - [ ] Muted/disabled selection + reduced-to-`tune`-only toolbar for locked/no-permission objects (§8.5).
-- [ ] Tooltips + `aria-label`s on every new icon button (§13).
+- [x] Tooltips + `aria-label`s on every new icon button (§13). Applies to this pass's new controls (grid-snap toggle, room style swatch cards); the not-yet-built floating toolbar's icons will need the same treatment when added.
 - [ ] Add an `edit` icon beside `delete` on Book/Video/Track/Puzzle list rows, wired to the same populate-form/"Save Changes"/Cancel flow `enterKnowledgeDocumentEditMode` already implements for Knowledge Store documents; validate before removing so a failed save can't lose the item (§8.7).
 - [ ] Live YouTube link preview + inline validation caption on `video-youtube-input`/`track-youtube-input`, reusing `extractYoutubeVideoId()` on `input` instead of only on submit (§8.7).
 - [ ] Replace `puzzle-template-select` with an elevated-card picker showing each `PUZZLE_TEMPLATES` entry's label + description (§8.7).
 - [x] Tab/Shift+Tab keyboard cycling of `state.selectedBuilderObjectId` through the current tile's objects, plus Escape-to-clear (§13).
-- [x] Single-level Ctrl+Z/⌘Z undo for the last move/resize/rotate/delete, with an `addSystemMessage` confirmation toast (§8.6). *Partial:* the `style` case is implemented in `builder-undo.js` and covered by tests, but has no caller yet since no UI emits `room:object:style` (recolor-after-placement isn't implemented — see §8.3 above).
+- [x] Single-level Ctrl+Z/⌘Z undo for the last move/resize/rotate/style/delete, with an `addSystemMessage` confirmation toast (§8.6). All five mutation types are now reachable: `style` is exercised via the object-list row's Color/Material selects added above.
 
 ### Phase 4 — Room Style picker
 - [x] `RoomsRegistry.set_room_style` + `room:style:set` handler, TDD with the same `FakeSio`/`isolate_registry` harness used throughout `tests_python`. `builder_state_payload()` gains a `roomStyle` field so the change rides the existing `room:builder:state` broadcast (§11, §17 Decision D1) — no new event name.
