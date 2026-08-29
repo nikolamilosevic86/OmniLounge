@@ -983,9 +983,12 @@ function drawBuilderObjects(ctx) {
     if (obj.objectId === _selectedObjectId) {
       // Selection highlight (design doc §8.1/§13): a bright, theme-agnostic
       // dashed outline slightly outset from the object's bounds, so it reads
-      // clearly against any room style's wall/floor colors.
+      // clearly against any room style's wall/floor colors. Locked objects
+      // (§8.5) get a muted grey outline instead of the active cyan -- the
+      // same "read as disabled" signal as the frosted lock tint below --
+      // since a locked object can still be selected/inspected but not moved.
       ctx.save();
-      ctx.strokeStyle = 'rgba(70, 190, 255, 0.95)';
+      ctx.strokeStyle = obj.isLocked ? 'rgba(180, 185, 195, 0.7)' : 'rgba(70, 190, 255, 0.95)';
       ctx.lineWidth = 2.5;
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
