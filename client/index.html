@@ -12,9 +12,16 @@
 </head>
 <body>
   <div id="app">
-    <button id="theme-toggle" class="theme-toggle-btn" type="button" aria-label="Switch to light mode" aria-pressed="false">
-      <span class="material-symbols-outlined" aria-hidden="true">light_mode</span>
-    </button>
+    <!-- Fixed cluster: sits outside .screen so it renders on the creator screen,
+         the room, and every overlay alike. -->
+    <div class="global-controls">
+      <a id="help-link" class="global-control-btn" href="/help.html" target="_blank" rel="noopener noreferrer" title="Player guide" aria-label="Open the player guide in a new tab">
+        <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+      </a>
+      <button id="theme-toggle" class="global-control-btn" type="button" aria-label="Switch to light mode" aria-pressed="false">
+        <span class="material-symbols-outlined" aria-hidden="true">light_mode</span>
+      </button>
+    </div>
 
     <div id="creator-screen" class="screen active">
       <div class="stars"></div>

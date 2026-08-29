@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#16111c" />
+  <title>Player Guide · OmniLaunge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script>
+    // Match the theme the player already chose in the room, before first paint.
+    (function () {
+      var stored = null;
+      try { stored = localStorage.getItem('hobboverse-theme'); } catch (e) { stored = null; }
+      var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      var theme = stored === 'light' || stored === 'dark' ? stored : (prefersLight ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', theme === 'light' ? '#fffbff' : '#16111c');
+    })();
+  </script>
+</head>
+<body class="guide-body">
+  <div class="guide-page">
+    <header class="guide-header">
+      <div class="logo-badge"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> OMNILAUNGE</div>
+      <h1>Player Guide</h1>
+      <p class="guide-subtitle">Everything you need to move, talk, spar, and build in the lounge.</p>
+      <a class="guide-back-link" href="/">
+        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+        Back to the room
+      </a>
+    </header>
+
+    <nav class="guide-toc" aria-label="Guide sections">
+      <a href="#getting-started">Getting started</a>
+      <a href="#moving">Moving around</a>
+      <a href="#objects">Objects &amp; actions</a>
+      <a href="#chat">Chatting</a>
+      <a href="#combat">Combat</a>
+      <a href="#rooms">Rooms</a>
+      <a href="#building">Build mode</a>
+      <a href="#characters">AI characters</a>
+      <a href="#reference">Full documentation</a>
+    </nav>
+
+    <main class="guide-main">
+      <section class="guide-section" id="getting-started">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">face</span> Getting started</h2>
+        <p>
+          Your first stop is the avatar creator. Pick a display name and shape your look — skin tone, hair,
+          beard, glasses, clothes, and accessories. The preview renders live, so the character you build is
+          exactly the one that walks into the room.
+        </p>
+        <p>
+          After that you land in the room chooser, where you can create a new room or join one that already
+          exists. Close the chooser without picking anything and you simply stay in the default lobby.
+        </p>
+      </section>
+
+      <section class="guide-section" id="moving">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">directions_walk</span> Moving around</h2>
+        <p>There are two ways to get around, and both are equally valid:</p>
+        <ul class="guide-list">
+          <li><strong>Arrow keys</strong> for continuous, game-like directional control.</li>
+          <li><strong>Click anywhere on the floor</strong> to walk there. Your avatar paths toward the spot and steers around furniture.</li>
+        </ul>
+        <p>
+          Movement is bounded by the room walls and aware of furniture collision boxes, so you can move
+          naturally around the space without clipping through the scenery.
+        </p>
+      </section>
+
+      <section class="guide-section" id="objects">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">chair</span> Objects &amp; actions</h2>
+        <p>
+          Click an interactive object and a radial action wheel opens right where you clicked. The available
+          actions depend on the object, so you can sit on a sofa, lounge, grab a drink, climb onto the coffee
+          table, or dance and DJ at the deck.
+        </p>
+        <p>
+          Your avatar walks to the object's anchor point before the action plays out — actions are attached to
+          real places in the room rather than to a global menu.
+        </p>
+      </section>
+
+      <section class="guide-section" id="chat">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span> Chatting</h2>
+        <p>
+          Public messages show up in the chat panel and as short-lived speech bubbles above your avatar, so
+          conversation stays visible in the space itself. Private messages stay one-to-one between you and the
+          person you sent them to.
+        </p>
+      </section>
+
+      <section class="guide-section" id="combat">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">sports_mma</span> Combat</h2>
+        <p>Sparring is an optional mode layered into the room — there is no separate game screen.</p>
+        <ul class="guide-list guide-keys">
+          <li><kbd>Space</kbd><span>Punch</span></li>
+          <li><kbd>Ctrl</kbd> / <kbd>Cmd</kbd><span>Kick</span></li>
+          <li><kbd>B</kbd><span>Hold to block</span></li>
+        </ul>
+        <p>
+          Your attack and defense animations play immediately for responsiveness, while the actual outcome is
+          decided by the server based on range, cooldown, stamina, and stun state — so fights stay fair for
+          everyone in the room.
+        </p>
+      </section>
+
+      <section class="guide-section" id="rooms">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">meeting_room</span> Rooms</h2>
+        <p>
+          The <strong>Change Room</strong> pill sits permanently in the room HUD next to the online-player
+          count. Open it any time to browse or create rooms without reloading the page.
+        </p>
+        <ul class="guide-list">
+          <li>Filter the room list by topic tag, access type (all / public / invite), and sort order (newest or most active).</li>
+          <li>Invite-only rooms are joined with an invite code.</li>
+          <li>Rooms that are full are clearly marked as unavailable.</li>
+          <li>The room you are currently in is marked as such, with its Join button disabled.</li>
+        </ul>
+      </section>
+
+      <section class="guide-section" id="building">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">construction</span> Build mode</h2>
+        <p>
+          If you host a room, the <strong>Build Mode</strong> pill in the HUD unlocks room authoring. Place and
+          arrange objects, then use the toolbar that appears on a selected object to rotate it, recolor it,
+          tune its settings, or delete it. A grid-snap toggle appears alongside build mode to help you line
+          things up cleanly.
+        </p>
+      </section>
+
+      <section class="guide-section" id="characters">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span> AI characters</h2>
+        <p>
+          Rooms can host AI story characters with their own appearance, scripted conversations, and a
+          document-based knowledge base. They can answer questions and run guided tours that walk visitors
+          between waypoints. A resident bot also keeps quieter rooms feeling alive — it moves, taunts in public
+          chat, blocks, and attacks, so you always have someone to test mechanics against.
+        </p>
+      </section>
+
+      <section class="guide-section" id="reference">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">menu_book</span> Full documentation</h2>
+        <p>
+          This guide covers day-to-day play. The complete project documentation — including the technical
+          architecture, backend runtime, data and event model, and testing and release process — lives in the
+          <code>docs/</code> folder of the OmniLaunge repository.
+        </p>
+        <ul class="guide-list">
+          <li><code>docs/01-user-experience.md</code> — the full player journey</li>
+          <li><code>docs/02-room-interactions.md</code> — spatial behavior and object model</li>
+          <li><code>docs/03-combat-and-ai.md</code> — combat rules and bot behavior</li>
+          <li><code>docs/08-ai-characters.md</code> — authoring AI story characters</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="guide-footer">
+      <a class="guide-back-link" href="/">
+        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+        Back to the room
+      </a>
+    </footer>
+  </div>
+</body>
+</html>

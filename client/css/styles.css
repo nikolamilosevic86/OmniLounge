@@ -241,12 +241,20 @@ a:focus-visible,
   }
 }
 
-/* ── Dark/light mode toggle ── */
-.theme-toggle-btn {
+/* ── Global controls (guide + dark/light toggle) ──
+   Fixed cluster rendered on every screen. The buttons are static inside it so
+   the row stays aligned if a control is added or removed. */
+.global-controls {
   position: fixed;
   top: 1rem;
   right: 1rem;
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.global-control-btn {
   width: 2.75rem;
   height: 2.75rem;
   border-radius: var(--md-shape-full);
@@ -257,21 +265,22 @@ a:focus-visible,
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  text-decoration: none;
   box-shadow: var(--md-elevation-2);
   transition:
     background var(--md-duration-short) var(--md-easing-standard),
     transform var(--md-duration-short) var(--md-easing-standard);
 }
 
-.theme-toggle-btn:hover {
+.global-control-btn:hover {
   background: var(--md-surface-container-highest);
 }
 
-.theme-toggle-btn:active {
+.global-control-btn:active {
   transform: scale(0.94);
 }
 
-.theme-toggle-btn .material-symbols-outlined {
+.global-control-btn .material-symbols-outlined {
   font-size: 1.35rem;
 }
 
@@ -3386,3 +3395,162 @@ canvas.waypoint-picking {
   color: var(--md-error);
   font-weight: 600;
 }
+
+/* ── Player guide page (help.html) ──────────────────────────────────────────
+   Standalone document rather than an overlay, so it re-declares the page
+   chrome that #app normally provides. */
+.guide-body {
+  background: var(--md-background);
+  color: var(--md-on-background);
+  font-family: 'IBM Plex Sans', 'Roboto', sans-serif;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+.guide-page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.guide-header {
+  text-align: center;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.guide-header h1 {
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  margin: 1rem 0 0.5rem;
+}
+
+.guide-subtitle {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.guide-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.25rem;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.guide-back-link:hover,
+.guide-back-link:focus-visible {
+  background: var(--md-surface-container-highest);
+}
+
+.guide-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  padding: 1.5rem 0;
+}
+
+.guide-toc a {
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.8rem;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.guide-toc a:hover,
+.guide-toc a:focus-visible {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.guide-section {
+  background: var(--md-surface-container-low);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-lg);
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.25rem;
+  scroll-margin-top: 1rem;
+}
+
+.guide-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.25rem;
+  margin-bottom: 0.85rem;
+  color: var(--md-primary);
+}
+
+.guide-section p + p,
+.guide-section p + ul {
+  margin-top: 0.75rem;
+}
+
+.guide-list {
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.guide-list li {
+  position: relative;
+  padding-left: 1.25rem;
+}
+
+.guide-list li::before {
+  content: '';
+  position: absolute;
+  left: 0.25rem;
+  top: 0.7em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--md-tertiary);
+}
+
+.guide-keys li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0;
+}
+
+.guide-keys li::before {
+  display: none;
+}
+
+.guide-keys kbd {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--md-shape-xs);
+  border: 1px solid var(--md-outline);
+  background: var(--md-surface-container-highest);
+  color: var(--md-on-surface);
+}
+
+.guide-section code {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.82rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--md-shape-xs);
+  background: var(--md-surface-container-highest);
+  color: var(--md-on-surface);
+}
+
+.guide-footer {
+  text-align: center;
+  padding-top: 1.5rem;
+}
+
