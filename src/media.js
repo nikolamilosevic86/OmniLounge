@@ -69,3 +69,18 @@ export function youtubeLinkPreviewState(input) {
   }
   return { status: 'valid', videoId, thumbnailUrl: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` };
 }
+
+/** Client-side pre-check for the TV video / music track add-edit form (design
+ * doc build_mode_ui_redesign_feature_design.md §8.7, Gap 1): a title and a
+ * resolvable YouTube URL/ID are both required. Shared by the Add and
+ * Save-Changes (edit) paths so an edit can never be submitted with less
+ * validation than a fresh add -- this is what lets Gap 1's remove-then-add
+ * edit flow safely run the remove only after this passes. */
+export function validateMediaItemInput({ title, youtubeInput } = {}) {
+  const trimmedTitle = (title || '').trim();
+  const youtubeVideoId = trimmedTitle ? extractYoutubeVideoId(youtubeInput) : null;
+  if (!trimmedTitle || !youtubeVideoId) {
+    return { valid: false, error: 'Enter a title and a valid YouTube URL or video ID.', youtubeVideoId: null };
+  }
+  return { valid: true, error: null, youtubeVideoId };
+}

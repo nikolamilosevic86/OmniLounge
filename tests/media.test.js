@@ -6,6 +6,7 @@ import {
   formatDuration,
   sessionAppliesToItem,
   youtubeLinkPreviewState,
+  validateMediaItemInput,
 } from '../src/media.js';
 
 describe('isValidYoutubeVideoId', () => {
@@ -130,6 +131,26 @@ describe('youtubeLinkPreviewState (design doc build_mode_ui_redesign_feature_des
       status: 'valid',
       videoId: 'dQw4w9WgXcQ',
       thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
+    });
+  });
+});
+
+describe('validateMediaItemInput (design doc build_mode_ui_redesign_feature_design.md section 8.7, Gap 1)', () => {
+  it('rejects a missing title', () => {
+    expect(validateMediaItemInput({ title: '', youtubeInput: 'dQw4w9WgXcQ' })).toEqual({
+      valid: false, error: 'Enter a title and a valid YouTube URL or video ID.', youtubeVideoId: null,
+    });
+  });
+
+  it('rejects a missing or invalid youtube link', () => {
+    expect(validateMediaItemInput({ title: 'My Video', youtubeInput: 'not a link' })).toEqual({
+      valid: false, error: 'Enter a title and a valid YouTube URL or video ID.', youtubeVideoId: null,
+    });
+  });
+
+  it('accepts a valid title and youtube link, resolving the video id', () => {
+    expect(validateMediaItemInput({ title: 'My Video', youtubeInput: 'https://youtu.be/dQw4w9WgXcQ' })).toEqual({
+      valid: true, error: null, youtubeVideoId: 'dQw4w9WgXcQ',
     });
   });
 });

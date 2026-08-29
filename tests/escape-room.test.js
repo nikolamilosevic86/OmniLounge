@@ -10,6 +10,7 @@ import {
   puzzleTemplateFormValues,
   formatPuzzleAnalytics,
   puzzleDifficultySignal,
+  validatePuzzleInput,
 } from '../src/escape-room.js';
 
 describe('escapeStatusLabel', () => {
@@ -249,5 +250,37 @@ describe('puzzleDifficultySignal', () => {
 
   it('returns "unplayed" for missing stats', () => {
     expect(puzzleDifficultySignal(null)).toBe('unplayed');
+  });
+});
+
+describe('validatePuzzleInput (design doc build_mode_ui_redesign_feature_design.md section 8.7, Gap 1)', () => {
+  it('rejects a missing puzzle id', () => {
+    expect(validatePuzzleInput({ puzzleId: '', prompt: 'p', answer: 'a' })).toEqual({
+      valid: false, error: 'Puzzle ID, prompt, and answer are required.',
+    });
+  });
+
+  it('rejects a missing answer', () => {
+    expect(validatePuzzleInput({ puzzleId: 'puzzle-1', prompt: 'p', answer: '' })).toEqual({
+      valid: false, error: 'Puzzle ID, prompt, and answer are required.',
+    });
+  });
+
+  it('rejects a missing prompt when no template is selected', () => {
+    expect(validatePuzzleInput({ puzzleId: 'puzzle-1', prompt: '', answer: 'a', templateId: undefined })).toEqual({
+      valid: false, error: 'Puzzle ID, prompt, and answer are required.',
+    });
+  });
+
+  it('accepts a missing prompt when a template is selected', () => {
+    expect(validatePuzzleInput({ puzzleId: 'puzzle-1', prompt: '', answer: 'a', templateId: 'riddle-1' })).toEqual({
+      valid: true, error: null,
+    });
+  });
+
+  it('accepts a puzzle id, prompt, and answer with no template', () => {
+    expect(validatePuzzleInput({ puzzleId: 'puzzle-1', prompt: 'p', answer: 'a' })).toEqual({
+      valid: true, error: null,
+    });
   });
 });

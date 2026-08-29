@@ -12,8 +12,8 @@ import { initCombat, destroyCombat, isBlocking } from './combat-ui.js';
 import { ATTACK_DURATIONS, computeAttackPhase, getPunchAngles, getKickAngles, getBlockAngles } from './attack-anim.js';
 import { normalizeRooms, buildRoomMetaLine, canJoinRoom, normalizeRoomFilters } from './room-discovery.js';
 import { buildMiniMapCells, normalizeTileList, neighborTileFlags } from './world-map.js';
-import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary } from './reader.js';
-import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem, youtubeLinkPreviewState } from './media.js';
+import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary, validateBookInput } from './reader.js';
+import { computeSyncPosition, formatDuration, sessionAppliesToItem, youtubeLinkPreviewState, validateMediaItemInput } from './media.js';
 import {
   formatModeLabel, parseChoicesInput, resolveCharacterMode,
   validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
@@ -33,6 +33,7 @@ import {
 import {
   escapeStatusLabel, formatCountdown, isLowTime, puzzleAttemptMessage, formatLeaderboardEntry, doorAttemptMessage,
   formatGlobalLeaderboardEntry, puzzleTemplateFormValues, formatPuzzleAnalytics, puzzleDifficultySignal,
+  validatePuzzleInput,
 } from './escape-room.js';
 
 const BUBBLE_DURATION = 6000;
@@ -118,6 +119,14 @@ const state = {
   builderCharacters: {},  // objectId → character config
   builderStoryNodes: {},  // objectId → nodes[]
   editingKnowledgeDocId: null,  // docId currently being edited in the knowledge store form, or null
+  // Book/Video/Track/Puzzle edit-in-place state (design doc
+  // build_mode_ui_redesign_feature_design.md §8.7, Gap 1). None of these
+  // four types has a true update event, so "Save Changes" removes then
+  // re-adds with the same id -- see the *AddBtn click handlers below.
+  editingBookId: null,
+  editingVideoId: null,
+  editingTrackId: null,
+  editingPuzzleId: null,
   dialogueModalObjectId: null,
   dialogueCurrentNode: null,
   // AI character guided tours. NPC bubbles are keyed by objectId and kept
@@ -231,7 +240,9 @@ const bookAuthorInput = document.getElementById('book-author-input');
 const bookSummaryInput = document.getElementById('book-summary-input');
 const bookContentTypeSelect = document.getElementById('book-content-type-select');
 const bookContentInput = document.getElementById('book-content-input');
+const bookErrorEl = document.getElementById('book-error');
 const bookAddBtn = document.getElementById('book-add-btn');
+const bookCancelBtn = document.getElementById('book-cancel-btn');
 const bookListEl = document.getElementById('book-list');
 const readerModal = document.getElementById('reader-modal');
 const readerModalTitle = document.getElementById('reader-modal-title');
@@ -252,6 +263,7 @@ const videoYoutubeHint = document.getElementById('video-youtube-hint');
 const videoYoutubeError = document.getElementById('video-youtube-error');
 const videoDescriptionInput = document.getElementById('video-description-input');
 const videoAddBtn = document.getElementById('video-add-btn');
+const videoCancelBtn = document.getElementById('video-cancel-btn');
 const videoListEl = document.getElementById('video-list');
 const trackPlayerSelect = document.getElementById('track-player-select');
 const trackTitleInput = document.getElementById('track-title-input');
@@ -261,6 +273,7 @@ const trackYoutubeThumb = document.getElementById('track-youtube-thumb');
 const trackYoutubeHint = document.getElementById('track-youtube-hint');
 const trackYoutubeError = document.getElementById('track-youtube-error');
 const trackAddBtn = document.getElementById('track-add-btn');
+const trackCancelBtn = document.getElementById('track-cancel-btn');
 const trackListEl = document.getElementById('track-list');
 const mediaModal = document.getElementById('media-modal');
 const mediaModalTitle = document.getElementById('media-modal-title');
@@ -350,6 +363,7 @@ const puzzleMaxAttemptsInput = document.getElementById('puzzle-max-attempts-inpu
 const puzzleRevealItemSelect = document.getElementById('puzzle-reveal-item-select');
 const puzzleUnlockDoorSelect = document.getElementById('puzzle-unlock-door-select');
 const puzzleAddBtn = document.getElementById('puzzle-add-btn');
+const puzzleCancelBtn = document.getElementById('puzzle-cancel-btn');
 const puzzleErrorEl = document.getElementById('puzzle-error');
 const puzzleListEl = document.getElementById('puzzle-list');
 const puzzleTemplateSelect = document.getElementById('puzzle-template-select');
@@ -923,6 +937,7 @@ function initGame() {
   });
 
   bookShelfSelect?.addEventListener('change', () => {
+    exitBookEditMode();
     const objectId = bookShelfSelect.value;
     if (!objectId) {
       renderBuilderBookList();
@@ -937,28 +952,56 @@ function initGame() {
     if (!objectId) return;
     const title = bookTitleInput?.value?.trim();
     const contentBody = bookContentInput?.value?.trim();
-    if (!title || !contentBody) return;
-    const bookId = `book-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    state.socket?.emit('room:book:add', {
-      objectId,
-      bookId,
-      title,
-      author: bookAuthorInput?.value || undefined,
-      summary: bookSummaryInput?.value || undefined,
-      contentType: bookContentTypeSelect?.value || 'inline',
-      contentBody,
-    }, (book) => {
-      if (!book) return;
-      state.builderBooks[objectId] = [...(state.builderBooks[objectId] || []), book];
-      renderBuilderBookList();
-    });
-    if (bookTitleInput) bookTitleInput.value = '';
-    if (bookAuthorInput) bookAuthorInput.value = '';
-    if (bookSummaryInput) bookSummaryInput.value = '';
-    if (bookContentInput) bookContentInput.value = '';
+    const validation = validateBookInput({ title, contentBody });
+    if (!validation.valid) {
+      showBookFormError(validation.error);
+      return;
+    }
+    const editingBookId = state.editingBookId;
+    const applyAdd = () => {
+      const bookId = editingBookId || `book-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      state.socket?.emit('room:book:add', {
+        objectId,
+        bookId,
+        title,
+        author: bookAuthorInput?.value || undefined,
+        summary: bookSummaryInput?.value || undefined,
+        contentType: bookContentTypeSelect?.value || 'inline',
+        contentBody,
+      }, (book) => {
+        if (!book) return;
+        state.builderBooks[objectId] = [...(state.builderBooks[objectId] || []), book];
+        renderBuilderBookList();
+      });
+      if (editingBookId) exitBookEditMode();
+      else showBookFormError('');
+      if (bookTitleInput) bookTitleInput.value = '';
+      if (bookAuthorInput) bookAuthorInput.value = '';
+      if (bookSummaryInput) bookSummaryInput.value = '';
+      if (bookContentInput) bookContentInput.value = '';
+    };
+    if (editingBookId) {
+      state.socket?.emit('room:book:remove', { objectId, bookId: editingBookId }, (removed) => {
+        if (!removed) return;
+        state.builderBooks[objectId] = (state.builderBooks[objectId] || []).filter((b) => b.bookId !== editingBookId);
+        applyAdd();
+      });
+    } else {
+      applyAdd();
+    }
   });
 
+  bookCancelBtn?.addEventListener('click', () => exitBookEditMode());
+
   bookListEl?.addEventListener('click', (evt) => {
+    const editBtn = evt.target.closest('button[data-action="edit-book"]');
+    if (editBtn) {
+      const objectId = bookShelfSelect?.value;
+      const bookId = editBtn.getAttribute('data-book-id');
+      const book = (state.builderBooks[objectId] || []).find((b) => b.bookId === bookId);
+      if (book) enterBookEditMode(book);
+      return;
+    }
     const btn = evt.target.closest('button[data-action="remove-book"]');
     if (!btn) return;
     const objectId = bookShelfSelect?.value;
@@ -969,7 +1012,9 @@ function initGame() {
       state.builderBooks[objectId] = (state.builderBooks[objectId] || []).filter((b) => b.bookId !== bookId);
       renderBuilderBookList();
     });
+    if (state.editingBookId === bookId) exitBookEditMode();
   });
+
 
   readerModalClose?.addEventListener('click', closeReaderModal);
 
@@ -991,6 +1036,7 @@ function initGame() {
   });
 
   videoTvSelect?.addEventListener('change', () => {
+    exitVideoEditMode();
     const objectId = videoTvSelect.value;
     if (!objectId) {
       renderBuilderVideoList();
@@ -1004,30 +1050,54 @@ function initGame() {
     const objectId = videoTvSelect?.value;
     if (!objectId) return;
     const title = videoTitleInput?.value?.trim();
-    const youtubeVideoId = extractYoutubeVideoId(videoYoutubeInput?.value?.trim());
-    if (!title || !youtubeVideoId) {
-      addSystemMessage('Enter a title and a valid YouTube URL or video ID.');
+    const validation = validateMediaItemInput({ title, youtubeInput: videoYoutubeInput?.value?.trim() });
+    if (!validation.valid) {
+      addSystemMessage(validation.error);
       return;
     }
-    const videoId = `video-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    state.socket?.emit('room:media:video:add', {
-      objectId, videoId, title, youtubeVideoId, description: videoDescriptionInput?.value || undefined,
-    }, (video) => {
-      if (!video) return;
-      state.builderVideos[objectId] = [...(state.builderVideos[objectId] || []), video];
-      renderBuilderVideoList();
-    });
-    if (videoTitleInput) videoTitleInput.value = '';
-    if (videoYoutubeInput) videoYoutubeInput.value = '';
-    if (videoDescriptionInput) videoDescriptionInput.value = '';
-    updateYoutubeLinkPreview('', videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
+    const { youtubeVideoId } = validation;
+    const editingVideoId = state.editingVideoId;
+    const applyAdd = () => {
+      const videoId = editingVideoId || `video-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      state.socket?.emit('room:media:video:add', {
+        objectId, videoId, title, youtubeVideoId, description: videoDescriptionInput?.value || undefined,
+      }, (video) => {
+        if (!video) return;
+        state.builderVideos[objectId] = [...(state.builderVideos[objectId] || []), video];
+        renderBuilderVideoList();
+      });
+      if (editingVideoId) exitVideoEditMode();
+      if (videoTitleInput) videoTitleInput.value = '';
+      if (videoYoutubeInput) videoYoutubeInput.value = '';
+      if (videoDescriptionInput) videoDescriptionInput.value = '';
+      updateYoutubeLinkPreview('', videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
+    };
+    if (editingVideoId) {
+      state.socket?.emit('room:media:video:remove', { objectId, videoId: editingVideoId }, (removed) => {
+        if (!removed) return;
+        state.builderVideos[objectId] = (state.builderVideos[objectId] || []).filter((v) => v.videoId !== editingVideoId);
+        applyAdd();
+      });
+    } else {
+      applyAdd();
+    }
   });
+
+  videoCancelBtn?.addEventListener('click', () => exitVideoEditMode());
 
   videoYoutubeInput?.addEventListener('input', () => {
     updateYoutubeLinkPreview(videoYoutubeInput.value, videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
   });
 
   videoListEl?.addEventListener('click', (evt) => {
+    const editBtn = evt.target.closest('button[data-action="edit-video"]');
+    if (editBtn) {
+      const objectId = videoTvSelect?.value;
+      const videoId = editBtn.getAttribute('data-video-id');
+      const video = (state.builderVideos[objectId] || []).find((v) => v.videoId === videoId);
+      if (video) enterVideoEditMode(video);
+      return;
+    }
     const btn = evt.target.closest('button[data-action="remove-video"]');
     if (!btn) return;
     const objectId = videoTvSelect?.value;
@@ -1038,9 +1108,12 @@ function initGame() {
       state.builderVideos[objectId] = (state.builderVideos[objectId] || []).filter((v) => v.videoId !== videoId);
       renderBuilderVideoList();
     });
+    if (state.editingVideoId === videoId) exitVideoEditMode();
   });
 
+
   trackPlayerSelect?.addEventListener('change', () => {
+    exitTrackEditMode();
     const objectId = trackPlayerSelect.value;
     if (!objectId) {
       renderBuilderTrackList();
@@ -1054,30 +1127,54 @@ function initGame() {
     const objectId = trackPlayerSelect?.value;
     if (!objectId) return;
     const title = trackTitleInput?.value?.trim();
-    const youtubeVideoId = extractYoutubeVideoId(trackYoutubeInput?.value?.trim());
-    if (!title || !youtubeVideoId) {
-      addSystemMessage('Enter a title and a valid YouTube URL or video ID.');
+    const validation = validateMediaItemInput({ title, youtubeInput: trackYoutubeInput?.value?.trim() });
+    if (!validation.valid) {
+      addSystemMessage(validation.error);
       return;
     }
-    const trackId = `track-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    state.socket?.emit('room:media:track:add', {
-      objectId, trackId, title, youtubeVideoId, artist: trackArtistInput?.value || undefined,
-    }, (track) => {
-      if (!track) return;
-      state.builderTracks[objectId] = [...(state.builderTracks[objectId] || []), track];
-      renderBuilderTrackList();
-    });
-    if (trackTitleInput) trackTitleInput.value = '';
-    if (trackArtistInput) trackArtistInput.value = '';
-    if (trackYoutubeInput) trackYoutubeInput.value = '';
-    updateYoutubeLinkPreview('', trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
+    const { youtubeVideoId } = validation;
+    const editingTrackId = state.editingTrackId;
+    const applyAdd = () => {
+      const trackId = editingTrackId || `track-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      state.socket?.emit('room:media:track:add', {
+        objectId, trackId, title, youtubeVideoId, artist: trackArtistInput?.value || undefined,
+      }, (track) => {
+        if (!track) return;
+        state.builderTracks[objectId] = [...(state.builderTracks[objectId] || []), track];
+        renderBuilderTrackList();
+      });
+      if (editingTrackId) exitTrackEditMode();
+      if (trackTitleInput) trackTitleInput.value = '';
+      if (trackArtistInput) trackArtistInput.value = '';
+      if (trackYoutubeInput) trackYoutubeInput.value = '';
+      updateYoutubeLinkPreview('', trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
+    };
+    if (editingTrackId) {
+      state.socket?.emit('room:media:track:remove', { objectId, trackId: editingTrackId }, (removed) => {
+        if (!removed) return;
+        state.builderTracks[objectId] = (state.builderTracks[objectId] || []).filter((t) => t.trackId !== editingTrackId);
+        applyAdd();
+      });
+    } else {
+      applyAdd();
+    }
   });
+
+  trackCancelBtn?.addEventListener('click', () => exitTrackEditMode());
 
   trackYoutubeInput?.addEventListener('input', () => {
     updateYoutubeLinkPreview(trackYoutubeInput.value, trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
   });
 
   trackListEl?.addEventListener('click', (evt) => {
+    const editBtn = evt.target.closest('button[data-action="edit-track"]');
+    if (editBtn) {
+      const objectId = trackPlayerSelect?.value;
+      const trackId = editBtn.getAttribute('data-track-id');
+      const track = (state.builderTracks[objectId] || []).find((t) => t.trackId === trackId);
+      if (track) enterTrackEditMode(track);
+      return;
+    }
     const btn = evt.target.closest('button[data-action="remove-track"]');
     if (!btn) return;
     const objectId = trackPlayerSelect?.value;
@@ -1088,7 +1185,9 @@ function initGame() {
       state.builderTracks[objectId] = (state.builderTracks[objectId] || []).filter((t) => t.trackId !== trackId);
       renderBuilderTrackList();
     });
+    if (state.editingTrackId === trackId) exitTrackEditMode();
   });
+
 
   mediaModalClose?.addEventListener('click', closeMediaModal);
 
@@ -1448,33 +1547,57 @@ function initGame() {
     const prompt = puzzlePromptInput?.value?.trim();
     const answer = puzzleAnswerInput?.value?.trim();
     const templateId = puzzleTemplateSelect?.value || undefined;
-    if (!puzzleId || !answer || (!prompt && !templateId)) {
-      showPuzzleFormError('Puzzle ID, prompt, and answer are required.');
+    const validation = validatePuzzleInput({ puzzleId, prompt, answer, templateId });
+    if (!validation.valid) {
+      showPuzzleFormError(validation.error);
       return;
     }
+    const editingPuzzleId = state.editingPuzzleId;
     const hints = (puzzleHintsInput?.value || '').split('\n').map((h) => h.trim()).filter(Boolean);
     const maxAttemptsRaw = puzzleMaxAttemptsInput?.value;
-    state.socket?.emit('room:puzzle:add', {
-      puzzleId, prompt: prompt || undefined, answer, templateId,
-      hints: hints.length ? hints : undefined,
-      matchMode: puzzleMatchModeSelect?.value || 'exact',
-      maxAttempts: maxAttemptsRaw ? Number(maxAttemptsRaw) : undefined,
-      revealItemId: puzzleRevealItemSelect?.value || undefined,
-      unlockDoorId: puzzleUnlockDoorSelect?.value || undefined,
-    }, (puzzle) => {
-      if (!puzzle) return;
-      showPuzzleFormError('');
-      if (puzzleIdInput) puzzleIdInput.value = '';
-      if (puzzlePromptInput) puzzlePromptInput.value = '';
-      if (puzzleAnswerInput) puzzleAnswerInput.value = '';
-      if (puzzleHintsInput) puzzleHintsInput.value = '';
-      if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
-      if (puzzleTemplateSelect) puzzleTemplateSelect.value = '';
-      refreshPuzzleList();
-    });
+    const applyAdd = () => {
+      state.socket?.emit('room:puzzle:add', {
+        puzzleId, prompt: prompt || undefined, answer, templateId,
+        hints: hints.length ? hints : undefined,
+        matchMode: puzzleMatchModeSelect?.value || 'exact',
+        maxAttempts: maxAttemptsRaw ? Number(maxAttemptsRaw) : undefined,
+        revealItemId: puzzleRevealItemSelect?.value || undefined,
+        unlockDoorId: puzzleUnlockDoorSelect?.value || undefined,
+      }, (puzzle) => {
+        if (!puzzle) return;
+        refreshPuzzleList();
+      });
+      if (editingPuzzleId) exitPuzzleEditMode();
+      else {
+        showPuzzleFormError('');
+        if (puzzleIdInput) puzzleIdInput.value = '';
+        if (puzzlePromptInput) puzzlePromptInput.value = '';
+        if (puzzleAnswerInput) puzzleAnswerInput.value = '';
+        if (puzzleHintsInput) puzzleHintsInput.value = '';
+        if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
+        if (puzzleTemplateSelect) puzzleTemplateSelect.value = '';
+      }
+    };
+    if (editingPuzzleId) {
+      state.socket?.emit('room:puzzle:remove', { puzzleId: editingPuzzleId }, (removed) => {
+        if (!removed) return;
+        applyAdd();
+      });
+    } else {
+      applyAdd();
+    }
   });
 
+  puzzleCancelBtn?.addEventListener('click', () => exitPuzzleEditMode());
+
   puzzleListEl?.addEventListener('click', (evt) => {
+    const editBtn = evt.target.closest('button[data-action="edit-puzzle"]');
+    if (editBtn) {
+      const puzzleId = editBtn.getAttribute('data-puzzle-id');
+      const puzzle = state.puzzles.find((p) => p.puzzleId === puzzleId);
+      if (puzzle) enterPuzzleEditMode(puzzle);
+      return;
+    }
     const btn = evt.target.closest('button[data-action="remove-puzzle"]');
     if (!btn) return;
     const puzzleId = btn.getAttribute('data-puzzle-id');
@@ -1483,7 +1606,9 @@ function initGame() {
       if (!removed) return;
       refreshPuzzleList();
     });
+    if (state.editingPuzzleId === puzzleId) exitPuzzleEditMode();
   });
+
 
   escapeLeaderboardBtn?.addEventListener('click', () => {
     state.socket?.emit('room:escape:leaderboard:list', {}, (entries) => {
@@ -2754,12 +2879,45 @@ function renderBuilderBookList() {
       <div class="builder-object-row-header">
         <span>${escapeHtml(b.title)}</span>
         <div class="builder-object-row-actions">
+          <button type="button" class="builder-icon-btn" data-action="edit-book" data-book-id="${escapeHtml(b.bookId)}" aria-label="Edit book" title="Edit book">
+            <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+          </button>
           <button type="button" class="builder-icon-btn" data-action="remove-book" data-book-id="${escapeHtml(b.bookId)}" aria-label="Remove book" title="Remove book">
             <span class="material-symbols-outlined" aria-hidden="true">delete</span>
           </button>
         </div>
       </div>
     </li>`).join('');
+}
+
+function showBookFormError(message) {
+  if (!bookErrorEl) return;
+  bookErrorEl.textContent = message;
+  bookErrorEl.classList.toggle('hidden', !message);
+}
+
+function enterBookEditMode(book) {
+  state.editingBookId = book.bookId;
+  if (bookTitleInput) bookTitleInput.value = book.title || '';
+  if (bookAuthorInput) bookAuthorInput.value = book.author || '';
+  if (bookSummaryInput) bookSummaryInput.value = book.summary || '';
+  if (bookContentTypeSelect) bookContentTypeSelect.value = book.contentType || 'inline';
+  if (bookContentInput) bookContentInput.value = book.contentBody || '';
+  showBookFormError('');
+  if (bookAddBtn) bookAddBtn.textContent = 'Save Changes';
+  bookCancelBtn?.classList.remove('hidden');
+}
+
+function exitBookEditMode() {
+  state.editingBookId = null;
+  if (bookTitleInput) bookTitleInput.value = '';
+  if (bookAuthorInput) bookAuthorInput.value = '';
+  if (bookSummaryInput) bookSummaryInput.value = '';
+  if (bookContentTypeSelect) bookContentTypeSelect.value = 'inline';
+  if (bookContentInput) bookContentInput.value = '';
+  showBookFormError('');
+  if (bookAddBtn) bookAddBtn.textContent = 'Add Book to Shelf';
+  bookCancelBtn?.classList.add('hidden');
 }
 
 // ─── Escape room ────────────────────────────────────────────────────────
@@ -2826,6 +2984,9 @@ function renderPuzzleList() {
       <div class="builder-object-row-header">
         <span>${escapeHtml(p.puzzleId)}</span>
         <div class="builder-object-row-actions">
+          <button type="button" class="builder-icon-btn" data-action="edit-puzzle" data-puzzle-id="${escapeHtml(p.puzzleId)}" aria-label="Edit puzzle" title="Edit puzzle">
+            <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+          </button>
           <button type="button" class="builder-icon-btn" data-action="remove-puzzle" data-puzzle-id="${escapeHtml(p.puzzleId)}" aria-label="Remove puzzle" title="Remove puzzle">
             <span class="material-symbols-outlined" aria-hidden="true">delete</span>
           </button>
@@ -2839,6 +3000,42 @@ function showPuzzleFormError(message) {
   if (!puzzleErrorEl) return;
   puzzleErrorEl.textContent = message;
   puzzleErrorEl.classList.toggle('hidden', !message);
+}
+
+// Puzzle answers are never sent back to any client (server/game/puzzle.py
+// to_public_dict strips the `answer` field), so unlike Book/Video/Track the
+// answer field cannot be pre-filled -- it stays blank with a placeholder
+// that explains it must be re-entered to save. puzzleId is also the record
+// key AND a normally-editable field here, so it's disabled while editing.
+function enterPuzzleEditMode(puzzle) {
+  state.editingPuzzleId = puzzle.puzzleId;
+  if (puzzleIdInput) { puzzleIdInput.value = puzzle.puzzleId; puzzleIdInput.disabled = true; }
+  if (puzzlePromptInput) puzzlePromptInput.value = puzzle.prompt || '';
+  if (puzzleAnswerInput) { puzzleAnswerInput.value = ''; puzzleAnswerInput.placeholder = 'Re-enter the answer to save changes'; }
+  if (puzzleMatchModeSelect) puzzleMatchModeSelect.value = puzzle.matchMode || 'exact';
+  if (puzzleHintsInput) puzzleHintsInput.value = (puzzle.hints || []).join('\n');
+  if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = puzzle.maxAttempts ?? '';
+  if (puzzleRevealItemSelect) puzzleRevealItemSelect.value = puzzle.revealItemId || '';
+  if (puzzleUnlockDoorSelect) puzzleUnlockDoorSelect.value = puzzle.unlockDoorId || '';
+  if (puzzleTemplateSelect) puzzleTemplateSelect.value = '';
+  showPuzzleFormError('');
+  if (puzzleAddBtn) puzzleAddBtn.textContent = 'Save Changes';
+  puzzleCancelBtn?.classList.remove('hidden');
+}
+
+function exitPuzzleEditMode() {
+  state.editingPuzzleId = null;
+  if (puzzleIdInput) { puzzleIdInput.value = ''; puzzleIdInput.disabled = false; }
+  if (puzzlePromptInput) puzzlePromptInput.value = '';
+  if (puzzleAnswerInput) { puzzleAnswerInput.value = ''; puzzleAnswerInput.placeholder = 'a piano'; }
+  if (puzzleMatchModeSelect) puzzleMatchModeSelect.value = 'exact';
+  if (puzzleHintsInput) puzzleHintsInput.value = '';
+  if (puzzleMaxAttemptsInput) puzzleMaxAttemptsInput.value = '';
+  if (puzzleRevealItemSelect) puzzleRevealItemSelect.value = '';
+  if (puzzleUnlockDoorSelect) puzzleUnlockDoorSelect.value = '';
+  showPuzzleFormError('');
+  if (puzzleAddBtn) puzzleAddBtn.textContent = 'Add Puzzle';
+  puzzleCancelBtn?.classList.add('hidden');
 }
 
 function renderEscapeLeaderboard(entries, { global = false } = {}) {
@@ -3158,12 +3355,35 @@ function renderBuilderVideoList() {
       <div class="builder-object-row-header">
         <span>${escapeHtml(v.title)}</span>
         <div class="builder-object-row-actions">
+          <button type="button" class="builder-icon-btn" data-action="edit-video" data-video-id="${escapeHtml(v.videoId)}" aria-label="Edit video" title="Edit video">
+            <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+          </button>
           <button type="button" class="builder-icon-btn" data-action="remove-video" data-video-id="${escapeHtml(v.videoId)}" aria-label="Remove video" title="Remove video">
             <span class="material-symbols-outlined" aria-hidden="true">delete</span>
           </button>
         </div>
       </div>
     </li>`).join('');
+}
+
+function enterVideoEditMode(video) {
+  state.editingVideoId = video.videoId;
+  if (videoTitleInput) videoTitleInput.value = video.title || '';
+  if (videoYoutubeInput) videoYoutubeInput.value = video.youtubeVideoId || '';
+  if (videoDescriptionInput) videoDescriptionInput.value = video.description || '';
+  updateYoutubeLinkPreview(videoYoutubeInput?.value || '', videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
+  if (videoAddBtn) videoAddBtn.textContent = 'Save Changes';
+  videoCancelBtn?.classList.remove('hidden');
+}
+
+function exitVideoEditMode() {
+  state.editingVideoId = null;
+  if (videoTitleInput) videoTitleInput.value = '';
+  if (videoYoutubeInput) videoYoutubeInput.value = '';
+  if (videoDescriptionInput) videoDescriptionInput.value = '';
+  updateYoutubeLinkPreview('', videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
+  if (videoAddBtn) videoAddBtn.textContent = 'Add Video to TV';
+  videoCancelBtn?.classList.add('hidden');
 }
 
 function renderTrackPlayerSelect() {
@@ -3195,12 +3415,35 @@ function renderBuilderTrackList() {
       <div class="builder-object-row-header">
         <span>${escapeHtml(t.title)}</span>
         <div class="builder-object-row-actions">
+          <button type="button" class="builder-icon-btn" data-action="edit-track" data-track-id="${escapeHtml(t.trackId)}" aria-label="Edit track" title="Edit track">
+            <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+          </button>
           <button type="button" class="builder-icon-btn" data-action="remove-track" data-track-id="${escapeHtml(t.trackId)}" aria-label="Remove track" title="Remove track">
             <span class="material-symbols-outlined" aria-hidden="true">delete</span>
           </button>
         </div>
       </div>
     </li>`).join('');
+}
+
+function enterTrackEditMode(track) {
+  state.editingTrackId = track.trackId;
+  if (trackTitleInput) trackTitleInput.value = track.title || '';
+  if (trackArtistInput) trackArtistInput.value = track.artist || '';
+  if (trackYoutubeInput) trackYoutubeInput.value = track.youtubeVideoId || '';
+  updateYoutubeLinkPreview(trackYoutubeInput?.value || '', trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
+  if (trackAddBtn) trackAddBtn.textContent = 'Save Changes';
+  trackCancelBtn?.classList.remove('hidden');
+}
+
+function exitTrackEditMode() {
+  state.editingTrackId = null;
+  if (trackTitleInput) trackTitleInput.value = '';
+  if (trackArtistInput) trackArtistInput.value = '';
+  if (trackYoutubeInput) trackYoutubeInput.value = '';
+  updateYoutubeLinkPreview('', trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
+  if (trackAddBtn) trackAddBtn.textContent = 'Add Track to Player';
+  trackCancelBtn?.classList.add('hidden');
 }
 
 function openMediaModal(objectId, objectType) {

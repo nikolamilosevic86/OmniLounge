@@ -35,6 +35,19 @@ export function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+/** Client-side pre-check for the book add/edit form (design doc
+ * build_mode_ui_redesign_feature_design.md §8.7, Gap 1): a title and content
+ * are both required. Shared by the Add and Save-Changes (edit) paths so an
+ * edit can never be submitted with less validation than a fresh add. */
+export function validateBookInput({ title, contentBody } = {}) {
+  const trimmedTitle = (title || '').trim();
+  const trimmedContent = (contentBody || '').trim();
+  if (!trimmedTitle || !trimmedContent) {
+    return { valid: false, error: 'Enter a title and content for the book.' };
+  }
+  return { valid: true, error: null };
+}
+
 function paragraphsFromEscaped(escaped) {
   return escaped
     .split(/\n{2,}/)

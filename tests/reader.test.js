@@ -6,6 +6,7 @@ import {
   truncateSummary,
   escapeHtml,
   renderBookContent,
+  validateBookInput,
 } from '../src/reader.js';
 
 describe('clampProgress', () => {
@@ -110,5 +111,31 @@ describe('renderBookContent', () => {
     expect(html).toContain('<em>italic</em>');
     expect(html).not.toContain('<b>raw</b>');
     expect(html).toContain('&lt;b&gt;raw&lt;/b&gt;');
+  });
+});
+
+describe('validateBookInput (design doc build_mode_ui_redesign_feature_design.md section 8.7, Gap 1)', () => {
+  it('rejects a missing title', () => {
+    expect(validateBookInput({ title: '', contentBody: 'Once upon a time...' })).toEqual({
+      valid: false, error: 'Enter a title and content for the book.',
+    });
+  });
+
+  it('rejects a whitespace-only title', () => {
+    expect(validateBookInput({ title: '   ', contentBody: 'Once upon a time...' })).toEqual({
+      valid: false, error: 'Enter a title and content for the book.',
+    });
+  });
+
+  it('rejects missing content', () => {
+    expect(validateBookInput({ title: 'My Book', contentBody: '' })).toEqual({
+      valid: false, error: 'Enter a title and content for the book.',
+    });
+  });
+
+  it('accepts a title and content', () => {
+    expect(validateBookInput({ title: 'My Book', contentBody: 'Once upon a time...' })).toEqual({
+      valid: true, error: null,
+    });
   });
 });

@@ -358,7 +358,10 @@
                 <option value="">None</option>
               </select>
             </label>
-            <button type="button" id="puzzle-add-btn" class="builder-primary-btn">Add Puzzle</button>
+            <div class="builder-button-row">
+              <button type="button" id="puzzle-add-btn" class="builder-primary-btn">Add Puzzle</button>
+              <button type="button" id="puzzle-cancel-btn" class="builder-secondary-btn hidden">Cancel</button>
+            </div>
             <p class="builder-error hidden" id="puzzle-error"></p>
             <ul id="puzzle-list" class="builder-object-list"></ul>
 
@@ -432,7 +435,11 @@
               <span>Content</span>
               <textarea id="book-content-input" rows="4" placeholder="Book content..."></textarea>
             </label>
-            <button type="button" id="book-add-btn" class="builder-primary-btn">Add Book to Shelf</button>
+            <p class="builder-error hidden" id="book-error"></p>
+            <div class="builder-button-row">
+              <button type="button" id="book-add-btn" class="builder-primary-btn">Add Book to Shelf</button>
+              <button type="button" id="book-cancel-btn" class="builder-secondary-btn hidden">Cancel</button>
+            </div>
             <ul id="book-list" class="builder-object-list"></ul>
           </section>
 
@@ -459,7 +466,10 @@
               <span>Description</span>
               <input type="text" id="video-description-input" maxlength="240" placeholder="Description (optional)" />
             </label>
-            <button type="button" id="video-add-btn" class="builder-primary-btn">Add Video to TV</button>
+            <div class="builder-button-row">
+              <button type="button" id="video-add-btn" class="builder-primary-btn">Add Video to TV</button>
+              <button type="button" id="video-cancel-btn" class="builder-secondary-btn hidden">Cancel</button>
+            </div>
             <ul id="video-list" class="builder-object-list"></ul>
           </section>
 
@@ -486,7 +496,10 @@
               <p class="builder-hint hidden" id="track-youtube-hint"></p>
               <p class="builder-error hidden" id="track-youtube-error"></p>
             </div>
-            <button type="button" id="track-add-btn" class="builder-primary-btn">Add Track to Player</button>
+            <div class="builder-button-row">
+              <button type="button" id="track-add-btn" class="builder-primary-btn">Add Track to Player</button>
+              <button type="button" id="track-cancel-btn" class="builder-secondary-btn hidden">Cancel</button>
+            </div>
             <ul id="track-list" class="builder-object-list"></ul>
           </section>
 

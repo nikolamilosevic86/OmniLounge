@@ -104,3 +104,20 @@ export function puzzleDifficultySignal(stats) {
   if (rate >= 0.25) return 'balanced';
   return 'hard';
 }
+
+/** Client-side pre-check for the puzzle add/edit form (design doc
+ * build_mode_ui_redesign_feature_design.md §8.7, Gap 1): a puzzle id and
+ * answer are always required, and a prompt is required unless a template
+ * (which supplies its own prompt template) is selected. Shared by the Add
+ * and Save-Changes (edit) paths -- the server never echoes a puzzle's
+ * answer back to the client, so this validation is also what forces a
+ * fresh answer to be re-entered before an edit can be saved. */
+export function validatePuzzleInput({ puzzleId, prompt, answer, templateId } = {}) {
+  const trimmedId = (puzzleId || '').trim();
+  const trimmedAnswer = (answer || '').trim();
+  const trimmedPrompt = (prompt || '').trim();
+  if (!trimmedId || !trimmedAnswer || (!trimmedPrompt && !templateId)) {
+    return { valid: false, error: 'Puzzle ID, prompt, and answer are required.' };
+  }
+  return { valid: true, error: null };
+}
