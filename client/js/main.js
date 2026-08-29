@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 import { AVATAR_OPTIONS, renderAvatarSVG } from './avatar-renderer.js';
-import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, setTileNeighbors, setSelectedBuilderObjectId, edgeHotspotAtPoint, tileTransitionDirection } from './room-renderer.js';
+import { drawRoom, canvasToRoomCoords, setBuilderObjects, setRoomIsLobby, setRoomStyle, setTileNeighbors, setSelectedBuilderObjectId, edgeHotspotAtPoint, tileTransitionDirection, renderObjectThumbnail } from './room-renderer.js';
 import { ROOM_STYLES, DEFAULT_ROOM_STYLE } from './room-styles.js';
 import { advanceWalkPhase } from './animation.js';
 import { getObjectAtPoint } from './room-objects.js';
@@ -28,6 +28,7 @@ import {
 import { ASSIGNABLE_ROLES, formatRoleLabel, canAssignRoles, canModerate } from './moderation.js';
 import { FOCUSABLE_SELECTOR, getNextFocusIndex, isEscapeKey, isTextEntryElement } from './focus-trap.js';
 import { loadExpandedAccordionRows, saveExpandedAccordionRows, toggleAccordionRow } from './builder-preferences.js';
+import { CATALOG_ENTRIES, CATALOG_FILTER_CHIPS, filterCatalogEntries, CATALOG_COLOR_DOT_HEXES } from './builder-catalog.js';
 import {
   NPC_BUBBLE_DURATION_MS, applyNpcMove, formatTourStatus, normalizeWaypointLabel, tourButtonState,
 } from './npc-guide.js';
@@ -104,6 +105,8 @@ const state = {
   selectedBuilderObjectId: null,
   lastBuilderAction: null,
   gridSnapEnabled: true,
+  catalogFilterGroup: 'all',
+  catalogSearchQuery: '',
   builderBooks: {},       // objectId → books[]
   readerModalObjectId: null,
   readerCurrentBook: null,
@@ -204,14 +207,10 @@ const tileDeleteBtn = document.getElementById('tile-delete-btn');
 const tileLabelInput = document.getElementById('tile-label-input');
 const tilePurposeSelect = document.getElementById('tile-purpose-select');
 const tileConfigureBtn = document.getElementById('tile-configure-btn');
-const objectTypeSelect = document.getElementById('object-type-select');
-const objectSizeSelect = document.getElementById('object-size-select');
-const objectSizeField = document.getElementById('object-size-field');
-const objectSizeAiHint = document.getElementById('object-size-ai-hint');
-const objectColorSelect = document.getElementById('object-color-select');
-const objectMaterialSelect = document.getElementById('object-material-select');
+const catalogFilterChipsEl = document.getElementById('catalog-filter-chips');
+const catalogSearchInput = document.getElementById('catalog-search-input');
+const catalogGridEl = document.getElementById('catalog-grid');
 const objectEditAnyoneInput = document.getElementById('object-edit-anyone-input');
-const objectAddBtn = document.getElementById('object-add-btn');
 const objectListEl = document.getElementById('object-list');
 const zoneTypeSelect = document.getElementById('zone-type-select');
 const zoneMinX = document.getElementById('zone-min-x');
@@ -768,25 +767,43 @@ function initGame() {
     });
   });
 
-  objectAddBtn?.addEventListener('click', () => {
+  // Furniture catalog grid (design doc §7.1): filter chips + search narrow
+  // the same in-memory CATALOG_ENTRIES list; clicking (or Enter-activating,
+  // since cards are native <button>s) a card places that object type at the
+  // current avatar position -- the §7.2 keyboard/no-drag fallback path.
+  // sizePreset/color/material are intentionally omitted so the server
+  // applies the catalog's own defaults (§7.1's "one card per type" design).
+  renderCatalogFilterChips();
+  renderCatalogGrid();
+
+  catalogFilterChipsEl?.addEventListener('click', (evt) => {
+    const chip = evt.target.closest('button[data-group]');
+    if (!chip) return;
+    state.catalogFilterGroup = chip.getAttribute('data-group');
+    renderCatalogFilterChips();
+    renderCatalogGrid();
+  });
+
+  catalogSearchInput?.addEventListener('input', () => {
+    state.catalogSearchQuery = catalogSearchInput.value || '';
+    renderCatalogGrid();
+  });
+
+  catalogGridEl?.addEventListener('click', (evt) => {
+    const card = evt.target.closest('button[data-object-type]');
+    if (!card) return;
     const me = state.players.get(state.playerId);
     const { x, y } = snapPoint(
       { x: me?.position?.x ?? 400, y: me?.position?.y ?? 300 },
       state.gridSnapEnabled,
     );
     state.socket?.emit('room:object:create', {
-      objectType: objectTypeSelect?.value || 'table',
+      objectType: card.getAttribute('data-object-type'),
       x,
       y,
-      sizePreset: objectSizeSelect?.value || undefined,
-      color: objectColorSelect?.value || undefined,
-      material: objectMaterialSelect?.value || undefined,
       editPermission: objectEditAnyoneInput?.checked ? 'anyone' : 'owner_only',
     });
   });
-
-  objectTypeSelect?.addEventListener('change', updateObjectSizeFieldVisibility);
-  updateObjectSizeFieldVisibility();
 
   roomStyleSwatchesEl?.addEventListener('click', (evt) => {
     const btn = evt.target.closest('button[data-style-id]');
@@ -2705,12 +2722,52 @@ function selectBuilderObjectForConfiguration(obj) {
 
 
 // AI characters always render at a fixed avatar size (see renderAiCharacters()),
-// so the Size preset has no visual effect for that object type — hide it to
-// avoid implying it will resize the character.
-function updateObjectSizeFieldVisibility() {
-  const isAiCharacter = objectTypeSelect?.value === 'ai_character';
-  objectSizeField?.classList.toggle('hidden', isAiCharacter);
-  objectSizeAiHint?.classList.toggle('hidden', !isAiCharacter);
+// so choosing a size preset at creation time is moot for that type -- there
+// is no size control left in the catalog grid to hide, though (§7.1: size
+// preset is always the catalog's own default, chosen post-placement via the
+// object-list row's Width/Height fields instead).
+
+function renderCatalogFilterChips() {
+  if (!catalogFilterChipsEl) return;
+  catalogFilterChipsEl.innerHTML = CATALOG_FILTER_CHIPS.map((chip) => `
+    <button type="button" class="catalog-filter-chip${chip.group === state.catalogFilterGroup ? ' active' : ''}"
+      data-group="${chip.group}" role="tab" aria-selected="${chip.group === state.catalogFilterGroup}">${escapeHtml(chip.label)}</button>
+  `).join('');
+}
+
+function renderCatalogGrid() {
+  if (!catalogGridEl) return;
+  const entries = filterCatalogEntries(CATALOG_ENTRIES, {
+    group: state.catalogFilterGroup,
+    search: state.catalogSearchQuery,
+  });
+  catalogGridEl.innerHTML = '';
+  if (entries.length === 0) {
+    catalogGridEl.innerHTML = '<p class="builder-empty-hint">No matching furniture.</p>';
+    return;
+  }
+  entries.forEach((entry) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'catalog-card';
+    card.dataset.objectType = entry.objectType;
+    card.setAttribute('role', 'option');
+    card.title = entry.label;
+    const thumb = renderObjectThumbnail({ objectType: entry.objectType, color: undefined, size: 56 });
+    if (thumb) {
+      thumb.className = 'catalog-card-thumb';
+      card.appendChild(thumb);
+    }
+    const label = document.createElement('span');
+    label.className = 'catalog-card-label';
+    label.textContent = entry.label;
+    card.appendChild(label);
+    const dots = document.createElement('span');
+    dots.className = 'catalog-card-dots';
+    dots.innerHTML = CATALOG_COLOR_DOT_HEXES.map((hex) => `<i style="background:${hex}"></i>`).join('');
+    card.appendChild(dots);
+    catalogGridEl.appendChild(card);
+  });
 }
 
 function tileKey(tile) {
@@ -2801,11 +2858,12 @@ function renderAiCharacters() {
   }
 }
 
-// Mirrors the <option> lists in #object-color-select/#object-material-select
-// (creation-time controls) so the post-placement recolor fields in each
-// object-list row offer the exact same choices (design doc §8.3's swatch
-// popover, implemented here as inline <select>s consistent with the existing
-// x/y/rotation/width/height row-field pattern rather than a floating popover).
+// Post-placement recolor/re-material options for each object-list row
+// (design doc §8.3's swatch popover, implemented here as inline <select>s
+// consistent with the existing x/y/rotation/width/height row-field pattern
+// rather than a floating popover). The Furniture tab's catalog grid (§7.1)
+// has no creation-time color/material choice of its own -- every object is
+// created with the catalog's own default and recolored here afterward.
 const OBJECT_COLOR_OPTIONS = [
   { value: '', label: '—' },
   { value: 'natural-wood', label: 'Natural Wood' },

@@ -173,64 +173,20 @@
           <div class="builder-tab-panel" id="build-tab-furniture" role="tabpanel" aria-labelledby="build-tab-furniture-btn" data-tab-panel="furniture">
           <section class="builder-section">
             <h4>Objects</h4>
+            <div class="catalog-filter-chips" id="catalog-filter-chips" role="tablist" aria-label="Filter catalog"></div>
             <label class="builder-field">
-              <span>Type</span>
-              <select id="object-type-select">
-                <option value="table">Table</option>
-                <option value="chair">Chair</option>
-                <option value="bar">Bar</option>
-                <option value="sofa">Sofa</option>
-                <option value="bookshelf">Bookshelf</option>
-                <option value="tv">TV</option>
-                <option value="music_player">Music Player</option>
-                <option value="ai_character">AI Character</option>
-                <option value="escape_door">Escape Door</option>
-                <option value="hidden_item">Hidden Item</option>
-              </select>
+              <span>Search</span>
+              <input type="text" id="catalog-search-input" placeholder="Search furniture..." />
             </label>
-            <label class="builder-field" id="object-size-field">
-              <span>Size</span>
-              <select id="object-size-select">
-                <option value="">Default</option>
-                <option value="S">Small</option>
-                <option value="M">Medium</option>
-                <option value="L">Large</option>
-              </select>
-            </label>
-            <p class="builder-hint hidden" id="object-size-ai-hint">AI Characters are always rendered at avatar size.</p>
-            <label class="builder-field">
-              <span>Color</span>
-              <select id="object-color-select">
-                <option value="">—</option>
-                <option value="natural-wood">Natural Wood</option>
-                <option value="dark-wood">Dark Wood</option>
-                <option value="white">White</option>
-                <option value="black">Black</option>
-                <option value="navy">Navy</option>
-                <option value="forest-green">Forest Green</option>
-                <option value="burgundy">Burgundy</option>
-                <option value="gold-accent">Gold Accent</option>
-              </select>
-            </label>
-            <label class="builder-field">
-              <span>Material</span>
-              <select id="object-material-select">
-                <option value="">—</option>
-                <option value="wood">Wood</option>
-                <option value="metal">Metal</option>
-                <option value="fabric">Fabric</option>
-                <option value="glass">Glass</option>
-                <option value="stone">Stone</option>
-              </select>
-            </label>
+            <div class="catalog-grid" id="catalog-grid" role="listbox" aria-label="Furniture catalog"></div>
             <label class="builder-field builder-checkbox-field">
               <input type="checkbox" id="object-edit-anyone-input" />
               <span>Anyone can edit</span>
             </label>
-            <button type="button" id="object-add-btn" class="builder-primary-btn">Add Object Here</button>
             <ul id="object-list" class="builder-object-list"></ul>
           </section>
           </div>
+
 
           <div class="builder-tab-panel hidden" id="build-tab-room-doors" role="tabpanel" aria-labelledby="build-tab-room-doors-btn" data-tab-panel="room-doors">
           <section class="builder-section">

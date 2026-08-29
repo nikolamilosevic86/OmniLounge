@@ -1215,6 +1215,88 @@ a:focus-visible,
   display: none;
 }
 
+/* Furniture catalog grid (design doc build_mode_ui_redesign_feature_design.md
+   §7.1), replacing the type/size/color/material dropdown stack. */
+.catalog-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.catalog-filter-chip {
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-full);
+  background: transparent;
+  color: var(--md-on-surface);
+  font-family: inherit;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  transition: background var(--md-duration-short) var(--md-easing-standard),
+    color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.catalog-filter-chip:hover {
+  background: var(--hover-overlay);
+}
+
+.catalog-filter-chip.active {
+  border-color: transparent;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.catalog-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  border: 2px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-medium);
+  background: var(--md-surface-container);
+  box-shadow: var(--md-elevation-1);
+  padding: 0.5rem 0.4rem 1rem;
+  cursor: pointer;
+  transition: border-color var(--md-duration-short) var(--md-easing-standard),
+    box-shadow var(--md-duration-short) var(--md-easing-standard);
+}
+
+.catalog-card:hover {
+  border-color: var(--md-primary);
+  box-shadow: var(--md-elevation-2);
+}
+
+.catalog-card-thumb {
+  border-radius: var(--md-shape-sm);
+}
+
+.catalog-card-label {
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.catalog-card-dots {
+  position: absolute;
+  bottom: 0.35rem;
+  right: 0.4rem;
+  display: flex;
+  gap: 0.15rem;
+}
+
+.catalog-card-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--md-outline-variant);
+}
+
 
 .room-style-swatches {
   display: grid;
