@@ -4,6 +4,10 @@ import { resolveRoomStyle, DEFAULT_ROOM_STYLE } from './room-styles.js';
 const ROOM_WIDTH = 800;
 const ROOM_HEIGHT = 600;
 const WALL_HEIGHT = ROOM_HEIGHT * 0.42;
+// Corner resize-handle square side length, in room-space pixels (§8.3).
+// Matches the +4 outset the selection dashed outline already uses, so the
+// handles sit right at the outline's corners.
+const RESIZE_HANDLE_SIZE = 10;
 
 // The Lobby keeps its own fixed, branded look regardless of the 5 selectable
 // custom-room styles (its colors match what this file always rendered).
@@ -1002,6 +1006,32 @@ function drawBuilderObjects(ctx) {
       ctx.roundRect(-obj.width / 2 - 4, -obj.height / 2 - 4, obj.width + 8, obj.height + 8, 8);
       ctx.stroke();
       ctx.restore();
+
+      // Resize handles (§8.3): one small filled square at each corner of the
+      // selection box, drawn inside this same translated+rotated context so
+      // they track the object's rotation for free. Locked objects (§8.5)
+      // hide them -- resizing would be rejected server-side anyway.
+      if (!obj.isLocked) {
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = 'rgba(70, 190, 255, 0.95)';
+        ctx.lineWidth = 1.5;
+        const hw = obj.width / 2 + 4;
+        const hh = obj.height / 2 + 4;
+        const half = RESIZE_HANDLE_SIZE / 2;
+        for (const [sx, sy] of [
+          [-1, -1],
+          [1, -1],
+          [-1, 1],
+          [1, 1],
+        ]) {
+          ctx.beginPath();
+          ctx.roundRect(sx * hw - half, sy * hh - half, RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE, 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
 
     if (obj.isLocked) {

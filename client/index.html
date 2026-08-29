@@ -114,6 +114,20 @@
             <canvas id="room-canvas" width="800" height="600"></canvas>
             <div id="players-layer" class="players-layer"></div>
             <div id="tile-transition-overlay" class="tile-transition-overlay" aria-hidden="true"></div>
+            <div id="builder-object-toolbar" class="builder-object-toolbar hidden" role="toolbar" aria-label="Selected object actions">
+              <button type="button" data-toolbar-action="rotate_right" title="Rotate" aria-label="Rotate">
+                <span class="material-symbols-outlined" aria-hidden="true">rotate_right</span>
+              </button>
+              <button type="button" data-toolbar-action="palette" title="Color &amp; material" aria-label="Color and material">
+                <span class="material-symbols-outlined" aria-hidden="true">palette</span>
+              </button>
+              <button type="button" data-toolbar-action="tune" title="Edit details" aria-label="Edit details">
+                <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+              </button>
+              <button type="button" data-toolbar-action="delete" title="Delete" aria-label="Delete">
+                <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+              </button>
+            </div>
           </div>
 
           <div class="room-hud">

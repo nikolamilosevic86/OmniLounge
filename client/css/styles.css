@@ -894,6 +894,73 @@ a:focus-visible,
   100% { opacity: 0; transform: translateX(100%); }
 }
 
+/* Floating selection toolbar (design doc build_mode_ui_redesign_feature_design.md §8.1/§8.4/§8.5):
+   a small pill of icon buttons tracking the selected builder object, positioned in JS
+   (main.js's updateBuilderToolbarPosition) using the SAME raw room-space coordinates
+   .players-layer's avatars use for left/top -- #room-canvas is never CSS-scaled, so room-space
+   px map 1:1 onto .room-frame-relative CSS px, no client-rect math needed. */
+.builder-object-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 0.15rem;
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-full);
+  box-shadow: var(--md-elevation-2);
+  padding: 0.2rem;
+  z-index: 1001;
+  transform: translate(-50%, -100%);
+}
+
+.builder-object-toolbar.hidden {
+  display: none;
+}
+
+.builder-object-toolbar button {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--md-shape-full);
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.builder-object-toolbar button:hover {
+  background: var(--md-surface-container-highest);
+  color: var(--text-color);
+}
+
+.builder-object-toolbar button .material-symbols-outlined {
+  font-size: 1.1rem;
+}
+
+.builder-object-toolbar button.hidden {
+  display: none;
+}
+
+.builder-object-toolbar button[data-toolbar-action="delete"] {
+  color: var(--md-error);
+}
+
+.builder-object-toolbar button[data-toolbar-action="rotate_right"].armed {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+/* Muted read-only variant (§8.5): locked/no-permission objects are reduced to
+   just the tune icon by JS (only that button is rendered), relabeled and
+   flagged read-only so it reads as "View Details" rather than an editable
+   control. */
+.builder-object-toolbar.read-only button[data-toolbar-action="tune"] {
+  color: var(--md-on-surface-variant);
+}
+
 .room-hud {
   position: absolute;
   top: 1.5rem;

@@ -6,6 +6,7 @@ import { advanceWalkPhase } from './animation.js';
 import { getObjectAtPoint } from './room-objects.js';
 import { getBuilderObjectAtPoint, buildInteractionActions, objectTypeIcon, cycleSelectedObjectId } from './builder-objects.js';
 import { captureUndoableAction, buildUndoEmission } from './builder-undo.js';
+import { resizeHandleAtPoint, computeResizeFromHandle, angleDegrees, computeDragRotation, toolbarIconsForObjectType } from './builder-manipulate.js';
 import { snapPoint } from './builder-grid-snap.js';
 import { showRadialMenu, dismissRadialMenu, hasActiveMenu } from './radial-menu.js';
 import { initCombat, destroyCombat, isBlocking } from './combat-ui.js';
@@ -165,6 +166,7 @@ const enterRoomBtn = document.getElementById('enter-room-btn');
 const roomCanvas = document.getElementById('room-canvas');
 const playersLayer = document.getElementById('players-layer');
 const tileTransitionOverlay = document.getElementById('tile-transition-overlay');
+const builderObjectToolbar = document.getElementById('builder-object-toolbar');
 const chatMessages = document.getElementById('chat-messages');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
@@ -519,6 +521,14 @@ function initGame() {
   updateCurrentTileLabel();
 
   roomCanvas.addEventListener('click', (e) => {
+    if (objectDragJustCompleted) {
+      // Suppress the synthetic click that follows a completed on-canvas
+      // move/resize/rotate drag (§8.2/§8.3), same reasoning as the catalog
+      // drag-to-place's own suppression flag: pointerup fires before click,
+      // and without this the drag's release would ALSO reselect/move.
+      objectDragJustCompleted = false;
+      return;
+    }
     const coords = canvasToRoomCoords(roomCanvas, e.clientX, e.clientY);
 
     // While picking a tour stop, a click means "drop the waypoint here" and
@@ -529,17 +539,19 @@ function initGame() {
       return;
     }
 
-    // In build mode, clicking a configurable object (bookshelf/tv/music
-    // player/AI character) opens it in the Configure Object panel instead
-    // of moving the player or opening the normal interaction menu.
+    // In build mode, clicking any builder-placed object just selects it,
+    // showing the floating selection toolbar (§8.1) -- it no longer
+    // auto-opens the Configure Object panel; that now only happens when the
+    // toolbar's own `tune` icon is clicked (§8.4), so a plain click can also
+    // start a drag-to-move (§8.2) without immediately popping a panel over
+    // the canvas. Clicking empty space while in build mode deselects.
     if (state.buildMode) {
-      const configTarget = getBuilderObjectAtPoint(currentTileBuilderObjects(), coords.x, coords.y);
-      if (configTarget) {
-        selectBuilderObject(configTarget.objectId);
-        if (selectBuilderObjectForConfiguration(configTarget)) {
-          return;
-        }
+      const target = getBuilderObjectAtPoint(currentTileBuilderObjects(), coords.x, coords.y);
+      if (target) {
+        selectBuilderObject(target.objectId);
+        return;
       }
+      clearBuilderObjectSelection();
 
       // Build-mode-only doorway/rail click shortcut (design doc §10.4): a
       // click on a *closed* rail (no neighbor tile yet on that edge) is a
@@ -889,6 +901,196 @@ function initGame() {
     if (!catalogDrag || evt.pointerId !== catalogDrag.pointerId) return;
     catalogDrag.ghostEl?.remove();
     catalogDrag = null;
+  });
+
+  // On-canvas move/resize/rotate drag for the selected builder object
+  // (design doc §8.2/§8.3), reusing the catalog drag-to-place's threshold +
+  // self-clearing "just completed" flag + pointercancel-cleanup pattern
+  // (§7.2) to distinguish a plain click-to-select from an actual drag. The
+  // object is mutated in place each pointermove; room-renderer.js's own
+  // requestAnimationFrame loop (not this code) picks the change up on the
+  // very next frame once refreshCanvasBuilderObjects() re-hands it the
+  // current tile's object list, so no extra redraw call is needed here.
+  const OBJECT_DRAG_THRESHOLD = 6;
+  let objectDrag = null;
+  let objectDragJustCompleted = false;
+  let rotateArmed = false;
+
+  roomCanvas.addEventListener('pointerdown', (evt) => {
+    if (evt.button !== 0 || !state.buildMode) return;
+    const selected = selectedTileBuilderObject();
+    if (!selected) return;
+    const coords = canvasToRoomCoords(roomCanvas, evt.clientX, evt.clientY);
+
+    if (rotateArmed) {
+      rotateArmed = false;
+      updateBuilderToolbarRotateArmed(false);
+      const cx = selected.x + selected.width / 2;
+      const cy = selected.y + selected.height / 2;
+      objectDrag = {
+        obj: selected,
+        mode: 'rotate',
+        pointerId: evt.pointerId,
+        startClientX: evt.clientX,
+        startClientY: evt.clientY,
+        startRotation: selected.rotation || 0,
+        startAngle: angleDegrees(cx, cy, coords.x, coords.y),
+        moved: false,
+      };
+      return;
+    }
+
+    // Locked objects (§8.5) can be selected/viewed but not moved or resized
+    // -- the toolbar is already reduced to a read-only `tune`, and there are
+    // no resize handles drawn for them, but guard here too since a stale
+    // handle-shaped pointerdown could otherwise still slip through.
+    if (selected.isLocked) return;
+
+    const handle = resizeHandleAtPoint(selected, coords.x, coords.y);
+    if (handle) {
+      objectDrag = {
+        obj: selected,
+        mode: 'resize',
+        handle,
+        pointerId: evt.pointerId,
+        startClientX: evt.clientX,
+        startClientY: evt.clientY,
+        moved: false,
+      };
+      return;
+    }
+
+    // A pointerdown inside the selection box (but not on a handle) starts a
+    // move -- only when it lands on the ALREADY-selected object, so a
+    // pointerdown on a *different* object always falls through to the plain
+    // `click` handler's re-selection instead of silently moving the wrong
+    // thing.
+    const target = getBuilderObjectAtPoint(currentTileBuilderObjects(), coords.x, coords.y);
+    if (target?.objectId === selected.objectId) {
+      objectDrag = {
+        obj: selected,
+        mode: 'move',
+        pointerId: evt.pointerId,
+        startClientX: evt.clientX,
+        startClientY: evt.clientY,
+        grabOffsetX: coords.x - selected.x,
+        grabOffsetY: coords.y - selected.y,
+        moved: false,
+      };
+    }
+  });
+
+  window.addEventListener('pointermove', (evt) => {
+    if (!objectDrag || evt.pointerId !== objectDrag.pointerId) return;
+    if (!objectDrag.moved) {
+      const dx = evt.clientX - objectDrag.startClientX;
+      const dy = evt.clientY - objectDrag.startClientY;
+      if (Math.hypot(dx, dy) < OBJECT_DRAG_THRESHOLD) return;
+      objectDrag.moved = true;
+      // Captured now (before any mutation below) so undo restores exactly
+      // what the object looked like before this drag, not a mid-drag value.
+      objectDrag.priorAction = captureUndoableAction(objectDrag.mode, objectDrag.obj);
+    }
+
+    const coords = canvasToRoomCoords(roomCanvas, evt.clientX, evt.clientY);
+    const obj = objectDrag.obj;
+    if (objectDrag.mode === 'move') {
+      const snapped = snapPoint(
+        { x: coords.x - objectDrag.grabOffsetX, y: coords.y - objectDrag.grabOffsetY },
+        state.gridSnapEnabled,
+      );
+      obj.x = snapped.x;
+      obj.y = snapped.y;
+    } else if (objectDrag.mode === 'resize') {
+      const result = computeResizeFromHandle(obj, objectDrag.handle, coords.x, coords.y, { preserveAspect: evt.shiftKey });
+      obj.x = result.x;
+      obj.y = result.y;
+      obj.width = result.width;
+      obj.height = result.height;
+    } else if (objectDrag.mode === 'rotate') {
+      const cx = obj.x + obj.width / 2;
+      const cy = obj.y + obj.height / 2;
+      const currentAngle = angleDegrees(cx, cy, coords.x, coords.y);
+      obj.rotation = computeDragRotation(objectDrag.startRotation, objectDrag.startAngle, currentAngle);
+    }
+    refreshCanvasBuilderObjects();
+  });
+
+  window.addEventListener('pointerup', (evt) => {
+    if (!objectDrag || evt.pointerId !== objectDrag.pointerId) return;
+    const { obj, mode, moved, priorAction } = objectDrag;
+    objectDrag = null;
+    if (!moved) return; // plain click on the selected object/handle -- no drag happened
+
+    objectDragJustCompleted = true;
+    setTimeout(() => { objectDragJustCompleted = false; }, 0);
+
+    state.lastBuilderAction = priorAction;
+    // Unlike the object-list row's plain <input>/<select> fields, this drag
+    // already mutated `obj` in place for live visual feedback -- so unlike
+    // those fields, a REJECTED mutation (e.g. no edit permission) needs an
+    // explicit revert, not just an error toast, or the object would stay
+    // stuck at the optimistic position/size/rotation nobody actually saved.
+    // The ack callback receives the server's confirmed object on success
+    // (every room:object:* handler in server/main.py returns it) or nothing
+    // on the early-return error path.
+    const revertIfRejected = (ack) => {
+      if (ack || !priorAction) return;
+      Object.assign(obj, priorAction.prior);
+      refreshCanvasBuilderObjects();
+    };
+    if (mode === 'move') {
+      state.socket?.emit('room:object:move', { objectId: obj.objectId, x: obj.x, y: obj.y }, revertIfRejected);
+    } else if (mode === 'resize') {
+      state.socket?.emit('room:object:resize', { objectId: obj.objectId, width: obj.width, height: obj.height }, revertIfRejected);
+    } else if (mode === 'rotate') {
+      state.socket?.emit('room:object:rotate', { objectId: obj.objectId, rotation: obj.rotation }, revertIfRejected);
+    }
+  });
+
+  // Same "interrupted gesture" concern as the catalog drag's own
+  // pointercancel handler -- except here the object was already mutated
+  // in place for live visual feedback, so it also needs reverting (there is
+  // no server round-trip to correct it, since no event was ever emitted).
+  window.addEventListener('pointercancel', (evt) => {
+    if (!objectDrag || evt.pointerId !== objectDrag.pointerId) return;
+    if (objectDrag.moved && objectDrag.priorAction) {
+      Object.assign(objectDrag.obj, objectDrag.priorAction.prior);
+      refreshCanvasBuilderObjects();
+    }
+    objectDrag = null;
+  });
+
+  builderObjectToolbar?.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('button[data-toolbar-action]');
+    // No extra "is this read-only" guard needed here: a read-only/locked
+    // selection already renders with only the `tune` button visible (the
+    // other 3 have `.hidden` applied by updateBuilderObjectToolbar), and
+    // `tune` itself is meant to stay clickable in that state -- it opens
+    // the config panel read-only-labeled as "View details", it doesn't
+    // mutate anything.
+    if (!btn || btn.classList.contains('hidden')) return;
+    const selected = selectedTileBuilderObject();
+    if (!selected) return;
+    const action = btn.getAttribute('data-toolbar-action');
+    if (action === 'rotate_right') {
+      rotateArmed = !rotateArmed;
+      updateBuilderToolbarRotateArmed(rotateArmed);
+    } else if (action === 'tune') {
+      selectBuilderObjectForConfiguration(selected);
+    } else if (action === 'palette') {
+      // No new popover (design doc §8.3's recolor is already implemented
+      // via the object-list row's inline Color/Material <select>s, §17
+      // Decision-style placement note) -- this just scrolls/focuses that
+      // row's color select as a shortcut from the canvas.
+      const colorSelect = objectListEl?.querySelector(`[data-object-id="${selected.objectId}"] select[data-field="color"]`);
+      colorSelect?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      colorSelect?.focus();
+    } else if (action === 'delete') {
+      state.lastBuilderAction = captureUndoableAction('delete', selected);
+      state.socket?.emit('room:object:delete', { objectId: selected.objectId });
+      clearBuilderObjectSelection();
+    }
   });
 
   roomStyleSwatchesEl?.addEventListener('click', (evt) => {
@@ -1889,6 +2091,7 @@ function initGame() {
     renderPlayers();
     pruneExpiredBubbles();
     updateEscapeHud();
+    updateBuilderObjectToolbar();
   }, 33);
 }
 
@@ -2713,10 +2916,49 @@ function updateBuildModeUi() {
 function selectBuilderObject(objectId) {
   state.selectedBuilderObjectId = objectId || null;
   setSelectedBuilderObjectId(objectId || null);
+  updateBuilderObjectToolbar();
 }
 
 function clearBuilderObjectSelection() {
   selectBuilderObject(null);
+}
+
+/** Shows/hides/positions the floating selection toolbar (§8.1) and picks which of its 4
+ * icon buttons are visible for the current selection (§8.4's tune-only-if-configurable,
+ * §8.5's locked/no-permission reduction) -- called on every selection change plus every
+ * game-loop tick (see the setInterval below) so it tracks a live move/resize/rotate drag. */
+function updateBuilderObjectToolbar() {
+  if (!builderObjectToolbar) return;
+  const obj = state.buildMode ? selectedTileBuilderObject() : null;
+  if (!obj) {
+    builderObjectToolbar.classList.add('hidden');
+    return;
+  }
+  const icons = toolbarIconsForObjectType(obj.objectType, { isLocked: obj.isLocked });
+  if (!icons.length) {
+    builderObjectToolbar.classList.add('hidden');
+    return;
+  }
+  builderObjectToolbar.classList.remove('hidden');
+  builderObjectToolbar.classList.toggle('read-only', Boolean(obj.isLocked));
+  for (const btn of builderObjectToolbar.querySelectorAll('button[data-toolbar-action]')) {
+    const action = btn.getAttribute('data-toolbar-action');
+    btn.classList.toggle('hidden', !icons.includes(action));
+    if (action === 'tune') {
+      const label = obj.isLocked ? 'View details' : 'Edit details';
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+    }
+  }
+  builderObjectToolbar.style.left = `${obj.x + obj.width / 2}px`;
+  builderObjectToolbar.style.top = `${obj.y - 12}px`;
+}
+
+/** Toggles the rotate_right button's "armed" highlight while a toolbar-armed rotate-drag
+ * (§8.3) is waiting for the next canvas pointerdown to spin the selected object. */
+function updateBuilderToolbarRotateArmed(armed) {
+  const btn = builderObjectToolbar?.querySelector('button[data-toolbar-action="rotate_right"]');
+  btn?.classList.toggle('armed', armed);
 }
 
 // Room Style picker (design doc section 11). Renders the 5 ROOM_STYLES as
@@ -2892,6 +3134,13 @@ function tileKey(tile) {
 function currentTileBuilderObjects() {
   const currentKey = tileKey(state.currentTile);
   return state.builderState.objects.filter((obj) => tileKey(obj.tile) === currentKey);
+}
+
+/** The currently selected builder object on the current tile, or null (design doc §8.2/§8.3:
+ * the on-canvas move/resize/rotate drags and the floating toolbar all need this same lookup). */
+function selectedTileBuilderObject() {
+  if (!state.selectedBuilderObjectId) return null;
+  return currentTileBuilderObjects().find((o) => o.objectId === state.selectedBuilderObjectId) || null;
 }
 
 function refreshCanvasBuilderObjects() {
