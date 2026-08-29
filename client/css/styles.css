@@ -1171,6 +1171,10 @@ a:focus-visible,
   display: none;
 }
 
+.builder-hint-success {
+  color: var(--md-success);
+}
+
 .character-avatar-preview-panel {
   display: flex;
   justify-content: center;
@@ -1414,12 +1418,18 @@ canvas.waypoint-picking {
   object-fit: cover;
   border-radius: var(--md-shape-sm);
   border: 1px solid var(--md-outline-variant);
+  box-shadow: var(--md-elevation-1);
+  animation: youtubePreviewFadeIn var(--md-duration-medium) var(--md-easing-standard);
 }
 
 .youtube-link-preview-thumb.hidden {
   display: none;
 }
 
+@keyframes youtubePreviewFadeIn {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .builder-checkbox-field {
   flex-direction: row;

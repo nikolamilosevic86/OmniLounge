@@ -2485,6 +2485,7 @@ function updateYoutubeLinkPreview(value, thumbEl, hintEl, errorEl) {
   if (hintEl) {
     hintEl.textContent = preview.status === 'valid' ? 'Valid video' : '';
     hintEl.classList.toggle('hidden', preview.status !== 'valid');
+    hintEl.classList.toggle('builder-hint-success', preview.status === 'valid');
   }
   if (errorEl) {
     errorEl.textContent = preview.status === 'invalid' ? 'Enter a full YouTube URL or an 11-character video ID' : '';

@@ -989,6 +989,13 @@ function drawBuilderObjects(ctx) {
       // since a locked object can still be selected/inspected but not moved.
       ctx.save();
       ctx.strokeStyle = obj.isLocked ? 'rgba(180, 185, 195, 0.7)' : 'rgba(70, 190, 255, 0.95)';
+      if (!obj.isLocked) {
+        // Soft cyan glow on the active (unlocked) highlight only -- locked
+        // objects intentionally stay flat/muted so the glow itself reads as
+        // part of the "this one is editable" signal, not just decoration.
+        ctx.shadowColor = 'rgba(70, 190, 255, 0.85)';
+        ctx.shadowBlur = 8;
+      }
       ctx.lineWidth = 2.5;
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
