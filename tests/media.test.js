@@ -5,6 +5,7 @@ import {
   computeSyncPosition,
   formatDuration,
   sessionAppliesToItem,
+  youtubeLinkPreviewState,
 } from '../src/media.js';
 
 describe('isValidYoutubeVideoId', () => {
@@ -102,5 +103,33 @@ describe('sessionAppliesToItem', () => {
 
   it('returns false when there is no item currently displayed', () => {
     expect(sessionAppliesToItem({ itemId: 'video-1' }, null)).toBe(false);
+  });
+});
+
+describe('youtubeLinkPreviewState (design doc build_mode_ui_redesign_feature_design.md section 8.7)', () => {
+  it('returns an empty status for an empty or whitespace-only input, with no thumbnail', () => {
+    expect(youtubeLinkPreviewState('')).toEqual({ status: 'empty', videoId: null, thumbnailUrl: null });
+    expect(youtubeLinkPreviewState('   ')).toEqual({ status: 'empty', videoId: null, thumbnailUrl: null });
+    expect(youtubeLinkPreviewState(undefined)).toEqual({ status: 'empty', videoId: null, thumbnailUrl: null });
+  });
+
+  it('returns an invalid status with no thumbnail for unrecognized non-empty input', () => {
+    expect(youtubeLinkPreviewState('not a youtube link')).toEqual({ status: 'invalid', videoId: null, thumbnailUrl: null });
+  });
+
+  it('returns a valid status with a video id and mqdefault thumbnail url for a bare id', () => {
+    expect(youtubeLinkPreviewState('dQw4w9WgXcQ')).toEqual({
+      status: 'valid',
+      videoId: 'dQw4w9WgXcQ',
+      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
+    });
+  });
+
+  it('returns a valid status for a full watch URL, matching extractYoutubeVideoId', () => {
+    expect(youtubeLinkPreviewState('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toEqual({
+      status: 'valid',
+      videoId: 'dQw4w9WgXcQ',
+      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
+    });
   });
 });

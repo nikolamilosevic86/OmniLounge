@@ -13,7 +13,7 @@ import { ATTACK_DURATIONS, computeAttackPhase, getPunchAngles, getKickAngles, ge
 import { normalizeRooms, buildRoomMetaLine, canJoinRoom, normalizeRoomFilters } from './room-discovery.js';
 import { buildMiniMapCells, normalizeTileList, neighborTileFlags } from './world-map.js';
 import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary } from './reader.js';
-import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem } from './media.js';
+import { extractYoutubeVideoId, computeSyncPosition, formatDuration, sessionAppliesToItem, youtubeLinkPreviewState } from './media.js';
 import {
   formatModeLabel, parseChoicesInput, resolveCharacterMode,
   validateKnowledgeDocumentInput, summarizeKnowledgeDocument,
@@ -247,6 +247,9 @@ const readerBookContent = document.getElementById('reader-book-content');
 const videoTvSelect = document.getElementById('video-tv-select');
 const videoTitleInput = document.getElementById('video-title-input');
 const videoYoutubeInput = document.getElementById('video-youtube-input');
+const videoYoutubeThumb = document.getElementById('video-youtube-thumb');
+const videoYoutubeHint = document.getElementById('video-youtube-hint');
+const videoYoutubeError = document.getElementById('video-youtube-error');
 const videoDescriptionInput = document.getElementById('video-description-input');
 const videoAddBtn = document.getElementById('video-add-btn');
 const videoListEl = document.getElementById('video-list');
@@ -254,6 +257,9 @@ const trackPlayerSelect = document.getElementById('track-player-select');
 const trackTitleInput = document.getElementById('track-title-input');
 const trackArtistInput = document.getElementById('track-artist-input');
 const trackYoutubeInput = document.getElementById('track-youtube-input');
+const trackYoutubeThumb = document.getElementById('track-youtube-thumb');
+const trackYoutubeHint = document.getElementById('track-youtube-hint');
+const trackYoutubeError = document.getElementById('track-youtube-error');
 const trackAddBtn = document.getElementById('track-add-btn');
 const trackListEl = document.getElementById('track-list');
 const mediaModal = document.getElementById('media-modal');
@@ -1014,6 +1020,11 @@ function initGame() {
     if (videoTitleInput) videoTitleInput.value = '';
     if (videoYoutubeInput) videoYoutubeInput.value = '';
     if (videoDescriptionInput) videoDescriptionInput.value = '';
+    updateYoutubeLinkPreview('', videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
+  });
+
+  videoYoutubeInput?.addEventListener('input', () => {
+    updateYoutubeLinkPreview(videoYoutubeInput.value, videoYoutubeThumb, videoYoutubeHint, videoYoutubeError);
   });
 
   videoListEl?.addEventListener('click', (evt) => {
@@ -1059,6 +1070,11 @@ function initGame() {
     if (trackTitleInput) trackTitleInput.value = '';
     if (trackArtistInput) trackArtistInput.value = '';
     if (trackYoutubeInput) trackYoutubeInput.value = '';
+    updateYoutubeLinkPreview('', trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
+  });
+
+  trackYoutubeInput?.addEventListener('input', () => {
+    updateYoutubeLinkPreview(trackYoutubeInput.value, trackYoutubeThumb, trackYoutubeHint, trackYoutubeError);
   });
 
   trackListEl?.addEventListener('click', (evt) => {
@@ -2452,6 +2468,28 @@ function updateGridSnapUi() {
   gridSnapToggle.setAttribute('aria-pressed', String(state.gridSnapEnabled));
   const icon = gridSnapToggle.querySelector('.material-symbols-outlined');
   if (icon) icon.textContent = state.gridSnapEnabled ? 'grid_on' : 'grid_off';
+}
+
+// Live YouTube link preview (design doc section 8.7): called on every
+// `input` event on a YouTube URL/ID field, and once more (with an empty
+// value) after the field is cleared on successful Add, so the preview never
+// lingers stale. Reuses the same `youtubeLinkPreviewState` rule the Add
+// button's own validation uses -- just surfaced immediately instead of only
+// on submit.
+function updateYoutubeLinkPreview(value, thumbEl, hintEl, errorEl) {
+  const preview = youtubeLinkPreviewState(value);
+  if (thumbEl) {
+    thumbEl.classList.toggle('hidden', preview.status !== 'valid');
+    thumbEl.src = preview.status === 'valid' ? preview.thumbnailUrl : '';
+  }
+  if (hintEl) {
+    hintEl.textContent = preview.status === 'valid' ? 'Valid video' : '';
+    hintEl.classList.toggle('hidden', preview.status !== 'valid');
+  }
+  if (errorEl) {
+    errorEl.textContent = preview.status === 'invalid' ? 'Enter a full YouTube URL or an 11-character video ID' : '';
+    errorEl.classList.toggle('hidden', preview.status !== 'invalid');
+  }
 }
 
 // The configure-object panel is only meaningful once you've clicked a

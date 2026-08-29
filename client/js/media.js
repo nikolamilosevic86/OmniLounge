@@ -51,3 +51,21 @@ export function sessionAppliesToItem(session, itemId) {
   if (!session || !itemId) return false;
   return session.itemId === itemId;
 }
+
+/** Live validation/preview state for a YouTube URL/ID input field (design doc
+ * build_mode_ui_redesign_feature_design.md §8.7): 'empty' for blank input (no
+ * feedback needed yet), 'invalid' for non-empty input that doesn't resolve to
+ * a video id, or 'valid' with the resolved videoId and its public YouTube
+ * thumbnail URL. Reuses `extractYoutubeVideoId` so the live-preview check is
+ * always the exact same rule as the on-submit validation. */
+export function youtubeLinkPreviewState(input) {
+  const trimmed = (input || '').trim();
+  if (!trimmed) {
+    return { status: 'empty', videoId: null, thumbnailUrl: null };
+  }
+  const videoId = extractYoutubeVideoId(trimmed);
+  if (!videoId) {
+    return { status: 'invalid', videoId: null, thumbnailUrl: null };
+  }
+  return { status: 'valid', videoId, thumbnailUrl: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` };
+}

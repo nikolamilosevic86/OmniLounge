@@ -450,6 +450,11 @@
               <span>YouTube URL or ID</span>
               <input type="text" id="video-youtube-input" placeholder="https://youtube.com/watch?v=..." />
             </label>
+            <div class="youtube-link-preview">
+              <img class="youtube-link-preview-thumb hidden" id="video-youtube-thumb" alt="" />
+              <p class="builder-hint hidden" id="video-youtube-hint"></p>
+              <p class="builder-error hidden" id="video-youtube-error"></p>
+            </div>
             <label class="builder-field">
               <span>Description</span>
               <input type="text" id="video-description-input" maxlength="240" placeholder="Description (optional)" />
@@ -476,6 +481,11 @@
               <span>YouTube URL or ID</span>
               <input type="text" id="track-youtube-input" placeholder="https://youtube.com/watch?v=..." />
             </label>
+            <div class="youtube-link-preview">
+              <img class="youtube-link-preview-thumb hidden" id="track-youtube-thumb" alt="" />
+              <p class="builder-hint hidden" id="track-youtube-hint"></p>
+              <p class="builder-error hidden" id="track-youtube-error"></p>
+            </div>
             <button type="button" id="track-add-btn" class="builder-primary-btn">Add Track to Player</button>
             <ul id="track-list" class="builder-object-list"></ul>
           </section>
