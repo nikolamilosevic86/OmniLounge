@@ -357,6 +357,7 @@ const escapeInventoryLabel = document.getElementById('escape-inventory-label');
 const escapeEnabledInput = document.getElementById('escape-enabled-input');
 const escapeTimeLimitInput = document.getElementById('escape-time-limit-input');
 const escapeBriefingInput = document.getElementById('escape-briefing-input');
+const escapeTeamModeInput = document.getElementById('escape-team-mode-input');
 const escapeSettingsSaveBtn = document.getElementById('escape-settings-save-btn');
 const puzzleIdInput = document.getElementById('puzzle-id-input');
 const puzzlePromptInput = document.getElementById('puzzle-prompt-input');
@@ -1872,6 +1873,7 @@ function initGame() {
       enabled: !!escapeEnabledInput?.checked,
       timeLimitMs: minutes * 60_000,
       briefing: escapeBriefingInput?.value || undefined,
+      teamMode: !!escapeTeamModeInput?.checked,
     }, () => refreshEscapeStatus());
   });
 

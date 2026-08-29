@@ -2450,6 +2450,7 @@ async def room_escape_configure(sid, data):
     try:
         builder.configure_escape_session(
             bool(data.get("enabled", False)), data["timeLimitMs"], briefing=data.get("briefing"),
+            team_mode=bool(data.get("teamMode", False)),
             requester_id=sid, is_room_host=_is_room_host(sid, room_id),
         )
     except (KeyError, PermissionError, ValueError) as exc:
@@ -2747,6 +2748,15 @@ async def tick_escape_sessions(room_id: str, now_ms: float) -> None:
         logger.exception("escape session tick failed for room %s", room_id)
         return
 
+    if not expired_user_ids:
+        return
+    if builder.is_escape_team_mode():
+        # In Team/Shared Mode, `expired_user_ids` contains the internal
+        # `RoomBuilderState.ESCAPE_TEAM_KEY` sentinel, not a real socket sid
+        # -- `room=sentinel` would silently reach nobody, so broadcast to
+        # every visitor in the room instead (Team/Shared Mode, §3.1, §8.1).
+        await sio.emit("room:escape:expired", {"roomId": room_id}, room=room_channel(room_id))
+        return
     for user_id in expired_user_ids:
         await sio.emit("room:escape:expired", {"roomId": room_id}, room=user_id)
 

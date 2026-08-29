@@ -59,6 +59,14 @@ class RoomBuilderState:
     """Authoring-time state for a single room: tiles, objects, zones,
     scripted triggers, and draft/publish version history."""
 
+    # Sentinel progress key used in place of a real requester_id whenever
+    # Team/Shared Mode is enabled (never a real socket sid, so it can never
+    # collide with one). Public (not underscore-prefixed) so callers like
+    # `server/main.py`'s game-loop tick can recognize it in
+    # `expire_escape_sessions`'s return value without reaching into a
+    # private attribute.
+    ESCAPE_TEAM_KEY = "__escape_team__"
+
     def __init__(self) -> None:
         self._tiles: dict[tuple[int, int], dict[str, Any]] = {
             (0, 0): self._make_tile_record(is_spawn=True)
@@ -80,6 +88,15 @@ class RoomBuilderState:
         self._puzzles = PuzzleEngine()
         self._inventory = InventoryEngine()
         self._escape = EscapeSessionEngine()
+        # Team/Shared Mode (Phase 2, §3.1, §8.1, §16 Q3): a room-host toggle
+        # that pools the timer, solved puzzles, revealed items, opened
+        # doors, and inventory room-wide instead of per-visitor. Centralized
+        # here as a single key-substitution (see `_escape_progress_key`)
+        # rather than inside PuzzleEngine/EscapeSessionEngine/InventoryEngine
+        # themselves, so those three engines stay simple per-key stores with
+        # zero awareness of "team mode" as a concept -- RoomBuilderState is
+        # the one orchestrator already threading state between them.
+        self._escape_team_mode: bool = False
         self._versions: list[dict[str, Any]] = []
         self._active_version: int | None = None
         self._next_version = 1
@@ -340,11 +357,12 @@ class RoomBuilderState:
         if record["objectType"] != "hidden_item":
             return True
         object_id = record["objectId"]
-        if self._inventory.has(requester_id, object_id):
+        progress_key = self._escape_progress_key(requester_id)
+        if self._inventory.has(progress_key, object_id):
             if record["config"].get("singleUse", True):
                 return False  # already picked up -- would look duplicated in their own view
             return True  # singleUse=False items remain re-visible/re-collectible after pickup
-        return self._escape.has_revealed(requester_id, object_id)
+        return self._escape.has_revealed(progress_key, object_id)
 
     def _require_object(self, object_id: str) -> dict[str, Any]:
         record = self._objects.get(object_id)
@@ -773,7 +791,7 @@ class RoomBuilderState:
         self._require_ai_character(object_id)
         return self._story.talk(
             object_id, object_id, user_id=requester_id, choice_index=choice_index,
-            is_solved=self._puzzles.is_solved,
+            is_solved=lambda puzzle_id, uid: self._puzzles.is_solved(puzzle_id, self._escape_progress_key(uid)),
         )
 
     def restart_character_story(self, object_id: str, requester_id: str) -> dict[str, Any]:
@@ -962,7 +980,9 @@ class RoomBuilderState:
                 guards_puzzle_id = record["config"].get("guardsPuzzleId")
                 if guards_puzzle_id is None:
                     return {"character": character}
-                hint_result = self._puzzles.request_hint(guards_puzzle_id, requester_id, now_ms)
+                hint_result = self._puzzles.request_hint(
+                    guards_puzzle_id, self._escape_progress_key(requester_id), now_ms,
+                )
                 return {"character": character, **hint_result}
         return dict(record["config"])
 
@@ -976,31 +996,33 @@ class RoomBuilderState:
         object_id = record["objectId"]
         config = record["config"]
         destination_tile = config.get("destinationTile")
-        if self._escape.has_opened(requester_id, object_id):
+        progress_key = self._escape_progress_key(requester_id)
+        if self._escape.has_opened(progress_key, object_id):
             return {"opened": True, "alreadyOpen": True, "destinationTile": destination_tile}
 
         required_item_id = config.get("requiredItemId")
         required_puzzle_ids = config.get("requiredPuzzleIds") or []
-        has_item = required_item_id is None or self._inventory.has(requester_id, required_item_id)
-        puzzles_solved = all(self._puzzles.is_solved(pid, requester_id) for pid in required_puzzle_ids)
+        has_item = required_item_id is None or self._inventory.has(progress_key, required_item_id)
+        puzzles_solved = all(self._puzzles.is_solved(pid, progress_key) for pid in required_puzzle_ids)
         if not (has_item and puzzles_solved):
             return {"opened": False, "alreadyOpen": False}
 
-        self._escape.open_door(requester_id, object_id)
+        self._escape.open_door(progress_key, object_id)
         if destination_tile is None:
             # No destination tile means this door is a win trigger (§5.1,
             # §8.3); multiple win-doors are OR-gated, and mark_won is a no-op
             # unless the visitor's session is currently in_progress.
-            self._escape.mark_won(requester_id, display_name or requester_id, now_ms)
+            self._escape.mark_won(progress_key, display_name or requester_id, now_ms)
         return {"opened": True, "alreadyOpen": False, "destinationTile": destination_tile}
 
     def _pick_up_item(self, record: dict[str, Any], requester_id: str) -> dict[str, Any]:
         """Design doc §5.2/§7: a visitor cannot pick up an item they haven't
         personally uncovered yet."""
         object_id = record["objectId"]
-        if not self._escape.has_revealed(requester_id, object_id):
+        progress_key = self._escape_progress_key(requester_id)
+        if not self._escape.has_revealed(progress_key, object_id):
             raise PermissionError(f"item {object_id} has not been revealed for this user")
-        self._inventory.grant(requester_id, object_id)
+        self._inventory.grant(progress_key, object_id)
         return {"granted": True, "itemId": object_id}
 
     @staticmethod
@@ -1191,7 +1213,8 @@ class RoomBuilderState:
     def attempt_solve_puzzle(
         self, puzzle_id: str, requester_id: str, guess: str, now_ms: float
     ) -> dict[str, Any]:
-        result = self._puzzles.attempt_solve(puzzle_id, requester_id, guess, now_ms)
+        progress_key = self._escape_progress_key(requester_id)
+        result = self._puzzles.attempt_solve(puzzle_id, progress_key, guess, now_ms)
         if result["correct"]:
             # "reveal is driven purely by reveal_item_id" (§6.1) -- solving
             # the puzzle is the reward trigger itself, so this is the one
@@ -1199,17 +1222,17 @@ class RoomBuilderState:
             # trip. Idempotent to call again on an already-solved re-check.
             reveal_item_id = self._puzzles.get_puzzle_public(puzzle_id)["revealItemId"]
             if reveal_item_id is not None:
-                self._escape.reveal_item(requester_id, reveal_item_id)
+                self._escape.reveal_item(progress_key, reveal_item_id)
         return result
 
     def request_puzzle_hint(self, puzzle_id: str, requester_id: str, now_ms: float) -> dict[str, Any]:
-        return self._puzzles.request_hint(puzzle_id, requester_id, now_ms)
+        return self._puzzles.request_hint(puzzle_id, self._escape_progress_key(requester_id), now_ms)
 
     def reset_puzzle_attempts(
         self, puzzle_id: str, user_id: str, requester_id: str | None = None, is_room_host: bool = False
     ) -> None:
         self._require_room_host(requester_id, is_room_host)
-        self._puzzles.reset_attempts(puzzle_id, user_id)
+        self._puzzles.reset_attempts(puzzle_id, self._escape_progress_key(user_id))
 
     def puzzle_analytics(
         self, puzzle_id: str, requester_id: str | None = None, is_room_host: bool = False
@@ -1234,17 +1257,35 @@ class RoomBuilderState:
         enabled: bool,
         time_limit_ms: float,
         briefing: str | None = None,
+        team_mode: bool = False,
         requester_id: str | None = None,
         is_room_host: bool = False,
     ) -> None:
         self._require_room_host(requester_id, is_room_host)
         self._escape.configure(enabled, time_limit_ms, briefing)
+        self._escape_team_mode = team_mode
+
+    def is_escape_team_mode(self) -> bool:
+        return self._escape_team_mode
+
+    def _escape_progress_key(self, requester_id: str) -> str:
+        """Resolves the key used for all per-visitor escape-room progress
+        state (puzzle solved/attempt/hint counters, revealed items, opened
+        doors, and inventory) -- returns the shared `ESCAPE_TEAM_KEY`
+        sentinel when Team/Shared Mode is enabled so every visitor's calls
+        land on one pooled record instead of their own, otherwise returns
+        `requester_id` unchanged (today's default, per-visitor behavior).
+        The countdown timer (`EscapeSessionEngine._sessions`, keyed the same
+        way `start`/`status`/`mark_won`/`reset` already use) is pooled
+        for free by the same substitution, since it lives in the same
+        per-key dict."""
+        return self.ESCAPE_TEAM_KEY if self._escape_team_mode else requester_id
 
     def start_escape_session(self, requester_id: str, now_ms: float) -> dict[str, Any]:
-        return self._escape.start(requester_id, now_ms)
+        return self._escape.start(self._escape_progress_key(requester_id), now_ms)
 
     def get_escape_status(self, requester_id: str, now_ms: float) -> dict[str, Any]:
-        return self._escape.status(requester_id, now_ms)
+        return self._escape.status(self._escape_progress_key(requester_id), now_ms)
 
     def get_escape_briefing(self) -> str | None:
         return self._escape.get_briefing()
@@ -1254,8 +1295,11 @@ class RoomBuilderState:
         reset their own session, so no room-host gate is needed here --
         `EscapeSessionEngine.reset` already restricts itself to that one
         user_id's state and rejects an in-progress session with
-        `PermissionError` (§8.1)."""
-        self._escape.reset(requester_id)
+        `PermissionError` (§8.1). In Team/Shared Mode "their own session" IS
+        the pooled team session, so any team member resetting it resets it
+        for the whole team -- an intentional consequence of self-serve reset
+        rather than a separate permission model for team mode."""
+        self._escape.reset(self._escape_progress_key(requester_id))
 
     def escape_leaderboard(self, limit: int = 10) -> list[dict[str, Any]]:
         return self._escape.leaderboard(limit)
@@ -1268,22 +1312,22 @@ class RoomBuilderState:
         return self._escape.expire_overdue_sessions(now_ms)
 
     def list_inventory(self, requester_id: str) -> list[str]:
-        return self._inventory.list_items(requester_id)
+        return self._inventory.list_items(self._escape_progress_key(requester_id))
 
     def has_opened_door(self, object_id: str, requester_id: str) -> bool:
-        """Thin accessor so `server/main.py`'s collision code (\u00a75.1) can
+        """Thin accessor so `server/main.py`'s collision code (§5.1) can
         check per-visitor door-open state without reaching into the private
         `_escape` engine directly -- the same discipline every other
         cross-module caller already follows."""
-        return self._escape.has_opened(requester_id, object_id)
+        return self._escape.has_opened(self._escape_progress_key(requester_id), object_id)
 
     def reveal_item(self, requester_id: str, object_id: str) -> None:
         """Thin accessor for a fired `reveal_object` trigger (design doc
-        feature_designs/escape_room_feature_design.md \u00a76.3) so
+        feature_designs/escape_room_feature_design.md §6.3) so
         `server/main.py`'s game loop can mark a hidden_item revealed for the
         triggering visitor without reaching into the private `_escape`
         engine directly. Idempotent like the puzzle-solve reveal path."""
-        self._escape.reveal_item(requester_id, object_id)
+        self._escape.reveal_item(self._escape_progress_key(requester_id), object_id)
 
     def configure_door(
         self,

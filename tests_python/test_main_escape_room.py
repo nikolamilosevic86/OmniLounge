@@ -117,6 +117,31 @@ class TestEscapeSessionHandlers:
 
         assert result == []
 
+    async def test_configure_with_team_mode_flag_enables_team_mode(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        room_id = room["id"]
+        await _join(rooms, room_id, "host-1", "Host")
+
+        result = await main_module.room_escape_configure(
+            "host-1", {"enabled": True, "timeLimitMs": 60_000, "teamMode": True},
+        )
+
+        assert result is True
+        builder = rooms.get_builder(room_id)
+        assert builder.is_escape_team_mode() is True
+
+    async def test_configure_without_team_mode_flag_defaults_to_disabled(self, isolate_registry):
+        rooms, fake_sio = isolate_registry
+        room = rooms.create_room(host_id="host-1", name="Test Room")
+        room_id = room["id"]
+        await _join(rooms, room_id, "host-1", "Host")
+
+        await main_module.room_escape_configure("host-1", {"enabled": True, "timeLimitMs": 60_000})
+
+        builder = rooms.get_builder(room_id)
+        assert builder.is_escape_team_mode() is False
+
 
 class TestPuzzleHandlers:
     async def test_add_by_non_host_participant_is_rejected(self, isolate_registry):
@@ -579,6 +604,24 @@ class TestTickEscapeSessions:
 
         expired_events = [e for e in fake_sio.emitted if e[0] == "room:escape:expired"]
         assert expired_events and expired_events[-1][2] == "p1"
+
+    async def test_tick_in_team_mode_broadcasts_to_the_whole_room_not_a_sentinel_sid(self, isolate_registry):
+        # `expire_escape_sessions` returns `RoomBuilderState.ESCAPE_TEAM_KEY`
+        # in team mode (an internal sentinel, never a real socket sid) --
+        # emitting `room=that_key` would silently reach nobody, so the tick
+        # must broadcast to the room channel instead whenever team mode is on.
+        rooms, fake_sio = isolate_registry
+        await _join(rooms, player_id="p1", name="Alice")
+        await _join(rooms, player_id="p2", name="Bob")
+        builder = rooms.get_builder("lobby")
+        builder.configure_escape_session(True, 10, team_mode=True, requester_id=None)
+        builder.start_escape_session("p1", now_ms=0)
+
+        await main_module.tick_escape_sessions("lobby", now_ms=1000)
+
+        expired_events = [e for e in fake_sio.emitted if e[0] == "room:escape:expired"]
+        assert len(expired_events) == 1
+        assert expired_events[-1][2] == main_module.room_channel("lobby")
 
 
 # ─── Escape room: hidden_item visibility must hold over the wire (§5.2/§12) ─

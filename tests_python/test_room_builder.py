@@ -1704,6 +1704,129 @@ class TestEscapeSessionWrappers:
         assert self.builder.get_escape_status("p1", now_ms=200)["state"] == "expired"
 
 
+# ─── Escape room: Team/Shared Mode (Phase 2, design doc §3.1, §8.1, §16 Q3) ─
+
+class TestEscapeTeamMode:
+    def setup_method(self):
+        self.builder = RoomBuilderState()
+
+    def test_set_escape_team_mode_requires_room_host(self):
+        with pytest.raises(PermissionError):
+            self.builder.configure_escape_session(
+                True, 60_000, team_mode=True, requester_id="p1", is_room_host=False,
+            )
+
+    def test_is_escape_team_mode_defaults_to_false(self):
+        assert self.builder.is_escape_team_mode() is False
+
+    def test_configure_escape_session_can_enable_team_mode(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        assert self.builder.is_escape_team_mode() is True
+
+    def test_team_mode_shares_a_single_countdown_timer_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.start_escape_session("p1", now_ms=0)
+        # p2 never called start themselves -- but the shared session is
+        # already in_progress because p1 started it for the whole team.
+        status = self.builder.get_escape_status("p2", now_ms=1000)
+        assert status["state"] == "in_progress"
+        assert status["remainingMs"] == pytest.approx(59_000)
+
+    def test_team_mode_pools_puzzle_solved_state_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredPuzzleIds": ["riddle-1"]},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+
+        # p2 never personally solved riddle-1, but the whole team's solve
+        # state is pooled, so the door opens for them too.
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p2", now_ms=1000)
+        assert result["payload"]["opened"] is True
+
+    def test_team_mode_pools_revealed_item_and_pickup_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.create_object(
+            "key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10,
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", reveal_item_id="key-1")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+
+        # p2 never personally solved anything, but the reveal is pooled so
+        # the item is visible to them and they can pick it up.
+        visible_objects = self.builder.list_objects(requester_id="p2")
+        assert any(o["objectId"] == "key-1" for o in visible_objects)
+        result = self.builder.interact_with_object("key-1", "pick_up", requester_id="p2", now_ms=1000)
+        assert result["payload"]["granted"] is True
+
+    def test_team_mode_pools_door_open_state_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.create_object("door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20)
+        self.builder.interact_with_object("door-1", "attempt_open", requester_id="p1", now_ms=1000)
+
+        assert self.builder.has_opened_door("door-1", "p2") is True
+
+    def test_team_mode_pools_required_item_state_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredItemId": "key-1"},
+        )
+        self.builder.create_object("key-1", "hidden_item", (0, 0), x=5, y=5, width=10, height=10)
+        self.builder.add_puzzle("riddle-1", "2+2?", "4", reveal_item_id="key-1")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        self.builder.interact_with_object("key-1", "pick_up", requester_id="p1", now_ms=1000)
+
+        # p2 never personally picked up the key, but inventory is pooled.
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p2", now_ms=1001)
+        assert result["payload"]["opened"] is True
+
+    def test_team_mode_pools_knowledge_check_gating_across_visitors(self):
+        self.builder.configure_escape_session(True, 60_000, team_mode=True, requester_id=None)
+        self.builder.add_puzzle("riddle-1", prompt="2+2?", answer="4", requester_id="alice", is_room_host=True)
+        self.builder.create_object(
+            "npc-1", "ai_character", (0, 0), x=10, y=10, width=20, height=20, created_by="alice",
+        )
+        self.builder.configure_character(
+            "npc-1", name="Archivist", role="quiz_master", start_node_id="node-1", requester_id="alice",
+        )
+        self.builder.add_story_node(
+            "npc-1", "node-1", character_line="Solve my riddle first.",
+            choices=[{"text": "I solved it", "nextNodeId": "node-2"}],
+            knowledge_check="riddle-1", requester_id="alice",
+        )
+        self.builder.add_story_node("npc-1", "node-2", character_line="Well done!", requester_id="alice")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1000)
+
+        # p2 never personally solved riddle-1, but the pooled solved state
+        # unblocks the gated dialogue choice for them too.
+        self.builder.talk_to_character("npc-1", requester_id="p2")
+        result = self.builder.talk_to_character("npc-1", requester_id="p2", choice_index=0)
+        assert result["node"]["nodeId"] == "node-2"
+
+    def test_team_mode_reset_clears_the_shared_session_for_every_visitor(self):
+        self.builder.configure_escape_session(True, 10, team_mode=True, requester_id=None)
+        self.builder.start_escape_session("p1", now_ms=0)
+        assert self.builder.expire_escape_sessions(100) == [RoomBuilderState.ESCAPE_TEAM_KEY]
+        # Any visitor can reset the shared team session (self-serve, §8.1).
+        self.builder.reset_escape_session("p2")
+        assert self.builder.get_escape_status("p1", now_ms=200)["state"] == "not_started"
+
+    def test_team_mode_off_keeps_progress_independent_per_visitor(self):
+        # Regression sanity: without team mode, p2 must NOT inherit p1's
+        # solved puzzle -- the pre-existing default behavior.
+        self.builder.create_object(
+            "door-1", "escape_door", (0, 0), x=10, y=10, width=20, height=20,
+            config={"requiredPuzzleIds": ["riddle-1"]},
+        )
+        self.builder.add_puzzle("riddle-1", "2+2?", "4")
+        self.builder.attempt_solve_puzzle("riddle-1", requester_id="p1", guess="4", now_ms=1)
+        result = self.builder.interact_with_object("door-1", "attempt_open", requester_id="p2", now_ms=1000)
+        assert result["payload"]["opened"] is False
+
+
 # ─── Escape room: door/item configure wrappers (§9) ────────────────────────
 
 class TestConfigureDoorAndItem:
