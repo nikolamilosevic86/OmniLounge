@@ -43,6 +43,8 @@
       <a href="#rooms">Rooms</a>
       <a href="#building">Build mode</a>
       <a href="#characters">AI characters</a>
+      <a href="#educational-rooms">Building an educational room</a>
+      <a href="#escape-rooms">Building an escape room</a>
       <a href="#reference">Full documentation</a>
     </nav>
 
@@ -50,54 +52,97 @@
       <section class="guide-section" id="getting-started">
         <h2><span class="material-symbols-outlined" aria-hidden="true">face</span> Getting started</h2>
         <p>
-          Your first stop is the avatar creator. Pick a display name and shape your look — skin tone, hair,
-          beard, glasses, clothes, and accessories. The preview renders live, so the character you build is
-          exactly the one that walks into the room.
+          Your first stop is the avatar creator. Pick a display name and shape your look — skin tone, body
+          type, hair, beard, glasses, clothes, and an accessory. Every option is a simple toggle, and the
+          preview panel on the left renders your choices live, so the character you build is exactly the one
+          that walks into the room a moment later. There's no "confirm" step buried in a menu: once you've
+          typed a name, the <strong>Enter the Lounge</strong> button lights up and you're ready to go.
         </p>
+        <figure class="guide-figure">
+          <img src="img/guide/avatar-creator.png" alt="The avatar creator screen, showing a live character preview on the left and skin color, body type, hair, beard, glasses, clothes, and accessory pickers on the right." loading="lazy" />
+          <figcaption>The avatar creator. Every option updates the preview instantly.</figcaption>
+        </figure>
         <p>
-          After that you land in the room chooser, where you can create a new room or join one that already
-          exists. Close the chooser without picking anything and you simply stay in the default lobby.
+          After that you land in the room chooser, a panel listing every room currently on the server. You can
+          filter it by topic tag or access type, sort by newest or most active, join an existing room, or spin
+          up a brand-new one of your own with a name, tags, and a starting visual style. Closing the chooser
+          without picking anything simply leaves you in the default <strong>Lobby</strong> — a safe, always-on
+          space to get your bearings, chat, and spar before you go exploring.
         </p>
+        <figure class="guide-figure">
+          <img src="img/guide/room-chooser.png" alt="The Choose a Room panel, listing the Lobby plus two example rooms — The Alchemist's Vault and Leonardo's Workshop — with online counts, tags, and Join Room buttons." loading="lazy" />
+          <figcaption>The room chooser. Two seeded showcase rooms — an educational room and an escape room — are always available alongside the Lobby.</figcaption>
+        </figure>
+        <div class="guide-callout">
+          <span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>
+          <span>
+            Don't know where to start? Join <strong>Leonardo's Workshop</strong> for a guided tour of a
+            Renaissance-themed educational room, or <strong>The Alchemist's Vault</strong> for a timed escape
+            room — both ship with the server and are covered step by step later in this guide.
+          </span>
+        </div>
       </section>
 
       <section class="guide-section" id="moving">
         <h2><span class="material-symbols-outlined" aria-hidden="true">directions_walk</span> Moving around</h2>
-        <p>There are two ways to get around, and both are equally valid:</p>
+        <p>There are two ways to get around, and both are equally valid — use whichever feels natural:</p>
         <ul class="guide-list">
-          <li><strong>Arrow keys</strong> for continuous, game-like directional control.</li>
-          <li><strong>Click anywhere on the floor</strong> to walk there. Your avatar paths toward the spot and steers around furniture.</li>
+          <li><strong>Arrow keys</strong> for continuous, game-like directional control. Hold a key to keep walking; release it to stop.</li>
+          <li><strong>Click anywhere on the floor</strong> to walk there. Your avatar paths toward the spot and steers around furniture automatically, so you don't have to thread the needle between chairs and tables yourself.</li>
         </ul>
         <p>
-          Movement is bounded by the room walls and aware of furniture collision boxes, so you can move
-          naturally around the space without clipping through the scenery.
+          Movement is bounded by the room walls and aware of every piece of furniture's collision box, so you
+          can move naturally around the space without clipping through the scenery. Rooms are also bigger than
+          a single screen: most rooms are made of several connected <strong>tiles</strong> arranged in a grid,
+          and walking to the edge of one tile carries you through a doorway into the next. A small mini-map in
+          the HUD always shows which tile you're standing on and which neighboring tiles exist, so you never
+          lose track of where you are in a multi-room build.
         </p>
       </section>
 
       <section class="guide-section" id="objects">
         <h2><span class="material-symbols-outlined" aria-hidden="true">chair</span> Objects &amp; actions</h2>
         <p>
-          Click an interactive object and a radial action wheel opens right where you clicked. The available
-          actions depend on the object, so you can sit on a sofa, lounge, grab a drink, climb onto the coffee
-          table, or dance and DJ at the deck.
+          Click an interactive object — a chair, a bookshelf, a puzzle prop, an AI character — and a radial
+          action wheel opens right where you clicked, listing every action that object supports. The available
+          actions depend entirely on the object: you can sit on a sofa, lounge, browse a bookshelf, watch a
+          video, play a track, talk to a character, or solve a puzzle, all from the same simple menu.
         </p>
+        <figure class="guide-figure">
+          <img src="img/guide/radial-menu.png" alt="A radial action menu open over an AI character object, showing Talk, Ask Hint, and Start Mission actions." loading="lazy" />
+          <figcaption>The radial action menu adapts to whatever object you clicked — here, an AI character offering to talk, give a hint, or start its mission.</figcaption>
+        </figure>
         <p>
           Your avatar walks to the object's anchor point before the action plays out — actions are attached to
-          real places in the room rather than to a global menu.
+          real places in the room rather than to a global menu, so a conversation, a puzzle, or a nap on the
+          sofa all happen exactly where the object sits in the space.
         </p>
       </section>
+
 
       <section class="guide-section" id="chat">
         <h2><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span> Chatting</h2>
         <p>
           Public messages show up in the chat panel and as short-lived speech bubbles above your avatar, so
-          conversation stays visible in the space itself. Private messages stay one-to-one between you and the
-          person you sent them to.
+          conversation stays visible in the space itself rather than being tucked away in a sidebar only. Anyone
+          nearby can follow along without even glancing at the chat log. Private messages work the same way to
+          send, but stay strictly one-to-one between you and the person you sent them to — nobody else in the
+          room sees them, in the log or as a bubble.
+        </p>
+        <p>
+          Switch between the two with the <strong>Public</strong> / <strong>Private</strong> toggle above the
+          chat input. If you flag or report a message, that action is scoped to the message itself, so
+          moderators can act on a specific line without needing more context than what's already on screen.
         </p>
       </section>
 
       <section class="guide-section" id="combat">
         <h2><span class="material-symbols-outlined" aria-hidden="true">sports_mma</span> Combat</h2>
-        <p>Sparring is an optional mode layered into the room — there is no separate game screen.</p>
+        <p>
+          Sparring is an optional mode layered directly into the room — there is no separate game screen, no
+          matchmaking queue, and no loading transition. Anyone in the room can throw a punch at any time, and
+          anyone nearby can get pulled in.
+        </p>
         <ul class="guide-list guide-keys">
           <li><kbd>Space</kbd><span>Punch</span></li>
           <li><kbd>Ctrl</kbd> / <kbd>Cmd</kbd><span>Kick</span></li>
@@ -105,43 +150,288 @@
         </ul>
         <p>
           Your attack and defense animations play immediately for responsiveness, while the actual outcome is
-          decided by the server based on range, cooldown, stamina, and stun state — so fights stay fair for
-          everyone in the room.
+          decided by the server based on range, cooldown, stamina, and stun state — so a lucky-looking hit on
+          your screen still has to actually land server-side, and fights stay fair for everyone in the room
+          instead of rewarding whoever has the least lag.
         </p>
+        <div class="guide-callout">
+          <span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>
+          <span>
+            Every room keeps a resident bot around specifically so there's always someone to test combat
+            mechanics against, even in an otherwise empty room. It moves, taunts in public chat, blocks, and
+            attacks back like a real opponent.
+          </span>
+        </div>
       </section>
 
       <section class="guide-section" id="rooms">
         <h2><span class="material-symbols-outlined" aria-hidden="true">meeting_room</span> Rooms</h2>
         <p>
           The <strong>Change Room</strong> pill sits permanently in the room HUD next to the online-player
-          count. Open it any time to browse or create rooms without reloading the page.
+          count. Open it any time — mid-conversation, mid-fight, it doesn't matter — to browse or create rooms
+          without reloading the page or losing your avatar.
         </p>
         <ul class="guide-list">
-          <li>Filter the room list by topic tag, access type (all / public / invite), and sort order (newest or most active).</li>
-          <li>Invite-only rooms are joined with an invite code.</li>
-          <li>Rooms that are full are clearly marked as unavailable.</li>
-          <li>The room you are currently in is marked as such, with its Join button disabled.</li>
+          <li>Filter the room list by topic tag, access type (all / public / invite), and sort order (newest or most active), so a busy server stays easy to search.</li>
+          <li>Invite-only rooms are joined with an invite code, which the room's host shares separately.</li>
+          <li>Rooms that are full are clearly marked as unavailable — you'll never accidentally try to cram into a packed room.</li>
+          <li>The room you are currently in is marked as such, with its Join button disabled, so the list always shows you exactly where you stand.</li>
         </ul>
+        <p>
+          Every room also has an owner-configurable visual <strong>style</strong> — a coordinated palette for
+          the backdrop, walls, and floor — chosen when the room is created. Styles range from a cool
+          <em>Modern Loft</em> to a warm <em>Cozy Den</em> to more themed looks like <em>Renaissance Studio</em>
+          and <em>Candlelit Vault</em>, which is exactly how the two showcase rooms covered later in this guide
+          get their look before a single piece of furniture is placed.
+        </p>
       </section>
+
 
       <section class="guide-section" id="building">
         <h2><span class="material-symbols-outlined" aria-hidden="true">construction</span> Build mode</h2>
         <p>
-          If you host a room, the <strong>Build Mode</strong> pill in the HUD unlocks room authoring. Place and
-          arrange objects, then use the toolbar that appears on a selected object to rotate it, recolor it,
-          tune its settings, or delete it. A grid-snap toggle appears alongside build mode to help you line
-          things up cleanly.
+          If you host a room, the <strong>Build Mode</strong> pill in the HUD unlocks room authoring. Flip it
+          on and the Room Builder panel slides in, organized into three tabs — <strong>Furniture</strong> for
+          placing objects, <strong>Room &amp; Doors</strong> for managing tiles and navigation, and
+          <strong>More</strong> for room-wide settings like the escape session and moderation. A grid-snap
+          toggle sits alongside build mode to help you line objects up cleanly without fighting free-form
+          pixel placement.
         </p>
+        <figure class="guide-figure">
+          <img src="img/guide/build-mode-catalog.png" alt="The Room Builder panel in build mode, showing the Furniture tab with the full object catalog: table, chair, bar, sofa, bookshelf, TV, music player, AI character, escape door, hidden item, cipher box, digital lock, combination dial, riddle tablet, and clue board." loading="lazy" />
+          <figcaption>The full object catalog. Basic furniture sits alongside interactive objects and five dedicated escape-room puzzle shapes.</figcaption>
+        </figure>
+        <p>The catalog is deliberately broad, and every object type falls into one of a few families:</p>
+        <ul class="guide-list">
+          <li><strong>Furniture</strong> — table, chair, bar, sofa — sets the scene and gives visitors somewhere to gather or sit.</li>
+          <li><strong>Media &amp; knowledge</strong> — bookshelf, TV, music player — hold real content: books, videos, and tracks you author yourself.</li>
+          <li><strong>AI character</strong> — a placeable story character with its own appearance, dialogue tree, knowledge base, and optional guided tour.</li>
+          <li><strong>Escape-room objects</strong> — escape door, hidden item, and five puzzle-prop shapes (cipher box, digital lock, combination dial, riddle tablet, clue board) — build a timed, puzzle-gated challenge.</li>
+        </ul>
+        <p>
+          Placing an object is a drag from the catalog onto the room canvas. Once it's down, click it to select
+          it and a small floating toolbar appears for that object alone, letting you move, rotate, recolor,
+          fine-tune its settings (the <span class="material-symbols-outlined" aria-hidden="true" style="font-size:1em;vertical-align:-0.15em;">tune</span> icon), or delete it — all without leaving the room view. Everything you place is
+          saved to the room immediately, so any other visitor sees it the moment you drop it.
+        </p>
+        <div class="guide-callout">
+          <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+          <span>
+            The two sections below walk through building a complete <strong>educational room</strong> and a
+            complete <strong>escape room</strong> from scratch, object by object — the fastest way to see how
+            all of these pieces fit together.
+          </span>
+        </div>
       </section>
 
       <section class="guide-section" id="characters">
         <h2><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span> AI characters</h2>
         <p>
           Rooms can host AI story characters with their own appearance, scripted conversations, and a
-          document-based knowledge base. They can answer questions and run guided tours that walk visitors
-          between waypoints. A resident bot also keeps quieter rooms feeling alive — it moves, taunts in public
-          chat, blocks, and attacks, so you always have someone to test mechanics against.
+          document-based knowledge base. Talking to one opens a dedicated dialogue window that keeps a running
+          transcript of the whole conversation — your questions and the character's answers both stay on
+          screen as you go deeper, rather than replacing the previous line every time you pick a new option.
         </p>
+        <figure class="guide-figure">
+          <img src="img/guide/ai-character-dialogue.png" alt="A dialogue window with Leonardo da Vinci, showing a running transcript: his opening line, the visitor's chosen question, and his next answer about his paintings." loading="lazy" />
+          <figcaption>A branching conversation with an AI character. Every turn stays visible as the transcript grows.</figcaption>
+        </figure>
+        <p>
+          Two modes govern how a character answers. In <strong>Predefined Mode</strong>, the character follows
+          an author-written dialogue tree: a starting line, a set of clickable choices, and further nodes those
+          choices lead to, optionally ending in a completion flag. If the room's host has connected a
+          generative API, visitors can also type a free-form question into the ask box, and the character
+          answers using its knowledge base for context — useful for open-ended "ask me anything" characters
+          layered on top of a scripted core. Characters can also run <strong>guided tours</strong>: click
+          "Follow me!" and the character walks a pre-authored path between waypoints, narrating as it goes,
+          with you in tow.
+        </p>
+      </section>
+
+      <section class="guide-section" id="educational-rooms">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">school</span> Building an educational room</h2>
+        <p class="guide-subsection-intro">A worked example, using the seeded room "Leonardo's Workshop."</p>
+        <p>
+          An educational room turns the same objects covered above — furniture, a bookshelf, a TV, a music
+          player, and an AI character — into a self-contained lesson. <strong>Leonardo's Workshop</strong> ships
+          with the server as a live example: a three-tile Renaissance-styled room built entirely from the
+          standard catalog, with no code beyond authoring content through the builder. Join it from the room
+          chooser to explore everything described below firsthand.
+        </p>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">palette</span> Setting the scene with room style and tiles</h3>
+        <p>
+          The room starts from the <strong>Renaissance Studio</strong> visual style — ochre plaster, fresco-blue
+          walls, a terracotta floor — chosen the moment the room was created, before a single object existed.
+          Choosing a style is the fastest way to establish a vibe, because it colors the backdrop, walls, and
+          floor consistently without having to color-match dozens of individual objects.
+        </p>
+        <p>
+          From there the room is split across three connected tiles, each with its own purpose: <strong>The
+          Bottega</strong> (the workshop itself, with a worktable, stools, and a bench for conversation),
+          <strong>Library &amp; Codices</strong> (a reading room), and <strong>Hall of Inventions</strong>
+          (a small gallery of plinths standing in for Leonardo's models and drawings). Splitting a lesson across
+          tiles like this keeps each screen focused — a visitor reads in the library without the workshop's
+          furniture crowding the view — while the Room &amp; Doors tab in the builder lets you add, label, and
+          connect tiles in exactly this way for your own rooms.
+        </p>
+        <div class="guide-figure-row">
+          <figure class="guide-figure">
+            <img src="img/guide/leonardo-workshop-bottega.png" alt="The Bottega tile in Leonardo's Workshop, showing a worktable, stools, a music player, and the visitor's avatar." loading="lazy" />
+            <figcaption>The Bottega — furniture and atmosphere set the scene.</figcaption>
+          </figure>
+          <figure class="guide-figure">
+            <img src="img/guide/leonardo-workshop-library.png" alt="The Library tile in Leonardo's Workshop, showing a bookshelf stocked with books on the wall." loading="lazy" />
+            <figcaption>The Library — a bookshelf holds the room's core reading content.</figcaption>
+          </figure>
+        </div>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">menu_book</span> The bookshelf: your primary lesson content</h3>
+        <p>
+          The bookshelf is where an educational room does most of its teaching. Leonardo's Workshop stocks one
+          with seven short, self-contained articles — his early life, the Verrocchio apprenticeship, the Milan
+          years, the Mona Lisa and sfumato, the notebooks, his anatomical studies, and his final years in
+          France — each with a title, an author credit, a one-line summary, and an estimated read time.
+          Opening the shelf shows every book in a sidebar next to the reading pane, so a visitor can jump
+          between articles without losing their place on the shelf, and their reading progress on each book is
+          saved automatically as they scroll.
+        </p>
+        <figure class="guide-figure">
+          <img src="img/guide/bookshelf-reader.png" alt="The bookshelf reader open, showing a sidebar of seven books about Leonardo da Vinci's life next to the full text of the first book, 'Vinci, 1452: An Illegitimate Beginning'." loading="lazy" />
+          <figcaption>The bookshelf reader: every book stays one click away in the sidebar while you read.</figcaption>
+        </figure>
+        <p>
+          Authoring a book is one form in the builder's Furniture tab: place a bookshelf, select it, and use
+          "Add Book to Shelf" to give it a title, an optional author and summary, an estimated read time, and
+          the content itself — either plain paragraphs or a small markdown subset (headers, bold, italic) for
+          longer articles. There's no limit tied to a single book beyond what's comfortable to read in one
+          sitting; add as many books as your lesson needs.
+        </p>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">movie</span> TV and music: video and audio without leaving the room</h3>
+        <p>
+          A TV and a music player round out the media side of the lesson. The workshop's TV carries four short
+          documentaries and explainer videos (each just a YouTube link pasted into the "Add Video" form), and
+          its music player carries four period-appropriate tracks — Renaissance lute and choral pieces — so the
+          room has an ambient soundtrack a visitor can put on while they read or explore. Both work exactly like
+          the bookshelf: a sidebar of everything on the playlist next to the currently playing item, with a
+          "Watch Together" option on the TV so a group can stay in sync on the same video.
+        </p>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span> The AI character as guide and interviewee</h3>
+        <p>
+          The centerpiece of the room is an AI character configured as <strong>Leonardo da Vinci</strong>
+          himself, using the <em>historical persona</em> role so he answers in character rather than as a
+          neutral narrator. His knowledge base holds six short reference documents covering his life, paintings,
+          notebooks, and anatomical work, and his dialogue tree opens with a welcome line and branches into
+          topics a visitor can pick — his paintings, his flying-machine designs, his mirror handwriting, his
+          final years — each answer written in his voice and drawing on the same facts as the bookshelf, so the
+          two reinforce each other instead of repeating verbatim.
+        </p>
+        <p>
+          He can also run a short guided tour of the Bottega, walking a visitor between his worktable, the
+          music player, and the bench before pointing them toward the library — a nice way to open a lesson
+          before turning a visitor loose to read and explore on their own.
+        </p>
+        <div class="guide-callout">
+          <span class="material-symbols-outlined" aria-hidden="true">tips_and_updates</span>
+          <span>
+            <strong>Recipe for your own educational room:</strong> pick a themed room style, split the topic
+            across a couple of tiles if it has distinct sections, put your core written material on a
+            bookshelf, add supporting video/audio if you have it, then configure one AI character as the
+            subject of the lesson with a knowledge base drawn from the same sources as your books.
+          </span>
+        </div>
+      </section>
+
+      <section class="guide-section" id="escape-rooms">
+        <h2><span class="material-symbols-outlined" aria-hidden="true">meeting_room</span> Building an escape room</h2>
+        <p class="guide-subsection-intro">A worked example, using the seeded room "The Alchemist's Vault."</p>
+        <p>
+          An escape room layers a ticking clock and a chain of puzzles on top of the same builder tools. Join
+          <strong>The Alchemist's Vault</strong> from the room chooser to try the finished example: a two-tile
+          <strong>Candlelit Vault</strong>-styled room — the darkest of the visual styles, so hidden objects
+          genuinely read as hidden — where four puzzles gate a locked door behind a twenty-minute timer.
+        </p>
+        <figure class="guide-figure">
+          <img src="img/guide/vault-sealed-study.png" alt="The Sealed Study tile in The Alchemist's Vault, showing a combination-dial clock puzzle prop, a desk, and a pinned clue board on the wall." loading="lazy" />
+          <figcaption>The Sealed Study: a combination dial and a clue board are both puzzle-relevant objects, not just decoration.</figcaption>
+        </figure>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">timer</span> The escape session: turning on the clock</h3>
+        <p>
+          The escape timer itself is a single room-wide setting, found in the builder's More tab as
+          <strong>Configure Escape Session</strong>: flip it on, set a time limit, and write a short briefing
+          that visitors see when they start. The Alchemist's Vault uses a twenty-minute limit and a briefing
+          that sets up the whole premise — a locked study, four puzzles, an apprentice who can help. Team mode
+          can also be turned on so a group shares one countdown and one win condition instead of racing each
+          other individually.
+        </p>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">extension</span> Puzzle props: five shapes, three answer formats</h3>
+        <p>
+          Every puzzle needs a physical prop to attach to, and the catalog offers five purpose-built shapes —
+          <strong>cipher box</strong>, <strong>digital lock</strong>, <strong>combination dial</strong>,
+          <strong>riddle tablet</strong>, and <strong>clue board</strong> — so the room can visually vary how
+          each puzzle presents itself instead of every clue looking like the same keypad. Place the prop first,
+          then use "Add Puzzle" and bind it to that object.
+        </p>
+        <p>A puzzle's answer can be checked three different ways, chosen per-puzzle to fit the clue:</p>
+        <ul class="guide-list">
+          <li><strong>Exact</strong> — the answer must match a specific word or phrase precisely (good for named techniques or terms).</li>
+          <li><strong>Numeric</strong> — the answer is compared as a number, so formatting quirks don't matter (good for dates and years).</li>
+          <li><strong>Contains</strong> — correct as long as the guess contains the key phrase (good for place names that might be phrased a few different ways).</li>
+        </ul>
+        <p>
+          Every puzzle also gets its own prompt text, up to a few graduated hints a stuck visitor can request,
+          and an optional maximum number of attempts. Clicking a puzzle prop opens a small dialog with the
+          prompt and an answer box — solving it is immediate and satisfying, with no separate confirmation step.
+        </p>
+        <div class="guide-figure-row">
+          <figure class="guide-figure">
+            <img src="img/guide/vault-puzzle-radial.png" alt="A radial menu open over the combination dial puzzle prop, showing a single Solve action." loading="lazy" />
+            <figcaption>Clicking a puzzle prop offers a single, obvious Solve action.</figcaption>
+          </figure>
+          <figure class="guide-figure">
+            <img src="img/guide/vault-puzzle-modal.png" alt="The puzzle dialog for the combination dial, showing the prompt about the year Leonardo was born, an answer input, a Solve button, and an Ask for a Hint button." loading="lazy" />
+            <figcaption>The puzzle dialog: a prompt, an answer box, and a hint on request.</figcaption>
+          </figure>
+        </div>
+        <p>
+          In the Vault, all four puzzles are individually numeric or exact-matched and are each tied to a fact
+          from Leonardo's life — his birth year on a combination dial, the name of his painting technique on a
+          cipher box, the year he documented the laws of friction on a digital lock, and the town he died in on
+          a riddle tablet — so solving the escape room and reading the educational room reward the same
+          knowledge from two different angles.
+        </p>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">key</span> Hidden items and the escape door</h3>
+        <p>
+          Some puzzles reward more than satisfaction: solving the Vault's cipher box reveals a hidden key
+          object that was invisible until that moment, discouraging visitors from just wandering around looking
+          for it before earning it. The <strong>escape door</strong> object is then configured, in "Configure
+          Door," to require both that revealed key <em>and</em> all four puzzles solved — so every clue in the
+          room genuinely gates the exit rather than being an optional side quest.
+        </p>
+
+        <h3><span class="material-symbols-outlined" aria-hidden="true">support_agent</span> An AI character as in-room hint-giver</h3>
+        <p>
+          The Vault also places an AI character — Salaì, the apprentice — configured with the <em>guide</em>
+          role and a knowledge base that summarizes what each of the four locks wants, without spelling out
+          the answers outright. Talking to him is a safety net for a stuck group: he'll point you toward which
+          puzzle to try first and what kind of fact it's looking for, while still leaving the actual solving to
+          you.
+        </p>
+        <div class="guide-callout">
+          <span class="material-symbols-outlined" aria-hidden="true">tips_and_updates</span>
+          <span>
+            <strong>Recipe for your own escape room:</strong> turn on the escape session with a time limit and
+            briefing, place a few puzzle props and give each one a prompt, hints, and the answer format that
+            fits, wire at least one puzzle to reveal a hidden item, configure your escape door to require the
+            puzzles (and any hidden items) you want, and place a guide character if you'd like visitors to have
+            somewhere to turn when they're stuck.
+          </span>
+        </div>
       </section>
 
       <section class="guide-section" id="reference">

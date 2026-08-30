@@ -190,9 +190,15 @@ body {
   font-family: 'Roboto', 'Segoe UI', sans-serif;
   background: var(--md-background);
   color: var(--md-on-surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Only the single-screen game app (index.html) is a fixed-height, no-scroll
+   layout; the standalone guide page (help.html, .guide-body) is a normal
+   scrolling document and must not inherit this. */
+body:not(.guide-body) {
   overflow: hidden;
   height: 100vh;
-  -webkit-font-smoothing: antialiased;
 }
 
 .material-symbols-outlined {
@@ -3016,7 +3022,11 @@ canvas.waypoint-picking {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  z-index: 30;
+  /* Above .room-player (inline z-index up to ROOM_BOUNDS.height = 600), the
+     .global-controls cluster (1000) and .builder-object-toolbar (1001) --
+     none of those ancestors establish a stacking context, so avatars and
+     overlays would otherwise render straight through an open dialog. */
+  z-index: 1100;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -3086,6 +3096,124 @@ canvas.waypoint-picking {
   color: var(--md-on-surface);
 }
 
+/* Two-pane library layout: a persistent sidebar of books/playlist items
+   beside the content pane, so switching entries never hides the collection. */
+.library-card {
+  width: min(1100px, 96vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.library-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr;
+  gap: 1.25rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.library-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  padding-right: 1.25rem;
+  border-right: 1px solid var(--md-outline-variant);
+}
+
+.library-sidebar-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.library-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-on-surface-variant);
+}
+
+.library-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container);
+}
+
+.library-search .material-symbols-outlined {
+  font-size: 1.1rem;
+  color: var(--md-on-surface-variant);
+}
+
+.library-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--md-on-surface);
+  font-size: 0.85rem;
+}
+
+.library-sidebar .reader-book-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding-right: 0.25rem;
+}
+
+.library-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.library-content .reader-book-content {
+  flex: 1;
+  max-height: none;
+}
+
+.library-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--md-on-surface-variant);
+}
+
+.library-empty.hidden {
+  display: none;
+}
+
+/* The sidebar makes the back button redundant on wide screens; it returns
+   below the stacking breakpoint, where the panes become separate views. */
+.library-content > .reader-back-btn {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .library-body {
+    grid-template-columns: 1fr;
+  }
+
+  .library-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--md-outline-variant);
+    padding-right: 0;
+    padding-bottom: 1rem;
+    max-height: 40vh;
+  }
+
+  .library-content > .reader-back-btn {
+    display: block;
+  }
+}
+
 .reader-book-list {
   list-style: none;
   margin: 0;
@@ -3109,6 +3237,49 @@ canvas.waypoint-picking {
 
 .reader-book-list-item:hover {
   background: var(--md-surface-container-highest);
+}
+
+/* The open book / playing track, so the sidebar always shows where you are. */
+.reader-book-list-item.active {
+  border-color: var(--md-primary);
+  background: var(--md-surface-container-highest);
+  box-shadow: inset 3px 0 0 var(--md-primary);
+}
+
+.reader-book-list-item-ordinal {
+  flex-shrink: 0;
+  width: 1.6rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-on-surface-variant);
+}
+
+.reader-book-list-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.reader-book-list-item-status {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-highest);
+  font-size: 0.7rem;
+  color: var(--md-on-surface-variant);
+}
+
+.reader-book-list-item-progress {
+  height: 3px;
+  margin-top: 0.4rem;
+  border-radius: 2px;
+  background: var(--md-surface-container-highest);
+  overflow: hidden;
+}
+
+.reader-book-list-item-progress > div {
+  height: 100%;
+  background: var(--md-primary);
 }
 
 .reader-book-list-item-title {
@@ -3168,6 +3339,63 @@ canvas.waypoint-picking {
 
 .reader-book-content p {
   margin: 0 0 1rem;
+}
+
+.dialogue-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 32vh;
+  overflow-y: auto;
+  margin-bottom: 0.75rem;
+}
+
+.dialogue-transcript:empty {
+  display: none;
+}
+
+.dialogue-turn-speaker {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-on-surface-variant);
+  margin-bottom: 0.15rem;
+}
+
+.dialogue-turn-text {
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--md-shape-md);
+  background: var(--md-surface-container);
+  color: var(--md-on-surface);
+  line-height: 1.5;
+}
+
+.dialogue-turn.player {
+  align-self: flex-end;
+  max-width: 80%;
+  text-align: right;
+}
+
+.dialogue-turn.player .dialogue-turn-text {
+  background: var(--md-primary-container, var(--md-surface-container-highest));
+}
+
+.dialogue-turn.character {
+  max-width: 90%;
+}
+
+.dialogue-current-line {
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--md-primary);
+  border-radius: 0 var(--md-shape-md) var(--md-shape-md) 0;
+  background: var(--md-surface-container-highest);
+  color: var(--md-on-surface);
+  line-height: 1.6;
+}
+
+.dialogue-current-line:empty {
+  display: none;
 }
 
 .media-video-frame {
@@ -3547,6 +3775,108 @@ canvas.waypoint-picking {
   border-radius: var(--md-shape-xs);
   background: var(--md-surface-container-highest);
   color: var(--md-on-surface);
+}
+
+.guide-section h3 {
+  font-size: 1.02rem;
+  margin: 1.25rem 0 0.6rem;
+  color: var(--md-on-surface);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.guide-section h3 .material-symbols-outlined {
+  font-size: 1.1rem;
+  color: var(--md-tertiary);
+}
+
+.guide-figure {
+  margin: 1.1rem 0;
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-md);
+  overflow: hidden;
+  background: var(--md-surface-container);
+}
+
+.guide-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.guide-figure figcaption {
+  padding: 0.6rem 0.9rem;
+  font-size: 0.8rem;
+  color: var(--md-on-surface-variant);
+  border-top: 1px solid var(--md-outline-variant);
+}
+
+.guide-figure-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1.1rem 0;
+}
+
+.guide-figure-row .guide-figure {
+  margin: 0;
+}
+
+.guide-callout {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  margin-top: 0.9rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--md-shape-md);
+  background: var(--md-tertiary-container, var(--md-surface-container-highest));
+  color: var(--md-on-tertiary-container, var(--md-on-surface));
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.guide-callout .material-symbols-outlined {
+  flex-shrink: 0;
+  color: var(--md-tertiary);
+}
+
+.guide-steps {
+  list-style: none;
+  counter-reset: guide-step;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.9rem 0;
+  padding: 0;
+}
+
+.guide-steps li {
+  counter-increment: guide-step;
+  position: relative;
+  padding-left: 2.4rem;
+}
+
+.guide-steps li::before {
+  content: counter(guide-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-subsection-intro {
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 0.75rem;
 }
 
 .guide-footer {

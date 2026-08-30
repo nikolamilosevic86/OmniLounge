@@ -742,7 +742,7 @@
     </div>
 
     <div id="reader-modal" class="reader-modal hidden" role="dialog" aria-modal="true" aria-labelledby="reader-modal-title" tabindex="-1">
-      <div class="reader-modal-card">
+      <div class="reader-modal-card library-card">
         <div class="reader-modal-header">
           <h3 id="reader-modal-title">Bookshelf</h3>
           <button id="reader-modal-close" class="reader-modal-close" type="button" aria-label="Close">
@@ -750,24 +750,34 @@
           </button>
         </div>
 
-        <div id="reader-book-list-view" class="reader-book-list-view">
-          <ul id="reader-book-list" class="reader-book-list"></ul>
-        </div>
+        <div class="library-body">
+          <aside class="library-sidebar" aria-label="Books on this shelf">
+            <div class="library-sidebar-head">
+              <span id="reader-book-count" class="library-count"></span>
+              <label class="library-search">
+                <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                <input type="search" id="reader-search-input" placeholder="Filter books" aria-label="Filter books" autocomplete="off" />
+              </label>
+            </div>
+            <ul id="reader-book-list" class="reader-book-list" role="listbox" aria-label="Books"></ul>
+          </aside>
 
-        <div id="reader-book-view" class="reader-book-view hidden">
-          <button id="reader-back-btn" class="reader-back-btn" type="button">&larr; Back to shelf</button>
-          <h4 id="reader-book-title"></h4>
-          <p id="reader-book-meta" class="reader-book-meta"></p>
-          <div id="reader-book-progress-bar" class="reader-book-progress-bar">
-            <div id="reader-book-progress-fill" class="reader-book-progress-fill"></div>
-          </div>
-          <div id="reader-book-content" class="reader-book-content"></div>
+          <section id="reader-book-view" class="reader-book-view library-content" aria-live="polite">
+            <button id="reader-back-btn" class="reader-back-btn" type="button">&larr; Back to shelf</button>
+            <h4 id="reader-book-title"></h4>
+            <p id="reader-book-meta" class="reader-book-meta"></p>
+            <div id="reader-book-progress-bar" class="reader-book-progress-bar">
+              <div id="reader-book-progress-fill" class="reader-book-progress-fill"></div>
+            </div>
+            <div id="reader-book-content" class="reader-book-content"></div>
+            <p id="reader-empty-hint" class="library-empty hidden">Pick a book from the shelf to start reading.</p>
+          </section>
         </div>
       </div>
     </div>
 
     <div id="media-modal" class="reader-modal hidden" role="dialog" aria-modal="true" aria-labelledby="media-modal-title" tabindex="-1">
-      <div class="reader-modal-card">
+      <div class="reader-modal-card library-card">
         <div class="reader-modal-header">
           <h3 id="media-modal-title">Media</h3>
           <button id="media-modal-close" class="reader-modal-close" type="button" aria-label="Close">
@@ -775,19 +785,28 @@
           </button>
         </div>
 
-        <div id="media-playlist-view" class="reader-book-list-view">
-          <ul id="media-playlist-list" class="reader-book-list"></ul>
-        </div>
+        <div class="library-body">
+          <aside class="library-sidebar" aria-label="Playlist">
+            <div class="library-sidebar-head">
+              <span id="media-item-count" class="library-count"></span>
+              <label class="library-search">
+                <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                <input type="search" id="media-search-input" placeholder="Filter playlist" aria-label="Filter playlist" autocomplete="off" />
+              </label>
+            </div>
+            <ul id="media-playlist-list" class="reader-book-list" role="listbox" aria-label="Playlist items"></ul>
+          </aside>
 
-        <div id="media-player-view" class="reader-book-view hidden">
-          <button id="media-back-btn" class="reader-back-btn" type="button">&larr; Back to playlist</button>
-          <h4 id="media-item-title"></h4>
-          <p id="media-item-meta" class="reader-book-meta"></p>
-          <div id="media-video-frame" class="media-video-frame"></div>
-          <div id="media-sync-bar" class="media-sync-bar">
-            <span id="media-sync-status" class="media-sync-status"></span>
-            <button id="media-sync-toggle-btn" class="media-sync-toggle-btn" type="button">Watch Together</button>
-          </div>
+          <section id="media-player-view" class="reader-book-view library-content" aria-live="polite">
+            <button id="media-back-btn" class="reader-back-btn" type="button">&larr; Back to playlist</button>
+            <h4 id="media-item-title"></h4>
+            <p id="media-item-meta" class="reader-book-meta"></p>
+            <div id="media-video-frame" class="media-video-frame"></div>
+            <div id="media-sync-bar" class="media-sync-bar">
+              <span id="media-sync-status" class="media-sync-status"></span>
+              <button id="media-sync-toggle-btn" class="media-sync-toggle-btn" type="button">Watch Together</button>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -802,7 +821,8 @@
         </div>
         <div class="reader-book-view">
           <p id="dialogue-mode-indicator" class="reader-book-meta"></p>
-          <p id="dialogue-character-line"></p>
+          <div id="dialogue-transcript" class="dialogue-transcript" aria-live="polite"></div>
+          <p id="dialogue-character-line" class="dialogue-current-line"></p>
           <ul id="dialogue-choice-list" class="builder-object-list"></ul>
           <form id="dialogue-ask-form" class="chat-form">
             <input type="text" id="dialogue-ask-input" placeholder="Ask a question..." maxlength="200" autocomplete="off" />

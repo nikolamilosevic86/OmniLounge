@@ -14,6 +14,8 @@ import { ATTACK_DURATIONS, computeAttackPhase, getPunchAngles, getKickAngles, ge
 import { normalizeRooms, buildRoomMetaLine, canJoinRoom, normalizeRoomFilters } from './room-discovery.js';
 import { buildMiniMapCells, normalizeTileList, neighborTileFlags } from './world-map.js';
 import { clampProgress, computeScrollProgress, formatEstReadTime, renderBookContent, truncateSummary, validateBookInput } from './reader.js';
+import { buildBookEntries, buildPlaylistEntries, filterEntries, pickInitialEntryId, summarizeLibrary } from './library.js';
+import { appendDialogueTurn, characterTurn, formatSpeakerLabel, playerTurn } from './dialogue-log.js';
 import { computeSyncPosition, formatDuration, sessionAppliesToItem, youtubeLinkPreviewState, validateMediaItemInput } from './media.js';
 import {
   formatModeLabel, parseChoicesInput, resolveCharacterMode,
@@ -115,6 +117,11 @@ const state = {
   readerModalObjectId: null,
   readerCurrentBook: null,
   readerCurrentProgress: 0,
+  readerFilter: '',
+  readerPendingResume: null,
+  mediaFilter: '',
+  dialogueLog: [],
+  dialogueCharacterName: '',
   suppressReaderModalForBrowse: false,
   builderVideos: {},      // objectId → videos[]
   builderTracks: {},      // objectId → tracks[]
@@ -262,12 +269,15 @@ const bookListEl = document.getElementById('book-list');
 const readerModal = document.getElementById('reader-modal');
 const readerModalTitle = document.getElementById('reader-modal-title');
 const readerModalClose = document.getElementById('reader-modal-close');
-const readerBookListView = document.getElementById('reader-book-list-view');
 const readerBookList = document.getElementById('reader-book-list');
+const readerBookCount = document.getElementById('reader-book-count');
+const readerSearchInput = document.getElementById('reader-search-input');
+const readerEmptyHint = document.getElementById('reader-empty-hint');
 const readerBookView = document.getElementById('reader-book-view');
 const readerBackBtn = document.getElementById('reader-back-btn');
 const readerBookTitle = document.getElementById('reader-book-title');
 const readerBookMeta = document.getElementById('reader-book-meta');
+const readerBookProgressBar = document.getElementById('reader-book-progress-bar');
 const readerBookProgressFill = document.getElementById('reader-book-progress-fill');
 const readerBookContent = document.getElementById('reader-book-content');
 const videoTvSelect = document.getElementById('video-tv-select');
@@ -293,8 +303,9 @@ const trackListEl = document.getElementById('track-list');
 const mediaModal = document.getElementById('media-modal');
 const mediaModalTitle = document.getElementById('media-modal-title');
 const mediaModalClose = document.getElementById('media-modal-close');
-const mediaPlaylistView = document.getElementById('media-playlist-view');
 const mediaPlaylistList = document.getElementById('media-playlist-list');
+const mediaItemCount = document.getElementById('media-item-count');
+const mediaSearchInput = document.getElementById('media-search-input');
 const mediaPlayerView = document.getElementById('media-player-view');
 const mediaBackBtn = document.getElementById('media-back-btn');
 const mediaItemTitle = document.getElementById('media-item-title');
@@ -338,6 +349,7 @@ const dialogueModal = document.getElementById('dialogue-modal');
 const dialogueModalTitle = document.getElementById('dialogue-modal-title');
 const dialogueModalClose = document.getElementById('dialogue-modal-close');
 const dialogueModeIndicator = document.getElementById('dialogue-mode-indicator');
+const dialogueTranscript = document.getElementById('dialogue-transcript');
 const dialogueCharacterLine = document.getElementById('dialogue-character-line');
 const dialogueChoiceList = document.getElementById('dialogue-choice-list');
 const dialogueAskForm = document.getElementById('dialogue-ask-form');
@@ -1449,12 +1461,16 @@ function initGame() {
 
   readerModalClose?.addEventListener('click', closeReaderModal);
 
+  // Below the stacking breakpoint the two panes sit one above the other, so
+  // "back to shelf" is a scroll rather than a view switch.
   readerBackBtn?.addEventListener('click', () => {
     saveCurrentReadingProgress();
-    readerBookView?.classList.add('hidden');
-    readerBookListView?.classList.remove('hidden');
-    if (readerModalTitle) readerModalTitle.textContent = 'Bookshelf';
-    state.readerCurrentBook = null;
+    readerBookList?.scrollIntoView({ block: 'start' });
+  });
+
+  readerSearchInput?.addEventListener('input', () => {
+    state.readerFilter = readerSearchInput.value;
+    renderReaderSidebar();
   });
 
   readerBookList?.addEventListener('click', (evt) => {
@@ -1623,11 +1639,12 @@ function initGame() {
   mediaModalClose?.addEventListener('click', closeMediaModal);
 
   mediaBackBtn?.addEventListener('click', () => {
-    mediaPlayerView?.classList.add('hidden');
-    mediaPlaylistView?.classList.remove('hidden');
-    if (mediaModalTitle) mediaModalTitle.textContent = state.mediaModalObjectType === 'tv' ? 'TV Playlist' : 'Music Playlist';
-    state.mediaCurrentItem = null;
-    if (mediaVideoFrame) mediaVideoFrame.innerHTML = '';
+    mediaPlaylistList?.scrollIntoView({ block: 'start' });
+  });
+
+  mediaSearchInput?.addEventListener('input', () => {
+    state.mediaFilter = mediaSearchInput.value;
+    renderMediaSidebar();
   });
 
   mediaPlaylistList?.addEventListener('click', (evt) => {
@@ -1873,14 +1890,17 @@ function initGame() {
     const btn = evt.target.closest('button[data-choice-index]');
     if (!btn || !state.dialogueModalObjectId) return;
     const choiceIndex = Number(btn.getAttribute('data-choice-index'));
+    const chosenText = btn.textContent;
     state.socket?.emit('room:character:talk', {
       objectId: state.dialogueModalObjectId, choiceIndex,
     }, (result) => {
       if (!result) return;
       if (result.knowledgeCheckPassed === false) {
         addSystemMessage("You haven't figured that out yet.");
+        return;
       }
       renderDialogueNode(result.node, result.mode);
+      recordDialogueTurn(playerTurn(chosenText));
     });
   });
 
@@ -1890,12 +1910,14 @@ function initGame() {
     const userMessage = dialogueAskInput?.value?.trim();
     if (!objectId || !userMessage) return;
     if (dialogueAnswer) dialogueAnswer.textContent = 'Thinking...';
+    recordDialogueTurn(playerTurn(userMessage));
     state.socket?.timeout(15000).emit('room:character:ask', { objectId, userMessage }, (timeoutErr, result) => {
       if (timeoutErr || !result) {
         if (dialogueAnswer) dialogueAnswer.textContent = 'No response from the character. Please try again.';
         return;
       }
-      if (dialogueAnswer) dialogueAnswer.textContent = result.answer;
+      if (dialogueAnswer) dialogueAnswer.textContent = '';
+      recordDialogueTurn(characterTurn(result.answer));
       if (dialogueModeIndicator) {
         dialogueModeIndicator.textContent = formatModeLabel(result.mode);
         dialogueModeIndicator.classList.toggle('generative', result.mode === 'generative');
@@ -1908,6 +1930,9 @@ function initGame() {
   dialogueRestartBtn?.addEventListener('click', () => {
     const objectId = state.dialogueModalObjectId;
     if (!objectId) return;
+    state.dialogueLog = [];
+    state.dialogueCurrentNode = null;
+    renderDialogueTranscript();
     state.socket?.emit('room:object:interact', { objectId, interactionType: 'start_mission' });
   });
 
@@ -3873,9 +3898,9 @@ function deactivateModal(modalEl) {
 function openReaderModal(objectId) {
   state.readerModalObjectId = objectId;
   state.readerCurrentBook = null;
+  state.readerFilter = '';
+  if (readerSearchInput) readerSearchInput.value = '';
   readerModal?.classList.remove('hidden');
-  readerBookListView?.classList.remove('hidden');
-  readerBookView?.classList.add('hidden');
   if (readerModalTitle) readerModalTitle.textContent = 'Bookshelf';
   if (readerModal) activateModal(readerModal, closeReaderModal);
 }
@@ -3888,27 +3913,70 @@ function closeReaderModal() {
   if (readerModal) deactivateModal(readerModal);
 }
 
+function renderLibraryEntries(listEl, entries, idAttribute) {
+  if (!listEl) return;
+  if (!entries.length) {
+    listEl.innerHTML = '<li class="builder-empty-hint">Nothing here.</li>';
+    return;
+  }
+  listEl.innerHTML = entries.map((entry) => `
+    <li class="reader-book-list-item${entry.isActive ? ' active' : ''}" role="option" aria-selected="${entry.isActive}" ${idAttribute}="${escapeHtml(entry.id)}">
+      <span class="reader-book-list-item-ordinal">${entry.ordinal}</span>
+      <div class="reader-book-list-item-body">
+        <div class="reader-book-list-item-title">${escapeHtml(entry.title)}</div>
+        ${entry.meta ? `<div class="reader-book-list-item-meta">${escapeHtml(entry.meta)}</div>` : ''}
+        ${entry.summary ? `<div class="reader-book-list-item-summary">${escapeHtml(entry.summary)}</div>` : ''}
+        ${entry.status ? `<span class="reader-book-list-item-status">${escapeHtml(entry.status)}</span>` : ''}
+        ${entry.progress > 0 ? `<div class="reader-book-list-item-progress"><div style="width:${Math.round(entry.progress * 100)}%"></div></div>` : ''}
+      </div>
+    </li>`).join('');
+}
+
+function renderReaderSidebar() {
+  const books = state.builderBooks[state.readerModalObjectId] || [];
+  const entries = buildBookEntries(books, { activeId: state.readerCurrentBook?.bookId ?? null });
+  const visible = filterEntries(entries, state.readerFilter);
+  if (readerBookCount) readerBookCount.textContent = summarizeLibrary('book', entries.length, visible.length);
+  renderLibraryEntries(readerBookList, visible, 'data-book-id');
+}
+
+/** Renders the shelf sidebar and, on first open, drops the reader straight
+ * into a book -- with both panes visible there is no list-only state worth
+ * showing the visitor. */
 function renderReaderBookList(objectId, books) {
-  if (!readerBookList) return;
-  readerBookList.innerHTML = books.length
-    ? books.map((b) => `
-      <li class="reader-book-list-item" data-book-id="${escapeHtml(b.bookId)}">
-        <div>
-          <div class="reader-book-list-item-title">${escapeHtml(b.title)}</div>
-          <div class="reader-book-list-item-meta">${[b.author, formatEstReadTime(b.estReadMinutes), b.progress > 0 ? `${Math.round(b.progress * 100)}% read` : null].filter(Boolean).map(escapeHtml).join(' \u00b7 ')}</div>
-          ${b.summary ? `<div class="reader-book-list-item-summary">${escapeHtml(truncateSummary(b.summary))}</div>` : ''}
-        </div>
-      </li>`).join('')
-    : '<li class="builder-empty-hint">No books on this shelf yet.</li>';
+  state.readerModalObjectId = objectId;
+  state.builderBooks[objectId] = books;
+  if (!state.readerCurrentBook) {
+    const resume = state.readerPendingResume;
+    state.readerPendingResume = null;
+    const entries = buildBookEntries(books);
+    const initialId = pickInitialEntryId(entries, resume?.bookId ?? null);
+    const book = books.find((b) => b.bookId === initialId);
+    if (book) {
+      const progress = book.bookId === resume?.bookId ? (resume.progress ?? 0) : (book.progress ?? 0);
+      openReaderBookView(objectId, book, progress);
+      return;
+    }
+  }
+  renderReaderSidebar();
+  updateReaderEmptyState();
+}
+
+function updateReaderEmptyState() {
+  const hasBook = !!state.readerCurrentBook;
+  readerEmptyHint?.classList.toggle('hidden', hasBook);
+  readerBookTitle?.classList.toggle('hidden', !hasBook);
+  readerBookMeta?.classList.toggle('hidden', !hasBook);
+  readerBookProgressBar?.classList.toggle('hidden', !hasBook);
+  readerBookContent?.classList.toggle('hidden', !hasBook);
 }
 
 function openReaderBookView(objectId, book, initialProgress = 0) {
+  saveCurrentReadingProgress();
   state.readerModalObjectId = objectId;
   state.readerCurrentBook = book;
   state.readerCurrentProgress = clampProgress(initialProgress);
-  readerBookListView?.classList.add('hidden');
-  readerBookView?.classList.remove('hidden');
-  if (readerModalTitle) readerModalTitle.textContent = book.title;
+  if (readerModalTitle) readerModalTitle.textContent = 'Bookshelf';
   if (readerBookTitle) readerBookTitle.textContent = book.title;
   if (readerBookMeta) {
     readerBookMeta.textContent = [book.author, formatEstReadTime(book.estReadMinutes)].filter(Boolean).join(' \u00b7 ');
@@ -3920,16 +3988,19 @@ function openReaderBookView(objectId, book, initialProgress = 0) {
     readerBookContent.innerHTML = renderBookContent(book);
     readerBookContent.scrollTop = 0;
   }
+  renderReaderSidebar();
+  updateReaderEmptyState();
 }
 
+// "Resume reading" still needs the whole shelf fetched, otherwise the sidebar
+// would sit empty beside the resumed book.
 function openReaderWithResume(objectId, resumePayload) {
   openReaderModal(objectId);
-  if (resumePayload?.book) {
-    openReaderBookView(objectId, resumePayload.book, resumePayload.progress ?? 0);
-  } else {
-    state.suppressReaderModalForBrowse = false;
-    state.socket?.emit('room:object:interact', { objectId, interactionType: 'browse_books' });
-  }
+  state.readerPendingResume = resumePayload?.book
+    ? { bookId: resumePayload.book.bookId, progress: resumePayload.progress ?? 0 }
+    : null;
+  state.suppressReaderModalForBrowse = false;
+  state.socket?.emit('room:object:interact', { objectId, interactionType: 'browse_books' });
 }
 
 function saveCurrentReadingProgress() {
@@ -4067,9 +4138,9 @@ function openMediaModal(objectId, objectType) {
   state.mediaModalObjectId = objectId;
   state.mediaModalObjectType = objectType;
   state.mediaCurrentItem = null;
+  state.mediaFilter = '';
+  if (mediaSearchInput) mediaSearchInput.value = '';
   mediaModal?.classList.remove('hidden');
-  mediaPlaylistView?.classList.remove('hidden');
-  mediaPlayerView?.classList.add('hidden');
   if (mediaModalTitle) mediaModalTitle.textContent = objectType === 'tv' ? 'TV Playlist' : 'Music Playlist';
   if (mediaModal) activateModal(mediaModal, closeMediaModal);
 }
@@ -4084,25 +4155,58 @@ function closeMediaModal() {
   if (mediaModal) deactivateModal(mediaModal);
 }
 
-function renderMediaPlaylist(objectType, items) {
-  if (!mediaPlaylistList) return;
-  if (!items.length) {
-    mediaPlaylistList.innerHTML = `<li class="builder-empty-hint">No ${objectType === 'tv' ? 'videos' : 'tracks'} yet.</li>`;
-    return;
+function currentMediaItems() {
+  const objectId = state.mediaModalObjectId;
+  return state.mediaModalObjectType === 'tv'
+    ? (state.builderVideos[objectId] || [])
+    : (state.builderTracks[objectId] || []);
+}
+
+/** A direct watch/play interaction returns one item, not the playlist, so
+ * fetch the rest to fill the sidebar beside it. */
+function ensurePlaylistLoaded(objectId, objectType) {
+  if (currentMediaItems().length > 0) return;
+  state.suppressMediaModalForBrowse = true;
+  state.socket?.emit('room:object:interact', {
+    objectId,
+    interactionType: objectType === 'tv' ? 'open_playlist' : 'view_playlist',
+  });
+}
+
+function currentMediaItemId(item) {
+  if (!item) return null;
+  return state.mediaModalObjectType === 'tv' ? item.videoId : item.trackId;
+}
+
+function renderMediaSidebar() {
+  const objectType = state.mediaModalObjectType;
+  const entries = buildPlaylistEntries(objectType, currentMediaItems(), {
+    activeId: currentMediaItemId(state.mediaCurrentItem),
+  });
+  const visible = filterEntries(entries, state.mediaFilter);
+  if (mediaItemCount) {
+    mediaItemCount.textContent = summarizeLibrary(
+      objectType === 'tv' ? 'video' : 'track', entries.length, visible.length,
+    );
   }
-  mediaPlaylistList.innerHTML = items.map((item) => {
-    const itemId = objectType === 'tv' ? item.videoId : item.trackId;
-    const meta = objectType === 'tv'
-      ? (item.description ? truncateSummary(item.description) : '')
-      : [item.artist, formatDuration(item.durationSeconds)].filter(Boolean).join(' \u00b7 ');
-    return `
-      <li class="reader-book-list-item" data-item-id="${escapeHtml(itemId)}">
-        <div>
-          <div class="reader-book-list-item-title">${escapeHtml(item.title)}</div>
-          ${meta ? `<div class="reader-book-list-item-meta">${escapeHtml(meta)}</div>` : ''}
-        </div>
-      </li>`;
-  }).join('');
+  renderLibraryEntries(mediaPlaylistList, visible, 'data-item-id');
+}
+
+/** Renders the playlist sidebar and, on first open, starts the first item so
+ * the player pane is never an empty box next to a full playlist. */
+function renderMediaPlaylist(objectType, items) {
+  state.mediaModalObjectType = objectType;
+  if (objectType === 'tv') state.builderVideos[state.mediaModalObjectId] = items;
+  else state.builderTracks[state.mediaModalObjectId] = items;
+  if (!state.mediaCurrentItem) {
+    const initialId = pickInitialEntryId(buildPlaylistEntries(objectType, items), null);
+    const item = items.find((i) => (objectType === 'tv' ? i.videoId : i.trackId) === initialId);
+    if (item) {
+      openMediaPlayerView(state.mediaModalObjectId, objectType, item, state.mediaSyncSessions.get(state.mediaModalObjectId) ?? null);
+      return;
+    }
+  }
+  renderMediaSidebar();
 }
 
 function openMediaPlayerView(objectId, objectType, item, syncSession) {
@@ -4110,8 +4214,6 @@ function openMediaPlayerView(objectId, objectType, item, syncSession) {
   state.mediaModalObjectType = objectType;
   state.mediaCurrentItem = item;
   mediaModal?.classList.remove('hidden');
-  mediaPlaylistView?.classList.add('hidden');
-  mediaPlayerView?.classList.remove('hidden');
   if (mediaModalTitle) mediaModalTitle.textContent = objectType === 'tv' ? 'TV' : 'Music Player';
 
   if (!item) {
@@ -4119,6 +4221,7 @@ function openMediaPlayerView(objectId, objectType, item, syncSession) {
     if (mediaItemMeta) mediaItemMeta.textContent = '';
     if (mediaVideoFrame) mediaVideoFrame.innerHTML = '';
     updateMediaSyncUi(null);
+    renderMediaSidebar();
     return;
   }
 
@@ -4132,6 +4235,7 @@ function openMediaPlayerView(objectId, objectType, item, syncSession) {
     mediaVideoFrame.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(item.youtubeVideoId)}" title="${escapeHtml(item.title)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
   }
   updateMediaSyncUi(syncSession);
+  renderMediaSidebar();
 }
 
 function updateMediaSyncUi(session) {
@@ -4343,13 +4447,31 @@ function renderBuilderStoryNodeList() {
 
 function openDialogueModal(objectId, character, node, mode) {
   state.dialogueModalObjectId = objectId;
+  state.dialogueLog = [];
+  state.dialogueCharacterName = character?.name || '';
   dialogueModal?.classList.remove('hidden');
   if (dialogueModalTitle) dialogueModalTitle.textContent = character?.name || 'Character';
   if (dialogueAnswer) dialogueAnswer.textContent = '';
   if (dialogueAskInput) dialogueAskInput.value = '';
+  renderDialogueTranscript();
   renderDialogueNode(node, mode);
   updateDialogueTourButtons();
   if (dialogueModal) activateModal(dialogueModal, closeDialogueModal);
+}
+
+function recordDialogueTurn(turn) {
+  state.dialogueLog = appendDialogueTurn(state.dialogueLog, turn);
+  renderDialogueTranscript();
+}
+
+function renderDialogueTranscript() {
+  if (!dialogueTranscript) return;
+  dialogueTranscript.innerHTML = state.dialogueLog.map((turn) => `
+    <div class="dialogue-turn ${turn.speaker}">
+      <div class="dialogue-turn-speaker">${escapeHtml(formatSpeakerLabel(turn.speaker, state.dialogueCharacterName))}</div>
+      <div class="dialogue-turn-text">${escapeHtml(turn.text)}</div>
+    </div>`).join('');
+  dialogueTranscript.scrollTop = dialogueTranscript.scrollHeight;
 }
 
 // ── AI character guided tours ────────────────────────────────────────────
@@ -4431,10 +4553,17 @@ function closeDialogueModal() {
   dialogueModal?.classList.add('hidden');
   state.dialogueModalObjectId = null;
   state.dialogueCurrentNode = null;
+  state.dialogueLog = [];
   if (dialogueModal) deactivateModal(dialogueModal);
 }
 
 function renderDialogueNode(node, mode) {
+  // The line that was on screen becomes transcript before it is replaced, so
+  // a branching conversation reads as a conversation.
+  const previousLine = state.dialogueCurrentNode?.characterLine;
+  if (previousLine && previousLine !== node?.characterLine) {
+    recordDialogueTurn(characterTurn(previousLine));
+  }
   state.dialogueCurrentNode = node || null;
   if (dialogueModeIndicator) {
     dialogueModeIndicator.textContent = formatModeLabel(mode);
@@ -4475,6 +4604,7 @@ function handleObjectInteractionResult(result) {
     if (videoTvSelect?.value === result.objectId) renderBuilderVideoList();
     if (state.suppressMediaModalForBrowse) {
       state.suppressMediaModalForBrowse = false;
+      if (state.mediaModalObjectId === result.objectId) renderMediaSidebar();
       return;
     }
     openMediaModal(result.objectId, 'tv');
@@ -4485,6 +4615,7 @@ function handleObjectInteractionResult(result) {
     if (result.payload.syncSession) state.mediaSyncSessions.set(result.objectId, result.payload.syncSession);
     else state.mediaSyncSessions.delete(result.objectId);
     openMediaPlayerView(result.objectId, 'tv', result.payload.video, result.payload.syncSession);
+    ensurePlaylistLoaded(result.objectId, 'tv');
     return;
   }
   if (result.interactionType === 'view_playlist') {
@@ -4492,6 +4623,7 @@ function handleObjectInteractionResult(result) {
     if (trackPlayerSelect?.value === result.objectId) renderBuilderTrackList();
     if (state.suppressMediaModalForBrowse) {
       state.suppressMediaModalForBrowse = false;
+      if (state.mediaModalObjectId === result.objectId) renderMediaSidebar();
       return;
     }
     openMediaModal(result.objectId, 'music_player');
@@ -4502,6 +4634,7 @@ function handleObjectInteractionResult(result) {
     if (result.payload.syncSession) state.mediaSyncSessions.set(result.objectId, result.payload.syncSession);
     else state.mediaSyncSessions.delete(result.objectId);
     openMediaPlayerView(result.objectId, 'music_player', result.payload.track, result.payload.syncSession);
+    ensurePlaylistLoaded(result.objectId, 'music_player');
     return;
   }
   if (result.interactionType === 'talk' || result.interactionType === 'start_mission') {
