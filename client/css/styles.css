@@ -616,7 +616,11 @@ a:focus-visible,
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  z-index: 20;
+  /* Same stacking hazard as .reader-modal: .room-player carries an inline
+     z-index up to 600 and .global-controls sits at 1000, and no ancestor
+     establishes a stacking context, so a lower value lets avatars and the
+     global buttons render straight through this dialog. */
+  z-index: 1100;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -1407,7 +1411,9 @@ a:focus-visible,
    fixed so it isn't clipped by the scrollable catalog grid or sidebar. */
 .catalog-drag-ghost {
   position: fixed;
-  z-index: 500;
+  /* Must clear .room-player's inline z-index (up to 600) so the ghost stays
+     visible over avatars while dragging toward the lower half of the room. */
+  z-index: 1200;
   opacity: 0.6;
   pointer-events: none;
   transform: translate(-50%, -50%);
@@ -3797,6 +3803,19 @@ canvas.waypoint-picking {
   border-radius: var(--md-shape-md);
   overflow: hidden;
   background: var(--md-surface-container);
+}
+
+/* Portrait-ish captures (modal cards, the avatar creator) would otherwise
+   render nearly a full screen tall at the page's content width. */
+.guide-figure--portrait {
+  max-width: 42rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.guide-figure a {
+  display: block;
+  cursor: zoom-in;
 }
 
 .guide-figure img {
