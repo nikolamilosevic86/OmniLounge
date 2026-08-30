@@ -104,6 +104,37 @@ export const ROOM_STYLES = [
     floorDark: '#88bf82',
     lightColor: '210, 255, 200',
   },
+  {
+    // Seeded "Leonardo's Workshop" room (server/game/seed_rooms.py). Warm
+    // ochre/terracotta plaster over a fresco-blue upper wall -- the palette
+    // of a Quattrocento Tuscan bottega rather than the cooler greys and
+    // neons the other styles cover.
+    id: 'renaissance-studio',
+    label: 'Renaissance Studio',
+    description: 'Ochre plaster, fresco blues and terracotta -- a Tuscan workshop.',
+    backdropTop: '#3a2c1c',
+    backdropBottom: '#241a10',
+    wallTop: '#8a6f4a',
+    wallBottom: '#c2a173',
+    floorLight: '#b5764c',
+    floorDark: '#9c6340',
+    lightColor: '255, 208, 150',
+  },
+  {
+    // Seeded "The Alchemist's Vault" escape room. Deliberately the darkest
+    // preset: cold stone with a single warm candle tint, so hidden items and
+    // puzzle props read as objects in gloom rather than decor in a lit room.
+    id: 'candlelit-vault',
+    label: 'Candlelit Vault',
+    description: 'Cold stone walls lit by a single guttering candle.',
+    backdropTop: '#15120f',
+    backdropBottom: '#0b0908',
+    wallTop: '#2a2621',
+    wallBottom: '#413a31',
+    floorLight: '#4a423a',
+    floorDark: '#3a332c',
+    lightColor: '255, 170, 90',
+  },
 ];
 
 export const DEFAULT_ROOM_STYLE = 'modern-loft';

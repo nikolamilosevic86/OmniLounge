@@ -7,8 +7,8 @@ from server.game.room_styles import (
 
 
 class TestRoomStyleIds:
-    def test_has_exactly_8_styles(self):
-        assert len(ROOM_STYLE_IDS) == 8
+    def test_has_exactly_10_styles(self):
+        assert len(ROOM_STYLE_IDS) == 10
 
     def test_ids_are_unique(self):
         assert len(set(ROOM_STYLE_IDS)) == len(ROOM_STYLE_IDS)

@@ -16,6 +16,9 @@ ROOM_STYLE_IDS: tuple[str, ...] = (
     "beach-cabana",
     "retro-arcade",
     "enchanted-garden",
+    # Added for the seeded showcase rooms (server/game/seed_rooms.py).
+    "renaissance-studio",
+    "candlelit-vault",
 )
 
 DEFAULT_ROOM_STYLE = "modern-loft"

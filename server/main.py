@@ -28,6 +28,7 @@ from server.game.movement import LOBBY_ROOM_ID, move_by_direction, move_toward
 from server.game.metrics import MetricsCollector
 from server.game.room import Room
 from server.game.rooms_registry import RoomsRegistry
+from server.game.seed_rooms import seed_showcase_rooms
 from server.game.tile_navigation import tiles_within_radius
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
@@ -443,6 +444,10 @@ async def game_loop() -> None:
 async def lifespan(app: FastAPI):
     global _game_loop_task
     await db.connect()
+    # Rooms are in-memory only, so the two showcase rooms are rebuilt on
+    # every boot. Without them a fresh server offers nothing but an empty
+    # Lobby, and none of the builder features are discoverable.
+    seed_showcase_rooms(rooms)
     # Spawn AI fighter on the right side of the lounge
     lobby = rooms.get_room("lobby")
     assert lobby is not None
