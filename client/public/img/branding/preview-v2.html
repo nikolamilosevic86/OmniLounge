@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OmniLaunge — lounge mark, refined</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    padding: 2.5rem 2rem 4rem;
+    background: #16111c;
+    color: #eae0e8;
+    font-family: 'Roboto', 'Segoe UI', sans-serif;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+  h3 { font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: #988d9a; margin: 2.5rem 0 1rem; }
+  p.intro { color: #cfc3d1; max-width: 48rem; margin: 0 0 1rem; line-height: 1.55; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(560px, 1fr)); gap: 1.25rem; }
+  .card { border: 1px solid #4b4351; border-radius: 16px; padding: 1.25rem 1.5rem; background: #221d26; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.15rem; color: #f4addb; }
+  .card .desc { font-size: 0.82rem; color: #988d9a; margin: 0 0 1rem; }
+  .surfaces { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; }
+  .surface { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 1.25rem; border-radius: 12px; }
+  .surface span { font-size: 0.65rem; letter-spacing: 0.06em; color: #988d9a; text-transform: uppercase; }
+  .surface.dark { background: #100c15; }
+  .surface.light { background: #fffbff; }
+  .sizes { display: flex; align-items: flex-end; gap: 1rem; padding-left: 0.5rem; }
+  .sizes .cell { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+  .sizes .cell span { font-size: 0.62rem; color: #988d9a; }
+  .palettes { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .pal { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+  .pal span { font-size: 0.7rem; color: #cfc3d1; letter-spacing: 0.05em; }
+  .swatches { display: flex; gap: 4px; }
+  .swatches i { width: 20px; height: 8px; border-radius: 4px; display: block; }
+</style>
+</head>
+<body>
+  <h1>The lounge mark, refined</h1>
+  <p class="intro">
+    Same sofa idea, cleaned up four ways. The old mark blended pink straight into cyan, which
+    desaturates to grey through the middle; every option below either stays analogous or routes
+    through violet so the blend stays clean. Tagline is now
+    <strong>BUILD · LEARN · ESCAPE</strong>, covering room building, the educational rooms and the
+    escape rooms.
+  </p>
+
+  <h3>Shape options</h3>
+  <div class="row">
+    <section class="card">
+      <h2>A — Solid</h2>
+      <p class="desc">Two shapes: a translucent backrest behind a solid body. Warmest and closest to the original.</p>
+      <div class="surfaces">
+        <div class="surface dark"><span>Lockup</span><img src="v2-logo-solid.svg" height="62" alt="" /></div>
+        <div class="surface dark"><span>Dark</span><img src="v2-icon-solid.svg" width="72" height="72" alt="" /></div>
+        <div class="surface light"><span>Light</span><img src="v2-icon-solid.svg" width="72" height="72" alt="" /></div>
+        <div class="sizes">
+          <div class="cell"><img src="v2-icon-solid.svg" width="48" height="48" alt="" /><span>48</span></div>
+          <div class="cell"><img src="v2-icon-solid.svg" width="32" height="32" alt="" /><span>32</span></div>
+          <div class="cell"><img src="v2-icon-solid.svg" width="16" height="16" alt="" /><span>16</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>B — Monoline</h2>
+      <p class="desc">Stroke only. The most minimal of the four; lightest presence in a header.</p>
+      <div class="surfaces">
+        <div class="surface dark"><span>Lockup</span><img src="v2-logo-line.svg" height="62" alt="" /></div>
+        <div class="surface dark"><span>Dark</span><img src="v2-icon-line.svg" width="72" height="72" alt="" /></div>
+        <div class="surface light"><span>Light</span><img src="v2-icon-line.svg" width="72" height="72" alt="" /></div>
+        <div class="sizes">
+          <div class="cell"><img src="v2-icon-line.svg" width="48" height="48" alt="" /><span>48</span></div>
+          <div class="cell"><img src="v2-icon-line.svg" width="32" height="32" alt="" /><span>32</span></div>
+          <div class="cell"><img src="v2-icon-line.svg" width="16" height="16" alt="" /><span>16</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>C — Negative space</h2>
+      <p class="desc">Sofa knocked out of a solid gradient tile. Boldest at small sizes and the strongest app icon.</p>      <div class="surfaces">
+        <div class="surface dark"><span>Lockup</span><img src="v2-logo-negative.svg" height="62" alt="" /></div>
+        <div class="surface dark"><span>Dark</span><img src="v2-icon-negative.svg" width="72" height="72" alt="" /></div>
+        <div class="surface light"><span>Light</span><img src="v2-icon-negative.svg" width="72" height="72" alt="" /></div>
+        <div class="sizes">
+          <div class="cell"><img src="v2-icon-negative.svg" width="48" height="48" alt="" /><span>48</span></div>
+          <div class="cell"><img src="v2-icon-negative.svg" width="32" height="32" alt="" /><span>32</span></div>
+          <div class="cell"><img src="v2-icon-negative.svg" width="16" height="16" alt="" /><span>16</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>D — Arch</h2>
+      <p class="desc">Reduced to two shapes: an arch for the back, a bar for the seat. Most abstract, most modern.</p>
+      <div class="surfaces">
+        <div class="surface dark"><span>Lockup</span><img src="v2-logo-arch.svg" height="62" alt="" /></div>
+        <div class="surface dark"><span>Dark</span><img src="v2-icon-arch.svg" width="72" height="72" alt="" /></div>
+        <div class="surface light"><span>Light</span><img src="v2-icon-arch.svg" width="72" height="72" alt="" /></div>
+        <div class="sizes">
+          <div class="cell"><img src="v2-icon-arch.svg" width="48" height="48" alt="" /><span>48</span></div>
+          <div class="cell"><img src="v2-icon-arch.svg" width="32" height="32" alt="" /><span>32</span></div>
+          <div class="cell"><img src="v2-icon-arch.svg" width="16" height="16" alt="" /><span>16</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <h3>Palette options (shown on shape A)</h3>
+  <section class="card">
+    <div class="palettes">
+      <div class="pal">
+        <img src="v2-palette-aurora.svg" width="72" height="72" alt="" />
+        <span>Aurora</span>
+        <div class="swatches"><i style="background:#FFB0DE"></i><i style="background:#C48BF0"></i><i style="background:#7FD4EC"></i></div>
+      </div>
+      <div class="pal">
+        <img src="v2-palette-blossom.svg" width="72" height="72" alt="" />
+        <span>Blossom</span>
+        <div class="swatches"><i style="background:#FFAEDC"></i><i style="background:#B98CF2"></i></div>
+      </div>
+      <div class="pal">
+        <img src="v2-palette-vivid.svg" width="72" height="72" alt="" />
+        <span>Vivid</span>
+        <div class="swatches"><i style="background:#FF7EC7"></i><i style="background:#9B5DE5"></i></div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

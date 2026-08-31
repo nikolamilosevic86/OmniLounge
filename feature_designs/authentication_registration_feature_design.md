@@ -1615,18 +1615,66 @@ For each phase, track:
 - **Known Issues**: List of blockers
 - **Next Milestone**: Date and deliverables
 
-### Sample Progress Dashboard (to be filled in as development proceeds)
+### Progress Dashboard (last updated after the password-expiration + email-verification-login-gate + lockout-alert-email + OAuth2-provider-unavailable-handling + main-game-login-state TDD pass)
 
-| Phase | Status | Tasks | Tests | Coverage | Bugs | Next |
-|-------|--------|-------|-------|----------|------|------|
-| 1: Local Auth | Not Started | 0/6 | 0/70 | 0% | 0 | Migrations |
-| 2: Admin Reg | Not Started | 0/6 | 0/41 | 0% | 0 | - |
-| 3: Email | Not Started | 0/5 | 0/33 | 0% | 0 | - |
-| 4: Azure | Not Started | 0/6 | 0/45 | 0% | 0 | - |
-| 5: Multi-OAuth | Not Started | 0/6 | 0/48 | 0% | 0 | - |
-| 6: Profiles | Not Started | 0/5 | 0/36 | 0% | 0 | - |
-| 7: Security | Not Started | 0/5 | 0/38 | 0% | 0 | - |
-| 8: Docs | Not Started | 0/5 | 0/70 | 0% | 0 | - |
+**Overall status**: Phases 1, 2, 3, 6, and Bootstrap (§18) are fully complete and validated against a real Postgres database. Phases 4 and 5 (Azure/OAuth2) are code-complete and fully unit-tested but not yet validated against a live identity provider tenant. Phase 7 core hardening is done; Redis-backed rate limiting, CSRF tokens, and an external pentest remain deferred by design. Phase 8 testing is done for everything implemented; formal external docs/security audit have not started. Phase 19 (frontend) has working login/register/OAuth2-callback pages and the main game now restores/shows login state on load, but there's still no admin dashboard, profile UI, or role-gated room actions. See §13 for a per-criterion checklist and the row-by-row notes below for exact caveats.
+
+| Phase | Status | Tests | Notes |
+|-------|--------|-------|-------|
+| 1: Local Auth | **Complete** | 84 passing (`passwords`, `tokens`, `config`, `db/database` auth methods) | HS256 JWT (not RS256+rotation), bcrypt cost 12 directly (no passlib) |
+| 2: Admin Reg | **Complete** | Covered by `service` admin methods (incl. bulk import), `routes`, `admin_routes` (15, incl. CSV import) | Full CRUD + disable/enable/unlock/soft-delete + audit log + **bulk CSV import** (`POST /api/admin/users/import`, §7.2.9) + RBAC via `require_role` |
+| 6: Profiles/Sessions | **Complete** | 8 (`user_routes`) + session-cleanup coverage in `test_database_auth` | Profile get/update, password change, list/revoke sessions, admin-side revoke-via-`admin_reset_password`/`admin_disable_user`, **and** a periodic `session_cleanup_loop` (T6.4) that purges rows whose tokens can never be valid again, started from `lifespan` alongside the existing game loop |
+| Bootstrap (§18) | **Complete** | 10 passing (`bootstrap`) + 8 passing (`test_create_admin_script`) | `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` env-driven first-admin creation, run from `lifespan`. **§18.2 CLI script** `python -m server.scripts.create_admin --email ... --display-name ...` also implemented: prompts for a password with no terminal echo (`getpass`, with confirm-match retry), for operators who don't want a real admin password sitting in shell history/.env files. |
+| 3: Email/Password Recovery | **Complete** | 7 passing (`email`) + service/route wiring tests | `server/auth/email.py` adds a real `SmtpEmailSender` (aiosmtplib) plus a `LoggingEmailSender` dev fallback used when `SMTP_SERVER` is unset. Registration (when `AUTH_REQUIRE_EMAIL_VERIFICATION=true`), password-reset-request, and admin-created-user welcome emails all now dispatch through this layer. **`login()` now actually enforces `AUTH_REQUIRE_EMAIL_VERIFICATION`**: previously the setting only controlled whether a verification email was sent at registration, but an unverified user could still log in and use the app regardless — a real gap between the doc's own `EMAIL_NOT_VERIFIED` error code (§7.1.x) and the code, since that error was never actually raised anywhere. Login now raises a 403 `EMAIL_NOT_VERIFIED` for an unverified local account when the setting is on (checked *after* password verification, so it can't be used to enumerate unverified accounts without already knowing a valid password); admin-created and OAuth2-provisioned accounts are unaffected since both already force `email_verified=True` at creation time. Not yet tested against a real SMTP server/inbox (no mail provider credentials in this environment) — verified via mocked `aiosmtplib.send` instead. |
+| 4: Azure Entra ID | **Complete (code-level; validated against a real Postgres, not yet against a live tenant)** | Covered by `oidc` (9), `oauth2` (16 total incl. Azure path + `groups` claim + provider-unavailable), `oauth2_providers` (9, incl. `AZURE_ALLOWED_GROUPS`), `oauth2_routes` (10, incl. group-rejection 403 + provider-unavailable 503) | Full PKCE authorize/callback flow, RS256 id_token signature verification via a live JWKS fetch (`server/auth/oidc.py`), `aud`/`iss`/`exp` claim checks, auto-provisioning + account-linking by email, and **§4.3 `allowed_groups` enforcement**: `AZURE_ALLOWED_GROUPS` (comma-separated) is checked against the id_token's `groups` claim on *every* login (not just first), so removing someone from the group takes effect immediately; a non-member gets a 403 `FORBIDDEN`. A genuinely unreachable provider (token endpoint, JWKS endpoint, or profile endpoint down/timing out) now correctly returns 503 `PROVIDER_UNAVAILABLE` instead of a misleading 401 `INVALID_CREDENTIALS` (fixed this pass — see Deliberate Deviations). `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`/`AZURE_TENANT_ID` env-driven. No real Azure AD tenant was available to test end-to-end, so the JWKS/token-exchange HTTP calls are verified with a locally-generated RSA keypair and a scripted `httpx` transport rather than a live Microsoft login. |
+| 5: Multi-OAuth2 (Cognito/Google/GitHub) | **Complete (code-level; untested against live providers)** | Same test files as Phase 4 (generic framework), plus GitHub-specific profile-fetch tests | Google and Cognito reuse the same OIDC id_token path as Azure (`server/auth/oidc.py`); GitHub uses its REST `/user` + `/user/emails` endpoints instead (no id_token), and a network failure reaching any of those now also maps to 503 `PROVIDER_UNAVAILABLE` rather than a raw unhandled exception. `GOOGLE_CLIENT_ID`/`GITHUB_CLIENT_ID`/`COGNITO_CLIENT_ID`(+`_DOMAIN`/`_REGION`/`_USER_POOL_ID`) env-driven; a provider only appears in `GET /api/auth/providers` once its credentials are set — no separate `enabled` flag to keep in sync. Same caveat as Phase 4: no real provider credentials were available to test against live. |
+| 7: Security Hardening & Rate Limiting | **Core hardening complete; Redis/CSRF/pentest deferred** | – | Done: bcrypt cost 12, dummy-hash timing mitigation on login, account lockout after N failures (now correctly **cleared by a successful password reset**), **password history** (T7.3 — `AUTH_PASSWORD_HISTORY_COUNT`, default 5; rejects reusing the live password or any of the last N-1 retired ones on both `change_password` and `confirm_password_reset`, checked via real bcrypt comparison against stored hashes in a new `password_history` table, not just token/timestamp matching), **password expiration** (§5.1 `PasswordPolicy.expiry_days`, env `AUTH_PASSWORD_EXPIRY_DAYS`, default `None`/disabled; `users.password_changed_at` is now populated at both `create_user` and `set_password` time using the app's own epoch-ms clock — not SQL-side `NOW()` — so it can be compared deterministically against `login()`'s `now_ms`; a login with an expired password sets `requires_password_change=True` as a **soft** flag, matching the existing, already-non-blocking semantics of that same flag elsewhere — it does not hard-block the login itself, the frontend is expected to redirect on seeing it), **T7.5 lockout alert email** (§10.6 "alert on multiple failed logins": the account owner now gets an email the moment their account crosses the failed-attempt threshold and gets locked, via a new `build_account_locked_email` template — sent exactly once per lockout event, not on every subsequent attempt while still locked), in-memory sliding-window rate limits on login/registration/OAuth2 login, generic (non-account-enumerating) error messages, SQL parametrization + column allowlisting, JWT algorithm pinned to HS256, OIDC id_token algorithm pinned to RS256 (rejects `alg=none`/confusion attacks), OAuth2 email-verified-claim check before account linking/auto-provisioning (prevents unverified-email account takeover), OAuth2 `allowed_groups` enforcement (§4.3), bounded request field/query/file-upload lengths on all new auth+OAuth2+admin endpoints, **optional Socket.IO JWT enforcement** (`AUTH_REQUIRE_SOCKET_AUTH`, off by default — see §16 notes below). Deferred: Redis-backed distributed rate limiting (current limiter is in-memory/single-process only), CSRF tokens (not needed yet since the API is bearer-token based, not cookie-session based), broader anomaly/suspicious-pattern detection beyond the lockout-threshold email (§10.6's "new device/location" alerting), full external pentest. |
+| 8: Testing and Documentation | **Testing done for implemented phases, including three real-Postgres validation passes; external docs/pentest not started** | 1582 Python + 746 JS suite passes | No dedicated user-facing docs page or third-party security audit performed. |
+| 19: Frontend UI | **Partial — login/register/OAuth2-callback pages shipped, and the main game now restores/displays login state; not Material Web components; still no admin/profile/session-list UI** | 30 passing (`tests/auth-client.test.js`) | `client/login.html` + `client/js/auth-page.js` (tabs for sign-in/register, dynamic OAuth2 provider buttons from `GET /api/auth/providers`) and `client/auth-callback.html` + `client/js/auth-callback-page.js` (PKCE callback, state-mismatch protection) are real, working pages reusing this app's existing dark Material-3-*token*-based CSS (not the literal `@material/web` custom-element library — see deviations). The pure client logic (form validation, PKCE generation, token storage, all API calls, and now a new `bootstrapSession()` helper) lives in `src/auth-client.js` and is fully unit-tested; the thin DOM-wiring files (`auth-page.js`, `auth-callback-page.js`, `main.js`) are not, matching this repo's existing convention that only `src/*.js` is vitest-covered. **Fixed this pass — main game login-state gap**: `client/js/main.js` now calls `bootstrapSession()` on load to exchange a stored refresh token for an access token + profile; if it succeeds, the global-controls "Sign in" link becomes a "Sign out (name)" control instead, and the access token is attached to the Socket.IO connection's `auth: { token }` option (design doc §16.1) so `AUTH_REQUIRE_SOCKET_AUTH=true` deployments actually work for a real logged-in player, not just anonymous ones. Signing out calls `POST /api/auth/logout`, clears the stored refresh token, and reloads. **Still not done**: profile page, admin dashboard/user table/audit-log viewer, session-list UI, first-login forced password-change page, email-verification-pending page — none of those are reachable from the main game yet, only the sign-in/sign-out toggle. |
+
+**Total new automated tests added for this feature**: 330 (25 passwords + 12 tokens + 10 config + 42 database auth methods + 81 service + 11 dependencies + 23 routes + 15 admin routes + 8 user routes + 10 bootstrap + 8 create_admin_script + 7 email + 9 oidc + 16 oauth2 + 9 oauth2_providers + 10 oauth2_routes + 6 socket auth + 30 frontend auth-client), all passing. Full repository suite: **1582 Python passed / 746 JS passed**, 0 failed.
+
+### Frontend implementation notes (§19)
+- **What exists**: a real login/register page and a real OAuth2 callback page, both fully wired to the backend (register, login, provider discovery, PKCE authorize/callback) and visually verified in a browser. Two real bugs were found and fixed during that visual check:
+  1. A CSS bug where `.auth-divider`/`.auth-providers` set `display: flex` unconditionally, silently overriding the native `[hidden]` attribute so the OAuth2 "or" divider stayed visible even with zero configured providers.
+  2. A logic bug where showing the post-registration success banner *before* switching back to the login tab lost the message, because the tab-switch helper unconditionally clears the banner — fixed by reordering.
+  3. **Security-relevant**: the access token was briefly written to `sessionStorage` after login/OAuth2 callback even though nothing yet reads it back out (the main game has no auth integration), which only added unnecessary XSS exposure for no functional benefit. Removed — only the refresh token is persisted (in `sessionStorage`, never `localStorage`), exactly matching §19.6's documented rationale.
+- **What's deliberately deferred**: the full Material 3 Web Components library (`@material/web`) was **not** added as a dependency; this app already has a hand-built dark theme using the same M3 color/shape/elevation *design tokens* (`--md-*` CSS custom properties in `styles.css`) without the custom-element library itself, so the new pages reuse that existing system for visual consistency rather than introducing a second, parallel component library. Admin dashboard UI (§7.2's user table/audit log), the self-service profile/session-management UI (§7.3), and first-login forced-password-change UI remain unbuilt — those endpoints are complete and tested on the backend but have no frontend yet.
+- **Fixed this pass — main game now restores login state**: `client/js/main.js` calls a new `bootstrapSession()` helper (`src/auth-client.js`, unit-tested) on load, which exchanges a stored refresh token for an access token + `/api/auth/me` profile. On success, the global-controls "Sign in" link becomes a "Sign out (<name>)" control (calls `POST /api/auth/logout`, clears the stored refresh token, reloads), and the access token is attached to the Socket.IO connection's `auth: { token }` option so §16's optional `AUTH_REQUIRE_SOCKET_AUTH` actually has a real token to check for a logged-in player, not just anonymous ones. This is intentionally minimal (a HUD toggle, not a profile/account page) and doesn't gate any room/game actions by role yet — that remains a future increment.
+
+### Real-Postgres validation pass (critical bugs found and fixed)
+All auth persistence tests use hand-rolled `FakePool`/`FakeUserRepo` doubles (see Testing Convention notes throughout this doc's history), which never enforce real asyncpg/Postgres type semantics. As part of this update, the auth schema was applied to the project's actual `docker-compose` Postgres instance and exercised end-to-end (register → login → lockout → password-reset → bulk-import → OAuth2 login), which surfaced two real bugs invisible to the mocked test suite:
+
+1. **Epoch-ms vs. TIMESTAMPTZ type mismatch (critical)**: `AuthService` works entirely in epoch-millisecond floats, but `user_sessions.access/refresh_token_expires_at`, `users.locked_until`, `email_verification_tokens.expires_at`, and `password_reset_tokens.expires_at` are all `TIMESTAMPTZ` columns. asyncpg requires a real `datetime` for a timestamptz parameter and raises `DataError` on a bare float — meaning **every login, registration, password-reset-request, and email-verification-request would have failed against a real database**, despite 200+ passing mocked unit tests. Fixed with an `_epoch_ms_to_datetime()` conversion helper in `server/db/database.py`, applied at every write site.
+2. **Lockout not cleared by password reset**: `confirm_password_reset` changed the password but left `locked_until`/`failed_login_attempts` untouched, so a user who forgot their password and successfully reset it via email still had to wait out the lockout timer. Fixed by calling `unlock_account` inside `confirm_password_reset`, since a completed email-based reset is a stronger identity proof than the mechanism the lockout guards against.
+
+Both fixes are covered by new/updated unit tests, and the full flow (including bulk import and an OAuth2 login writing to `oauth2_identities`' JSONB `profile_data` column) was re-run successfully against the live Postgres container after the fixes.
+
+**Second validation pass** (after adding password history + the CLI bootstrap script): the updated schema (new `password_history` table) was re-applied to the same live container and re-exercised end-to-end — a real password-reuse rejection (bcrypt-comparing the new password against stored historical hashes, not just a format check) and a real CLI-driven admin creation both succeeded against actual Postgres on the first try, with no further type-mismatch surprises.
+
+**Third validation pass** (password expiration): before this feature, `Database.set_password()` was the one remaining write path still using SQL-side `NOW()` for a timestamp instead of the app's own `now_ms` clock, unlike every other timestamp in the auth system. This was fixed in passing (it's now `set_password(user_id, password_hash, now_ms)`, converted via the same `_epoch_ms_to_datetime()` helper as everywhere else) since `login()`'s new expiry check needs to compare its own `now_ms` against `password_changed_at` deterministically — if the latter were set by the database's clock instead, a test (or a real deployment with clock skew between the app host and DB host) couldn't reason about the comparison precisely. An ad-hoc script exercised `create_user` → `set_password` → `get_user_by_id` against the live container to confirm the round-tripped `password_changed_at` value matches the `now_ms` that was sent within a couple of seconds; no mismatch was found, so no further code changes were required (this pass was confirmatory rather than bug-finding, unlike the first two).
+
+### Deliberate deviations from this design doc
+- **JSON casing**: camelCase over the wire (`displayName`, `emailOrUsername`, `newPassword`, `codeVerifier`, ...) instead of the doc's snake_case examples, to match this codebase's existing convention (`server/game/story.py`).
+- **JWT**: HS256 with a single secret, not RS256 + key rotation (§17) — this is a single-process app with no downstream service that independently verifies tokens, so the added complexity isn't justified yet. (Note: OIDC id_tokens *from providers* are still verified as RS256, per each provider's own JWKS — this deviation is only about the tokens this app itself issues.)
+- **Password hashing**: `bcrypt` used directly (cost factor 12), not via `passlib`, due to known passlib/bcrypt compatibility issues.
+- **Rate limiting**: in-memory `SlidingWindowRateLimiter` (already existed in `server/game/rate_limiter.py`), not Redis. Fine for a single-instance deployment; would need to move to Redis before horizontally scaling the server.
+- **OAuth2 provider "enabled" flag**: a provider is considered enabled purely by having its client_id (and, for Azure/Cognito, tenant/domain) env vars set — there is no separate `AUTH_ENABLE_OAUTH2`/per-provider `enabled: true` flag as shown in the doc's YAML example, since supplying real credentials already is the opt-in and avoids a second setting that could drift out of sync.
+- **PKCE state ownership**: `state` and `code_verifier` are generated and stored by the frontend across the redirect (matching §7.1.6/§7.1.7's request shapes); the backend's authorize/callback routes are a stateless relay and keep no server-side copy of either value.
+- **Socket.IO auth (§16)**: implemented as an **opt-in** capability gated by `AUTH_REQUIRE_SOCKET_AUTH` (default `false`), rather than always-on, to avoid breaking the current anonymous play experience. `server.main.authenticate_socket_connection()` validates the JWT passed in the client's `auth: { token }` option and attaches `{user_id, role}` to the Socket.IO session when enabled; when disabled (the default) it is a no-op and the connect handler behaves exactly as before.
+- **CORS**: no `CORSMiddleware` was added to the FastAPI app — the existing `ALLOWED_ORIGINS` config only governs Socket.IO. Since the SPA and API are served from the same FastAPI origin, no CORS headers are required for same-origin requests; a split frontend/backend deployment would need to add `CORSMiddleware` explicitly.
+- **Role vs. `is_admin`**: the `users.role` enum includes `'admin'` and there is a separate `is_admin` boolean column. `require_role("admin")` grants access if *either* is true, so this redundancy doesn't create a privilege-check bypass, but it is worth collapsing into a single source of truth in a later cleanup.
+- **JWT key management (§17.4 rotation)**: not implemented, since only one HS256 secret is used in this deployment model; no `kid`-based key rotation exists for this app's own tokens.
+- **Bulk import row/file-size caps**: `MAX_BULK_IMPORT_ROWS` (1000) and a 2MB upload cap are enforced but not specified in the design doc — defense-in-depth against an oversized synchronous import on an admin-only endpoint.
+- **OAuth2 callback route shape**: the design doc's frontend route map (§19.1) shows `/auth/callback/:provider` as a client-side-router path segment; this app has no client-side router (it's a plain multi-page Vite build), so the default `redirect_uri` instead points at a real static file, `/auth-callback.html?provider={provider}`, with the provider read from the query string. Still overridable per-provider via `AZURE_REDIRECT_URI`/etc. if a deployment wants a different shape.
+- **Password history semantics**: `AUTH_PASSWORD_HISTORY_COUNT` (default 5) counts the *live* password as one of the N — i.e. with the default, a user cycles through 4 distinct retired passwords before a 5th change can reuse the very first one. A history-reuse rejection during `confirm_password_reset` does consume the (single-use) reset token, unlike a plain weak-password-format rejection, which intentionally leaves the token usable for a retry — reusing a password requires DB access to check, so the token must already be consumed to know which user's history to check.
+- **§18.2 CLI script scope**: `python -m server.scripts.create_admin` creates the account with the operator-supplied password directly (`requires_password_change=False`), unlike admin-created users via the HTTP API (`admin_create_user`), which always get a random temporary password and are forced to change it — the CLI operator is assumed to already be choosing a real, considered password interactively.
+- **Bug fixed this pass — `EMAIL_NOT_VERIFIED` never actually enforced**: the doc's own error table (§7.1.x) lists `EMAIL_NOT_VERIFIED` (403), but no code path ever raised it — `AUTH_REQUIRE_EMAIL_VERIFICATION=true` only controlled whether a verification email was *sent* at registration, not whether an unverified account could actually log in and use the app. `AuthService.login()` now raises a new `EmailNotVerifiedError` → 403 `EMAIL_NOT_VERIFIED` for a local account with `email_verified=False` when the setting is on. The check runs *after* password verification (like the existing lockout/disabled-account checks), so it can't be used to enumerate unverified accounts by email address alone. Admin-created accounts and OAuth2-provisioned accounts are both unaffected, since both already set `email_verified=True` unconditionally at creation time.
+- **Bug fixed this pass — `PROVIDER_UNAVAILABLE` never actually enforced**: same class of gap as above, one row down in the same error table. Any network-level failure reaching an OAuth2/OIDC provider (token endpoint, JWKS endpoint, or GitHub's REST profile endpoints) was being folded into the same generic `OAuth2Error` as an actively-rejected/invalid code or token, and reported to the client as 401 `INVALID_CREDENTIALS` — actively misleading, since it implies the *user's* authorization code or token was the problem when the real cause was the provider being transiently unreachable (nothing the user can fix by re-entering credentials). Worse, GitHub's profile-fetch calls had no network-error handling at all, so a connection failure there would have propagated as a raw, unhandled `httpx` exception rather than any typed auth error. Fixed with a new `OAuth2ProviderUnavailableError` (subclass of `OAuth2Error`) and a new `JwksUnavailableError` (subclass of `IdTokenVerificationError`) raised specifically for network/timeout/non-2xx-transport failures at the token, JWKS, and GitHub profile endpoints; `oauth2_routes.py` now maps it to 503 `PROVIDER_UNAVAILABLE` (checked before the generic 401 case, since it's a subclass).
+- **Consistency fix this pass — `now_ms` threading**: `change_password`, `confirm_password_reset`, and `admin_reset_password`'s HTTP route callers were updated to explicitly pass `now_ms=time.time() * 1000`, matching every other route call into `AuthService` (`register`, `login`, `refresh`, `logout`, `request_password_reset`, `request_email_verification` all already did this) — these three had briefly relied on an internal service-layer default instead, introduced in the same pass that added the `password_changed_at`/`set_password(now_ms)` plumbing for password expiration. The optional default is kept on the service methods themselves since several existing unit tests call them without a clock argument.
+
+### Notes on Phase 4/5 testing without live providers
+All OAuth2/OIDC code paths (PKCE URL construction, authorization-code exchange, id_token signature verification, GitHub REST profile fetch, account linking/auto-provisioning, email-verification-claim enforcement) are exercised by tests that build a real RSA keypair and a matching JWKS document locally, and replay scripted `httpx` responses instead of calling a real identity provider. This gives genuine confidence in the *logic* (including negative cases: wrong signing key, expired token, wrong audience/issuer, unknown `kid`, `alg=none` forgery, unverified provider email), but it has **not** been validated against a real Azure AD tenant, Google Cloud OAuth client, GitHub OAuth App, or Cognito user pool (it *has*, however, been validated against a real Postgres database — see above). Before enabling any of these in production, an operator should perform one real end-to-end login against each enabled provider.
 
 ### Metrics to Track
 - **Code Coverage**: Target > 85% for auth module
@@ -1791,64 +1839,70 @@ GITHUB_REDIRECT_URI=https://community.example.com/auth/callback/github
 
 ## 13. Acceptance Criteria
 
+*Checkboxes below reflect actual verified status as of this pass (see §9
+Progress Dashboard for the authoritative, detailed per-phase breakdown and
+caveats — this section is a compact rollup of the same information).*
+
 ### All Phases
-- [ ] All unit tests pass (coverage > 85%)
-- [ ] All integration tests pass
-- [ ] Database migrations run without errors
-- [ ] API documentation complete (OpenAPI/Swagger)
-- [ ] Configuration guide for admins complete
-- [ ] No security vulnerabilities (per OWASP)
-- [ ] Performance benchmarks met (login < 500ms)
+- [x] All unit tests pass (coverage > 85%) — 1582 Python + 746 JS passing; measured `server/auth` coverage is **94%** (`pytest --cov=server.auth`).
+- [x] All integration tests pass — includes `fastapi.testclient.TestClient`-based HTTP wiring tests per router, not just direct function calls.
+- [x] Database migrations run without errors — no formal migration tool (Alembic etc.); `server/db/schema.sql` uses idempotent `CREATE TABLE/INDEX IF NOT EXISTS` and has been re-applied to a real Postgres container multiple times this project with no errors.
+- [ ] API documentation complete (OpenAPI/Swagger) — FastAPI's automatic `/docs` exists by default, but no one has curated descriptions/examples beyond what Pydantic models produce automatically.
+- [ ] Configuration guide for admins complete — env vars are documented inline in this doc (§5.2, §11) but there's no separate standalone admin/deployment guide.
+- [ ] No security vulnerabilities (per OWASP) — no external pentest performed (deliberately deferred, see §8 Phase 8 notes); can't be checked off on self-review alone.
+- [ ] Performance benchmarks met (login < 500ms) — never measured under load.
 
 ### Phase 1
-- [ ] Users can register with email/password
-- [ ] Users can log in with credentials
-- [ ] Access token grants access to protected endpoints
-- [ ] Refresh token works and issues new access token
-- [ ] Users can log out and token is revoked
+- [x] Users can register with email/password
+- [x] Users can log in with credentials
+- [x] Access token grants access to protected endpoints
+- [x] Refresh token works and issues new access token
+- [x] Users can log out and token is revoked
 
 ### Phase 2
-- [ ] Admin can create users
-- [ ] Created users can log in
-- [ ] Created users forced to change password on first login
-- [ ] Admin can list, view, update, delete users
-- [ ] All admin actions logged in audit log
+- [x] Admin can create users
+- [x] Created users can log in
+- [x] Created users forced to change password on first login
+- [x] Admin can list, view, update, delete users
+- [x] All admin actions logged in audit log
 
 ### Phase 3
-- [ ] Email verification works end-to-end
-- [ ] Password reset works end-to-end
-- [ ] Tokens expire correctly
-- [ ] Email templates are professional and clear
+- [x] Email verification works end-to-end — including `login()` now actually rejecting an unverified account with 403 `EMAIL_NOT_VERIFIED` when `AUTH_REQUIRE_EMAIL_VERIFICATION=true` (fixed this pass — previously the setting only gated whether the email was sent, not login itself).
+- [x] Password reset works end-to-end
+- [x] Tokens expire correctly
+- [ ] Email templates are professional and clear — functional plain-text templates only (`server/auth/email.py`); no HTML styling/branding pass has been done.
 
 ### Phase 4
-- [ ] Azure Entra ID login flow works
-- [ ] User is auto-provisioned on first Entra ID login
-- [ ] Profile synced from Entra ID
-- [ ] Logout revokes access
+*Azure code path is complete and unit-tested against a locally-generated RSA keypair + scripted JWKS/httpx transport, but has never been exercised against a real Azure Entra ID tenant — treat the four boxes below as "code-level verified", not "verified live".*
+- [x] Azure Entra ID login flow works
+- [x] User is auto-provisioned on first Entra ID login
+- [x] Profile synced from Entra ID
+- [x] Logout revokes access
 
 ### Phase 5
-- [ ] All OAuth2 providers work independently
-- [ ] Configuration supports multiple providers
-- [ ] Frontend shows available providers
-- [ ] Provider-specific profiles synced correctly
+*Same live-provider caveat as Phase 4 — Google/GitHub/Cognito paths are code-complete and tested against scripted transports, not real provider credentials.*
+- [x] All OAuth2 providers work independently
+- [x] Configuration supports multiple providers
+- [x] Frontend shows available providers
+- [x] Provider-specific profiles synced correctly
 
 ### Phase 6
-- [ ] Users can view and edit their profile
-- [ ] Users can see active sessions
-- [ ] Users can revoke sessions
-- [ ] Users can change password
+- [x] Users can view and edit their profile
+- [x] Users can see active sessions
+- [x] Users can revoke sessions
+- [x] Users can change password
 
 ### Phase 7
-- [ ] Rate limiting blocks after threshold
-- [ ] Failed login lockout works
-- [ ] Password complexity enforced
-- [ ] No CSRF vulnerabilities
+- [x] Rate limiting blocks after threshold
+- [x] Failed login lockout works
+- [x] Password complexity enforced
+- [ ] No CSRF vulnerabilities — N/A rather than failed: this is a bearer-token API with no cookie-based sessions, so classic CSRF doesn't apply to it today (see Deliberate Deviations); this box is left unchecked because that's an architectural non-applicability judgment, not a verified test result, and would need re-examining if cookie-based auth were ever introduced.
 
 ### Phase 8
-- [ ] Full e2e flow works (register → login → room → profile)
-- [ ] All security tests pass
-- [ ] Performance under load acceptable
-- [ ] Documentation complete and reviewed
+- [ ] Full e2e flow works (register → login → room → profile) — a player can now register, log in, see their signed-in state persist and show in the HUD (sign-out control, restored on page reload via a stored refresh token), and join a room — but there's no in-game profile page, and no room/game action is actually gated by the logged-in identity yet (rooms work identically for a logged-in and an anonymous player today). See §19 Frontend implementation notes.
+- [ ] All security tests pass — this repo's own auth test suite passes, but no external/professional security testing has been performed (see the OWASP box above).
+- [ ] Performance under load acceptable — not load-tested.
+- [ ] Documentation complete and reviewed — this design doc is kept up to date, but there's no separate user-facing or API reference documentation.
 
 ---
 

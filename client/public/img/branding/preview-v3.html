@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OmniLaunge — monoline mark, flat colour</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    padding: 2.5rem 2rem 4rem;
+    background: #16111c;
+    color: #eae0e8;
+    font-family: 'Roboto', 'Segoe UI', sans-serif;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+  h3 { font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: #988d9a; margin: 2.5rem 0 1rem; }
+  p.intro { color: #cfc3d1; max-width: 50rem; margin: 0 0 1rem; line-height: 1.55; }
+  .card { border: 1px solid #4b4351; border-radius: 16px; padding: 1.25rem 1.5rem; background: #221d26; margin-bottom: 1.25rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.15rem; color: #f4addb; }
+  .card .desc { font-size: 0.82rem; color: #988d9a; margin: 0 0 1rem; max-width: 46rem; line-height: 1.5; }
+  .surfaces { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; }
+  .surface { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 1.25rem; border-radius: 12px; }
+  .surface span { font-size: 0.65rem; letter-spacing: 0.06em; color: #988d9a; text-transform: uppercase; }
+  .surface.dark { background: #100c15; }
+  .surface.light { background: #fffbff; }
+  .sizes { display: flex; align-items: flex-end; gap: 1rem; padding-left: 0.5rem; }
+  .sizes .cell { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+  .sizes .cell span { font-size: 0.62rem; color: #988d9a; }
+
+  /* The adaptive mark inherits colour from its container, so these two panels
+     demonstrate the same file rendering correctly on either theme. */
+  .theme-dark { background: #16111c; color: #eae0e8; }
+  .theme-light { background: #fffbff; color: #4a1042; }
+  .theme-dark .cap, .theme-light .cap { color: inherit; opacity: 0.55; }
+</style>
+</head>
+<body>
+  <h1>Monoline mark — flat colour, no gradients</h1>
+  <p class="intro">
+    Shape B with every gradient removed. Because it is a single-weight stroke, one solid colour is
+    all it needs. The first option is the one worth taking seriously: it paints with
+    <code>currentColor</code>, so the same file inherits the surrounding text colour and follows the
+    app's light/dark theme automatically — no second asset, no hardcoded hex to keep in sync.
+  </p>
+
+  <h3>Recommended — adaptive (currentColor)</h3>
+  <section class="card">
+    <h2>Adaptive</h2>
+    <p class="desc">
+      One file, no fixed colour: it paints with <code>currentColor</code> and inherits whatever colour
+      the surrounding text has. Note this only works when the SVG is <strong>inlined into the
+      page</strong> (or used as a CSS mask) — an SVG loaded through <code>&lt;img src&gt;</code> is an
+      isolated document and would fall back to black. The two panels below inline it, so they show the
+      real behaviour.
+    </p>
+    <div class="surfaces">
+      <div class="surface theme-dark">
+        <span class="cap">Dark theme</span>
+        <svg viewBox="0 0 380 100" width="236" height="62" role="img" aria-label="OmniLaunge">
+          <g transform="translate(4,14)">
+            <g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/>
+              <rect x="8" y="35" width="56" height="20" rx="10"/>
+              <path d="M17 55 v5"/><path d="M55 55 v5"/>
+            </g>
+            <path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="currentColor"/>
+          </g>
+          <text x="92" y="47" font-family="'Roboto','Segoe UI',sans-serif" font-size="31" font-weight="700" letter-spacing="0.5" fill="currentColor">OmniLaunge</text>
+          <text x="93" y="69" font-family="'Roboto','Segoe UI',sans-serif" font-size="11.5" font-weight="500" letter-spacing="2.4" fill="currentColor" opacity="0.7">BUILD  ·  LEARN  ·  ESCAPE</text>
+        </svg>
+      </div>
+      <div class="surface theme-light">
+        <span class="cap">Light theme</span>
+        <svg viewBox="0 0 380 100" width="236" height="62" role="img" aria-label="OmniLaunge">
+          <g transform="translate(4,14)">
+            <g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/>
+              <rect x="8" y="35" width="56" height="20" rx="10"/>
+              <path d="M17 55 v5"/><path d="M55 55 v5"/>
+            </g>
+            <path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="currentColor"/>
+          </g>
+          <text x="92" y="47" font-family="'Roboto','Segoe UI',sans-serif" font-size="31" font-weight="700" letter-spacing="0.5" fill="currentColor">OmniLaunge</text>
+          <text x="93" y="69" font-family="'Roboto','Segoe UI',sans-serif" font-size="11.5" font-weight="500" letter-spacing="2.4" fill="currentColor" opacity="0.7">BUILD  ·  LEARN  ·  ESCAPE</text>
+        </svg>
+      </div>
+      <div class="sizes theme-dark" style="padding:1rem;border-radius:12px;">
+        <div class="cell">
+          <svg viewBox="0 0 72 72" width="48" height="48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/><rect x="8" y="35" width="56" height="20" rx="10"/><path d="M17 55 v5"/><path d="M55 55 v5"/></g><path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="currentColor"/></svg>
+          <span>48</span>
+        </div>
+        <div class="cell">
+          <svg viewBox="0 0 72 72" width="32" height="32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/><rect x="8" y="35" width="56" height="20" rx="10"/><path d="M17 55 v5"/><path d="M55 55 v5"/></g><path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="currentColor"/></svg>
+          <span>32</span>
+        </div>
+        <div class="cell">
+          <svg viewBox="0 0 72 72" width="16" height="16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/><rect x="8" y="35" width="56" height="20" rx="10"/><path d="M17 55 v5"/><path d="M55 55 v5"/></g><path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="currentColor"/></svg>
+          <span>16</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <h3>Fixed colourways</h3>
+
+  <section class="card">
+    <h2>Pink — brand primary</h2>
+    <p class="desc">The app's <code>--md-primary</code>. The icon carries its own dark tile so it works anywhere; the untiled lockup is the one that goes pale on a white background.</p>
+    <div class="surfaces">
+      <div class="surface dark"><span>Lockup</span><img src="v3-logo-pink.svg" height="62" alt="" /></div>
+      <div class="surface dark"><span>Dark</span><img src="v3-icon-pink.svg" width="72" height="72" alt="" /></div>
+      <div class="surface light"><span>Light</span><img src="v3-icon-pink.svg" width="72" height="72" alt="" /></div>
+      <div class="sizes">
+        <div class="cell"><img src="v3-icon-pink.svg" width="48" height="48" alt="" /><span>48</span></div>
+        <div class="cell"><img src="v3-icon-pink.svg" width="32" height="32" alt="" /><span>32</span></div>
+        <div class="cell"><img src="v3-icon-pink.svg" width="16" height="16" alt="" /><span>16</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Violet</h2>
+    <p class="desc">Slightly deeper than the primary; a little more contrast on light surfaces.</p>
+    <div class="surfaces">
+      <div class="surface dark"><span>Lockup</span><img src="v3-logo-violet.svg" height="62" alt="" /></div>
+      <div class="surface dark"><span>Dark</span><img src="v3-icon-violet.svg" width="72" height="72" alt="" /></div>
+      <div class="surface light"><span>Light</span><img src="v3-icon-violet.svg" width="72" height="72" alt="" /></div>
+      <div class="sizes">
+        <div class="cell"><img src="v3-icon-violet.svg" width="48" height="48" alt="" /><span>48</span></div>
+        <div class="cell"><img src="v3-icon-violet.svg" width="32" height="32" alt="" /><span>32</span></div>
+        <div class="cell"><img src="v3-icon-violet.svg" width="16" height="16" alt="" /><span>16</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Cyan — brand tertiary</h2>
+    <p class="desc">Cooler and calmer; picks up the accent already used for tips and highlights.</p>
+    <div class="surfaces">
+      <div class="surface dark"><span>Lockup</span><img src="v3-logo-cyan.svg" height="62" alt="" /></div>
+      <div class="surface dark"><span>Dark</span><img src="v3-icon-cyan.svg" width="72" height="72" alt="" /></div>
+      <div class="surface light"><span>Light</span><img src="v3-icon-cyan.svg" width="72" height="72" alt="" /></div>
+      <div class="sizes">
+        <div class="cell"><img src="v3-icon-cyan.svg" width="48" height="48" alt="" /><span>48</span></div>
+        <div class="cell"><img src="v3-icon-cyan.svg" width="32" height="32" alt="" /><span>32</span></div>
+        <div class="cell"><img src="v3-icon-cyan.svg" width="16" height="16" alt="" /><span>16</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Ivory — most minimal</h2>
+    <p class="desc">Same near-white as the wordmark, so icon and text read as one object. The quietest option.</p>
+    <div class="surfaces">
+      <div class="surface dark"><span>Lockup</span><img src="v3-logo-ivory.svg" height="62" alt="" /></div>
+      <div class="surface dark"><span>Dark</span><img src="v3-icon-ivory.svg" width="72" height="72" alt="" /></div>
+      <div class="sizes">
+        <div class="cell"><img src="v3-icon-ivory.svg" width="48" height="48" alt="" /><span>48</span></div>
+        <div class="cell"><img src="v3-icon-ivory.svg" width="32" height="32" alt="" /><span>32</span></div>
+        <div class="cell"><img src="v3-icon-ivory.svg" width="16" height="16" alt="" /><span>16</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Plum — for light surfaces</h2>
+    <p class="desc">The light theme's <code>--md-primary</code>. Use this one on white/print where the pale tints wash out.</p>
+    <div class="surfaces">
+      <div class="surface light"><span>Lockup on light</span><img src="v3-logo-plum.svg" height="62" alt="" /></div>
+      <div class="surface light"><span>Light</span><img src="v3-icon-plum.svg" width="72" height="72" alt="" /></div>
+      <div class="sizes" style="background:#fffbff;padding:1rem;border-radius:12px;">
+        <div class="cell"><img src="v3-icon-plum.svg" width="48" height="48" alt="" /><span>48</span></div>
+        <div class="cell"><img src="v3-icon-plum.svg" width="32" height="32" alt="" /><span>32</span></div>
+        <div class="cell"><img src="v3-icon-plum.svg" width="16" height="16" alt="" /><span>16</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Duo — two flat colours</h2>
+    <p class="desc">Pink sofa, cyan sparkle. Still completely flat, just two solid colours instead of a blend.</p>
+    <div class="surfaces">
+      <div class="surface dark"><span>Lockup</span><img src="v3-logo-duo.svg" height="62" alt="" /></div>
+      <div class="surface dark"><span>Dark</span><img src="v3-icon-duo.svg" width="72" height="72" alt="" /></div>
+      <div class="surface light"><span>Light</span><img src="v3-icon-duo.svg" width="72" height="72" alt="" /></div>
+      <div class="sizes">
+        <div class="cell"><img src="v3-icon-duo.svg" width="48" height="48" alt="" /><span>48</span></div>
+        <div class="cell"><img src="v3-icon-duo.svg" width="32" height="32" alt="" /><span>32</span></div>
+        <div class="cell"><img src="v3-icon-duo.svg" width="16" height="16" alt="" /><span>16</span></div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

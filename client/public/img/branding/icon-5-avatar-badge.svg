@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72" role="img" aria-labelledby="i5title">
+  <title id="i5title">OmniLaunge icon 5: Avatar Spark Badge</title>
+  <defs>
+    <linearGradient id="oi5-ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="1" stop-color="#7fd4ec"/>
+    </linearGradient>
+    <linearGradient id="oi5-face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#38313c"/>
+      <stop offset="1" stop-color="#221d26"/>
+    </linearGradient>
+  </defs>
+  <rect width="72" height="72" rx="16" fill="#16111c"/>
+  <g transform="translate(4,3)">
+    <circle cx="34" cy="34" r="32" fill="url(#oi5-face)" stroke="url(#oi5-ring)" stroke-width="4"/>
+    <circle cx="34" cy="26" r="11" fill="#e3bdee"/>
+    <path d="M14 54 a20 16 0 0 1 40 0 Z" fill="#e3bdee"/>
+    <path d="M56 4 L59 11 L66 14 L59 17 L56 24 L53 17 L46 14 L53 11 Z" fill="#ffd9f3"/>
+  </g>
+</svg>

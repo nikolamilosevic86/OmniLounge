@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 100" width="360" height="100" role="img" aria-labelledby="l5title">
+  <title id="l5title">OmniLaunge logo concept 5: Avatar Spark Badge</title>
+  <defs>
+    <linearGradient id="og5-ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="1" stop-color="#7fd4ec"/>
+    </linearGradient>
+    <linearGradient id="og5-face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#38313c"/>
+      <stop offset="1" stop-color="#221d26"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: a circular badge holding a simple rounded avatar silhouette,
+       topped by the sparkle already used across the app's UI — the most
+       literal "it's you, in the lounge" mark of the five. -->
+  <g transform="translate(6,6)">
+    <circle cx="34" cy="34" r="32" fill="url(#og5-face)" stroke="url(#og5-ring)" stroke-width="4"/>
+    <circle cx="34" cy="26" r="11" fill="#e3bdee"/>
+    <path d="M14 54 a20 16 0 0 1 40 0 Z" fill="#e3bdee"/>
+    <path d="M56 4 L59 11 L66 14 L59 17 L56 24 L53 17 L46 14 L53 11 Z" fill="#ffd9f3"/>
+  </g>
+
+  <text x="98" y="48" font-family="'Roboto','Segoe UI',sans-serif" font-size="30" font-weight="700" letter-spacing="1" fill="#eae0e8">OmniLaunge</text>
+  <text x="98" y="70" font-family="'Roboto','Segoe UI',sans-serif" font-size="13" letter-spacing="3" fill="#cfc3d1">YOUR AVATAR, EVERYWHERE</text>
+</svg>

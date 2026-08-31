@@ -175,3 +175,136 @@ CREATE INDEX IF NOT EXISTS idx_story_nodes_room_character ON story_nodes(room_id
 CREATE INDEX IF NOT EXISTS idx_room_versions_room ON room_versions(room_id, version_number DESC);
 CREATE INDEX IF NOT EXISTS idx_room_publish_room_active ON room_publish_snapshots(room_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_reading_progress_user ON reading_progress(user_id);
+
+-- ── Authentication (feature_designs/authentication_registration_feature_design.md) ──
+-- IDs are app-generated VARCHAR(36) uuid4 strings rather than native UUID
+-- columns with gen_random_uuid(), matching every other table in this schema
+-- (rooms.id, messages.id, etc.) and avoiding a dependency on the pgcrypto
+-- extension being enabled on the target Postgres instance.
+
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(36) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(100) UNIQUE,
+    display_name VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),
+
+    entra_id_sub VARCHAR(255) UNIQUE,
+    oauth2_sub VARCHAR(255),
+    oauth2_provider VARCHAR(50),
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    is_moderator BOOLEAN NOT NULL DEFAULT FALSE,
+    role VARCHAR(50) NOT NULL DEFAULT 'learner',
+
+    bio TEXT,
+    avatar_customization JSONB,
+    preferred_topics TEXT[],
+
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    email_verified_at TIMESTAMPTZ,
+
+    password_changed_at TIMESTAMPTZ,
+    requires_password_change BOOLEAN NOT NULL DEFAULT FALSE,
+    last_login_at TIMESTAMPTZ,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by VARCHAR(36) REFERENCES users(id),
+    deleted_at TIMESTAMPTZ,
+
+    CONSTRAINT chk_users_role CHECK (role IN ('learner', 'educator', 'moderator', 'admin'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_entra_id_sub ON users(entra_id_sub) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    access_token_hash VARCHAR(64) NOT NULL UNIQUE,
+    refresh_token_hash VARCHAR(64) UNIQUE,
+    access_token_expires_at TIMESTAMPTZ NOT NULL,
+    refresh_token_expires_at TIMESTAMPTZ,
+
+    device_name VARCHAR(255),
+    user_agent VARCHAR(500),
+    ip_address VARCHAR(45),
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    revoked_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_activity_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_refresh_token_hash ON user_sessions(refresh_token_hash);
+
+CREATE TABLE IF NOT EXISTS oauth2_identities (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    provider_user_id VARCHAR(255) NOT NULL,
+    profile_data JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_synced_at TIMESTAMPTZ,
+    CONSTRAINT uq_oauth2_identities UNIQUE (provider, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth2_identities_user_id ON oauth2_identities(user_id);
+
+-- design doc Phase 7 T7.3: "password history (don't allow recent passwords)".
+CREATE TABLE IF NOT EXISTS password_history (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_history_user_id ON password_history(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_verification_tokens_user_id ON email_verification_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS auth_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    event_type VARCHAR(100) NOT NULL,
+    event_status VARCHAR(50) NOT NULL,
+    event_message TEXT,
+    ip_address VARCHAR(45),
+    user_agent VARCHAR(500),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT chk_auth_audit_log_status CHECK (event_status IN ('success', 'failure'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON auth_audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON auth_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON auth_audit_log(created_at DESC);
+

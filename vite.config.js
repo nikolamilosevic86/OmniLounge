@@ -24,6 +24,8 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL('./client/index.html', import.meta.url)),
         help: fileURLToPath(new URL('./client/help.html', import.meta.url)),
+        login: fileURLToPath(new URL('./client/login.html', import.meta.url)),
+        authCallback: fileURLToPath(new URL('./client/auth-callback.html', import.meta.url)),
       },
     },
   },

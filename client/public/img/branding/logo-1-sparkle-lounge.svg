@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 100" width="360" height="100" role="img" aria-labelledby="l1title">
+  <title id="l1title">OmniLaunge logo concept 1: Sparkle Lounge</title>
+  <defs>
+    <linearGradient id="og1-body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="1" stop-color="#7fd4ec"/>
+    </linearGradient>
+    <linearGradient id="og1-spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd9f3"/>
+      <stop offset="1" stop-color="#e3bdee"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: a lounge sofa silhouette, rendered as two soft rounded forms
+       (backrest + seat/armrests) so it reads at a glance even at favicon
+       size, topped with the app's existing "sparkle" accent. -->
+  <g transform="translate(6,14)">
+    <rect x="4" y="4" width="64" height="30" rx="15" fill="url(#og1-body)"/>
+    <rect x="0" y="30" width="72" height="30" rx="14" fill="url(#og1-body)"/>
+    <rect x="0" y="30" width="16" height="30" rx="8" fill="#7a2d68" opacity="0.35"/>
+    <rect x="56" y="30" width="16" height="30" rx="8" fill="#7a2d68" opacity="0.35"/>
+    <path d="M50 2 L54 12 L64 16 L54 20 L50 30 L46 20 L36 16 L46 12 Z" fill="url(#og1-spark)"/>
+  </g>
+
+  <text x="98" y="48" font-family="'Roboto','Segoe UI',sans-serif" font-size="30" font-weight="700" letter-spacing="1" fill="#eae0e8">OmniLaunge</text>
+  <text x="98" y="70" font-family="'Roboto','Segoe UI',sans-serif" font-size="13" letter-spacing="3" fill="#cfc3d1">SOCIAL LOUNGE</text>
+</svg>

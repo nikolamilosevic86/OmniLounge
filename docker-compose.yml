@@ -25,6 +25,16 @@ services:
     environment:
       DATABASE_URL: postgresql://omnilaunge:omnilaunge@postgres:5432/omnilaunge
       PORT: "8000"
+      # Dev-only value so `docker compose up` works out of the box locally.
+      # Any real deployment MUST override this with its own secret, e.g.
+      # `python -c "import secrets; print(secrets.token_urlsafe(48))"` --
+      # anyone who can read this file can otherwise forge valid login tokens.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-jwt-secret-do-not-use-in-production-1234567890}
+      AUTH_ENABLE_LOCAL_REGISTRATION: ${AUTH_ENABLE_LOCAL_REGISTRATION:-true}
+      # Off by default: the real-time game stays fully anonymous unless a
+      # deployment explicitly opts into requiring a valid JWT on every
+      # Socket.IO connection (design doc §16).
+      AUTH_REQUIRE_SOCKET_AUTH: ${AUTH_REQUIRE_SOCKET_AUTH:-false}
     depends_on:
       postgres:
         condition: service_healthy

@@ -16,6 +16,17 @@ from pydantic import ValidationError
 
 from server.config import ALLOWED_ORIGINS, MOVE_SPEED, PORT, TICK_RATE
 from server.db.database import Database
+from server.auth import admin_routes as auth_admin_routes
+from server.auth import dependencies as auth_dependencies
+from server.auth import oauth2_routes as auth_oauth2_routes
+from server.auth import routes as auth_routes
+from server.auth import user_routes as auth_user_routes
+from server.auth.bootstrap import bootstrap_initial_admin
+from server.auth.config import auth_config
+from server.auth.email import LoggingEmailSender, SmtpEmailSender
+from server.auth.errors import AuthHTTPError, auth_http_error_handler
+from server.auth.oauth2_providers import load_configured_providers
+from server.auth.service import AuthService, SessionRevokedError
 from server.game.avatar import validate_avatar
 from server.game.chat import create_message, filter_messages_for_user
 from server.game.combat import (
@@ -26,6 +37,7 @@ from server.game.ai_bot import AIBot, BOT_ID, BOT_AVATAR
 from server.game.moderation import contains_external_link
 from server.game.movement import LOBBY_ROOM_ID, move_by_direction, move_toward
 from server.game.metrics import MetricsCollector
+from server.game.rate_limiter import SlidingWindowRateLimiter
 from server.game.room import Room
 from server.game.rooms_registry import RoomsRegistry
 from server.game.seed_rooms import seed_showcase_rooms
@@ -60,6 +72,7 @@ rooms   = RoomsRegistry()
 ai_bot  = AIBot()
 metrics = MetricsCollector()
 _game_loop_task: asyncio.Task | None = None
+_session_cleanup_task: asyncio.Task | None = None
 
 # Wrap sio.on() registration so every "@sio.on(...)" handler below is timed and
 # its success/failure recorded in `metrics`, without needing to touch each
@@ -364,6 +377,22 @@ async def handle_fired_trigger(room_id: str, fired: dict) -> None:
     )
 
 
+SESSION_CLEANUP_INTERVAL_SECONDS = 30 * 60
+
+
+async def session_cleanup_loop() -> None:
+    """Periodically purges auth sessions whose tokens can no longer ever be
+    valid again (design doc Phase 6 T6.4) -- otherwise user_sessions grows
+    without bound. Expired-but-unvisited tokens are already rejected at
+    request time via JWT `exp`, so this is housekeeping, not a security gate."""
+    while True:
+        await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+        try:
+            await db.delete_expired_sessions(time.time() * 1000)
+        except Exception:
+            logging.getLogger(__name__).exception("session cleanup pass failed")
+
+
 async def game_loop() -> None:
     interval  = 1.0 / TICK_RATE
     last_time = time.time()
@@ -442,8 +471,29 @@ async def game_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _game_loop_task
+    global _game_loop_task, _session_cleanup_task
     await db.connect()
+    if auth_config.email.is_configured:
+        email_sender = SmtpEmailSender(
+            host=auth_config.email.smtp_host, port=auth_config.email.smtp_port,
+            username=auth_config.email.smtp_username, password=auth_config.email.smtp_password,
+            use_tls=auth_config.email.smtp_use_tls, from_address=auth_config.email.from_address,
+        )
+    else:
+        email_sender = LoggingEmailSender()
+    auth_service = AuthService(
+        repo=db,
+        config=auth_config,
+        registration_rate_limiter=SlidingWindowRateLimiter(max_requests=5, window_ms=60 * 60 * 1000),
+        login_rate_limiter=SlidingWindowRateLimiter(max_requests=10, window_ms=15 * 60 * 1000),
+        email_sender=email_sender,
+    )
+    auth_dependencies.set_auth_service(auth_service)
+    await bootstrap_initial_admin(db, auth_config)
+    oauth2_providers = load_configured_providers(base_url=auth_config.email.app_base_url)
+    auth_dependencies.set_oauth2_providers(oauth2_providers)
+    oauth2_http_client = httpx.AsyncClient(timeout=10.0)
+    auth_dependencies.set_oauth2_http_client(oauth2_http_client)
     # Rooms are in-memory only, so the two showcase rooms are rebuilt on
     # every boot. Without them a fresh server offers nothing but an empty
     # Lobby, and none of the builder features are discoverable.
@@ -454,6 +504,7 @@ async def lifespan(app: FastAPI):
     bot = lobby.add_player(BOT_ID, BOT_AVATAR)
     bot['position'] = {'x': 620.0, 'y': 400.0}
     _game_loop_task = asyncio.create_task(game_loop())
+    _session_cleanup_task = asyncio.create_task(session_cleanup_loop())
     yield
     if _game_loop_task:
         _game_loop_task.cancel()
@@ -461,10 +512,22 @@ async def lifespan(app: FastAPI):
             await _game_loop_task
         except asyncio.CancelledError:
             pass
+    if _session_cleanup_task:
+        _session_cleanup_task.cancel()
+        try:
+            await _session_cleanup_task
+        except asyncio.CancelledError:
+            pass
+    await oauth2_http_client.aclose()
     await db.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_exception_handler(AuthHTTPError, auth_http_error_handler)
+app.include_router(auth_routes.router)
+app.include_router(auth_admin_routes.router)
+app.include_router(auth_user_routes.router)
+app.include_router(auth_oauth2_routes.router)
 
 
 @app.get("/metrics")
@@ -490,8 +553,30 @@ if DIST_DIR.exists():
         return FileResponse(DIST_DIR / "index.html")
 
 
+async def authenticate_socket_connection(auth: dict | None) -> dict | None:
+    """Returns the resolved user when socket auth is required and the token
+    is valid; returns None (nothing to attach) when socket auth is disabled
+    -- the default, so the existing anonymous game is unaffected. Raises
+    ConnectionRefusedError (per python-socketio's connect-rejection
+    contract) on a missing or invalid token."""
+    if not auth_config.require_socket_auth:
+        return None
+    token = (auth or {}).get("token")
+    if not token:
+        raise ConnectionRefusedError("TOKEN_MISSING")
+    try:
+        return await auth_dependencies.get_auth_service().get_current_user(
+            access_token=token, now_ms=time.time() * 1000,
+        )
+    except SessionRevokedError as exc:
+        raise ConnectionRefusedError("TOKEN_INVALID") from exc
+
+
 @sio.event
-async def connect(sid, environ):
+async def connect(sid, environ, auth=None):
+    user = await authenticate_socket_connection(auth)
+    if user is not None:
+        await sio.save_session(sid, {"user_id": user["id"], "role": user["role"]})
     await sio.enter_room(sid, sid)
 
 

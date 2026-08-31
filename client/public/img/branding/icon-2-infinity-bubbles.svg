@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72" role="img" aria-labelledby="i2title">
+  <title id="i2title">OmniLaunge icon 2: Infinity Bubbles</title>
+  <defs>
+    <linearGradient id="oi2-a" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="1" stop-color="#e3bdee"/>
+    </linearGradient>
+    <linearGradient id="oi2-b" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fd4ec"/>
+      <stop offset="1" stop-color="#e3bdee"/>
+    </linearGradient>
+  </defs>
+  <rect width="72" height="72" rx="16" fill="#16111c"/>
+  <g transform="translate(6,18)">
+    <path d="M20 0 a19 15 0 1 0 0.01 0 Z M11 26 L2 37 L16 30 Z" fill="url(#oi2-a)"/>
+    <path d="M40 12 a19 15 0 1 0 0.01 0 Z M49 38 L58 49 L44 42 Z" fill="url(#oi2-b)"/>
+    <circle cx="30" cy="13" r="4" fill="#ffd9f3"/>
+  </g>
+</svg>

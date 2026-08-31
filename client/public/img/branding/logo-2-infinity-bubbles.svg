@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 100" width="360" height="100" role="img" aria-labelledby="l2title">
+  <title id="l2title">OmniLaunge logo concept 2: Infinity Bubbles</title>
+  <defs>
+    <linearGradient id="og2-a" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="1" stop-color="#e3bdee"/>
+    </linearGradient>
+    <linearGradient id="og2-b" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fd4ec"/>
+      <stop offset="1" stop-color="#e3bdee"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: two overlapping speech bubbles forming an infinity-like loop —
+       "Omni" (everywhere) and chat/social both in one mark. -->
+  <g transform="translate(4,16)">
+    <path d="M22 0 a22 18 0 1 0 0.01 0 Z M12 30 L2 42 L18 34 Z" fill="url(#og2-a)"/>
+    <path d="M54 14 a22 18 0 1 0 0.01 0 Z M64 44 L74 56 L58 48 Z" fill="url(#og2-b)"/>
+    <circle cx="38" cy="15" r="4.5" fill="#ffd9f3"/>
+  </g>
+
+  <text x="98" y="48" font-family="'Roboto','Segoe UI',sans-serif" font-size="30" font-weight="700" letter-spacing="1" fill="#eae0e8">OmniLaunge</text>
+  <text x="98" y="70" font-family="'Roboto','Segoe UI',sans-serif" font-size="13" letter-spacing="3" fill="#cfc3d1">EVERYONE, EVERY ROOM</text>
+</svg>

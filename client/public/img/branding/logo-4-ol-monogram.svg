@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 100" width="360" height="100" role="img" aria-labelledby="l4title">
+  <title id="l4title">OmniLaunge logo concept 4: OL Monogram</title>
+  <defs>
+    <linearGradient id="og4-stroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="0.5" stop-color="#e3bdee"/>
+      <stop offset="1" stop-color="#7fd4ec"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: a single continuous line-art monogram combining "O" and "L" —
+       reads clearly even shrunk to a 16px favicon, where the other, more
+       detailed concepts would turn to mush. -->
+  <g transform="translate(6,6)" fill="none" stroke="url(#og4-stroke)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="34" cy="34" r="27"/>
+    <path d="M34 34 L34 58 L54 58"/>
+  </g>
+  <circle cx="61" cy="11" r="5" fill="#ffd9f3"/>
+
+  <text x="98" y="48" font-family="'Roboto','Segoe UI',sans-serif" font-size="30" font-weight="700" letter-spacing="1" fill="#eae0e8">OmniLaunge</text>
+  <text x="98" y="70" font-family="'Roboto','Segoe UI',sans-serif" font-size="13" letter-spacing="3" fill="#cfc3d1">O + L, ONE MARK</text>
+</svg>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#16111c" />
+  <title>Sign in · OmniLaunge</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/auth.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="auth-screen" class="screen active">
+      <div class="stars"></div>
+      <div class="creator-container" style="max-width: 420px;">
+        <header class="creator-header">
+          <div class="logo-badge">
+            <svg class="logo-mark" viewBox="0 0 72 72" aria-hidden="true" focusable="false">
+              <g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/>
+                <rect x="8" y="35" width="56" height="20" rx="10"/>
+                <path d="M17 55 v5"/><path d="M55 55 v5"/>
+              </g>
+              <path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="currentColor"/>
+            </svg>
+            OMNILAUNGE
+          </div>
+          <h1 id="auth-title" style="font-size: 2rem;">Welcome back</h1>
+          <p class="subtitle">Sign in to save your progress and manage your rooms.</p>
+        </header>
+
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab active" id="login-tab-btn">Sign in</button>
+          <button type="button" class="auth-tab" id="register-tab-btn" hidden>Register</button>
+        </div>
+
+        <div id="auth-banner" class="auth-banner" role="alert"></div>
+
+        <div id="oauth2-providers" class="auth-providers" hidden></div>
+        <div id="oauth2-divider" class="auth-divider" hidden>or</div>
+
+        <form id="login-form" class="auth-form">
+          <div class="auth-field">
+            <input type="text" id="login-email-input" class="username-input" placeholder="Email or username" autocomplete="username" />
+            <span class="auth-field-error" id="login-email-error"></span>
+          </div>
+          <div class="auth-field">
+            <input type="password" id="login-password-input" class="username-input" placeholder="Password" autocomplete="current-password" />
+            <span class="auth-field-error" id="login-password-error"></span>
+          </div>
+          <button type="submit" class="enter-btn" id="login-submit-btn">Sign in</button>
+        </form>
+
+        <form id="register-form" class="auth-form" hidden>
+          <div class="auth-field">
+            <input type="text" id="register-name-input" class="username-input" placeholder="Display name" autocomplete="name" maxlength="255" />
+            <span class="auth-field-error" id="register-name-error"></span>
+          </div>
+          <div class="auth-field">
+            <input type="email" id="register-email-input" class="username-input" placeholder="Email" autocomplete="email" />
+            <span class="auth-field-error" id="register-email-error"></span>
+          </div>
+          <div class="auth-field">
+            <input type="password" id="register-password-input" class="username-input" placeholder="Password (min. 8 characters)" autocomplete="new-password" />
+            <span class="auth-field-error" id="register-password-error"></span>
+          </div>
+          <button type="submit" class="enter-btn" id="register-submit-btn">Create account</button>
+        </form>
+
+        <p class="auth-footer-link" id="registration-toggle" hidden>
+          Don't have an account? <button type="button" id="show-register-btn">Register</button>
+        </p>
+        <p class="auth-footer-link" id="login-toggle" hidden>
+          Already have an account? <button type="button" id="show-login-btn">Sign in</button>
+        </p>
+        <p class="auth-footer-link">
+          <a href="/">Continue as a guest instead</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/auth-page.js"></script>
+</body>
+</html>

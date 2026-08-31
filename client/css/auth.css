@@ -1,0 +1,138 @@
+/* Auth screen (login/register) — reuses the design tokens and shared
+   .creator-container/.username-input/.enter-btn classes from styles.css so
+   this page matches the rest of the app without duplicating its theme. */
+
+.auth-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.75rem 0;
+  background: none;
+  border: none;
+  color: var(--md-on-surface-variant);
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color var(--md-duration-short) var(--md-easing-standard),
+    border-color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.auth-tab.active {
+  color: var(--md-primary);
+  border-bottom-color: var(--md-primary);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-form[hidden] {
+  display: none;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-field-error {
+  color: var(--md-error);
+  font-size: 0.8rem;
+  min-height: 1em;
+}
+
+.auth-banner {
+  border-radius: var(--md-shape-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  display: none;
+}
+
+.auth-banner.visible {
+  display: block;
+}
+
+.auth-banner.error {
+  background: var(--md-error-container);
+  color: var(--md-on-error-container);
+}
+
+.auth-banner.success {
+  background: var(--md-success-container);
+  color: var(--md-on-success-container);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--md-on-surface-variant);
+  font-size: 0.8rem;
+  margin: 0.5rem 0;
+}
+
+.auth-divider[hidden] {
+  display: none;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--md-outline-variant);
+}
+
+.auth-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.auth-providers[hidden] {
+  display: none;
+}
+
+.auth-provider-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--md-shape-full);
+  border: 1px solid var(--md-outline);
+  background: transparent;
+  color: var(--md-on-surface);
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background var(--md-duration-short) var(--md-easing-standard);
+}
+
+.auth-provider-btn:hover {
+  background: var(--md-surface-container-highest);
+}
+
+.auth-footer-link {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--md-on-surface-variant);
+}
+
+.auth-footer-link a,
+.auth-footer-link button {
+  color: var(--md-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}

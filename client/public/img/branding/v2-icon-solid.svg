@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72" role="img" aria-label="OmniLaunge icon">
+  <defs><linearGradient id="g-solid" x1="0" y1="0" x2="1" y2="1"><stop offset="0.00" stop-color="#FFB0DE"/><stop offset="0.50" stop-color="#C48BF0"/><stop offset="1.00" stop-color="#7FD4EC"/></linearGradient></defs>
+  <rect width="72" height="72" rx="16" fill="#16111c"/>
+    <rect x="11" y="15" width="50" height="23" rx="11.5" fill="url(#g-solid)" opacity="0.72"/>
+    <rect x="5" y="31" width="62" height="25" rx="12" fill="url(#g-solid)"/>
+    <path d="M62 5 Q64.1 9.9 69 12 Q64.1 14.1 62 19 Q59.9 14.1 55 12 Q59.9 9.9 62 5 Z" fill="#FFE3F6"/>
+</svg>

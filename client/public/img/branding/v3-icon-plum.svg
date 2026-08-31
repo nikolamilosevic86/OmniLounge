@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72" role="img" aria-label="OmniLaunge icon">
+  
+    <g fill="none" stroke="#8B4B82" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 36 V26 a10 10 0 0 1 10 -10 h22 a10 10 0 0 1 10 10 v10"/>
+      <rect x="8" y="35" width="56" height="20" rx="10"/>
+      <path d="M17 55 v5"/>
+      <path d="M55 55 v5"/>
+    </g>
+    <path d="M62 4.5 Q63.95 9.05 68.5 11 Q63.95 12.95 62 17.5 Q60.05 12.95 55.5 11 Q60.05 9.05 62 4.5 Z" fill="#8B4B82"/>
+</svg>

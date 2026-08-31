@@ -43,6 +43,7 @@ import {
   formatGlobalLeaderboardEntry, puzzleTemplateFormValues, formatPuzzleAnalytics, puzzleDifficultySignal,
   validatePuzzleInput, puzzleTemplateCardOptions, puzzlePropCardOptions,
 } from './escape-room.js';
+import { bootstrapSession, createRefreshTokenStore, logoutUser } from '../../src/auth-client.js';
 
 const BUBBLE_DURATION = 6000;
 const HOST_TOKENS_STORAGE_KEY = 'hobboverse-host-tokens';
@@ -73,6 +74,7 @@ function getHostToken(roomId) {
 }
 
 const state = {
+  auth: null, // { accessToken, user } once bootstrapSession() resolves, else null
   avatar: {
     username: '',
     skinColor: AVATAR_OPTIONS.skinColors[0],
@@ -178,6 +180,7 @@ const state = {
 const creatorScreen = document.getElementById('creator-screen');
 const gameScreen = document.getElementById('game-screen');
 const themeToggleBtn = document.getElementById('theme-toggle');
+const loginLink = document.getElementById('login-link');
 const avatarPreview = document.getElementById('avatar-preview');
 const usernameInput = document.getElementById('username-input');
 const enterRoomBtn = document.getElementById('enter-room-btn');
@@ -2293,7 +2296,13 @@ function setChatMode(mode) {
 }
 
 function connectSocket() {
-  state.socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+  // `auth.token` is only enforced server-side when AUTH_REQUIRE_SOCKET_AUTH
+  // is set (design doc §16.1); omitting it here for an anonymous/logged-out
+  // player is a no-op against the default (disabled) config.
+  state.socket = io(window.location.origin, {
+    transports: ['websocket', 'polling'],
+    auth: state.auth?.accessToken ? { token: state.auth.accessToken } : {},
+  });
 
   state.socket.on('connect', () => {
     state.playerId = state.socket.id;
@@ -4859,3 +4868,39 @@ function initTheme() {
 
 initTheme();
 initCreator();
+initAuthSession();
+
+// Restores a session from a stored refresh token (design doc §19's
+// "no in-app account UI yet" gap): shows the signed-in player's name on
+// the global-controls cluster instead of the generic "Sign in" link, and
+// makes the access token available to connectSocket() for §16's optional
+// Socket.IO auth. Runs after initCreator() kicks off the render, and does
+// not block it -- an anonymous visitor sees the normal creator screen
+// immediately regardless of how long this takes.
+async function initAuthSession() {
+  if (!loginLink) return;
+  const refreshTokenStore = createRefreshTokenStore();
+  const session = await bootstrapSession(fetch, refreshTokenStore);
+  if (!session) return;
+
+  state.auth = session;
+  const icon = loginLink.querySelector('.material-symbols-outlined');
+  if (icon) icon.textContent = 'logout';
+  loginLink.removeAttribute('href');
+  loginLink.setAttribute('role', 'button');
+  loginLink.title = `Sign out (${session.user.display_name})`;
+  loginLink.setAttribute('aria-label', `Sign out of ${session.user.display_name}'s account`);
+  loginLink.addEventListener('click', async (event) => {
+    event.preventDefault();
+    try {
+      await logoutUser(fetch, state.auth?.accessToken);
+    } catch {
+      // Best-effort: the local session is cleared either way below, so a
+      // player is never stuck "logged in" in the UI just because the
+      // logout request itself failed (e.g. the access token had already
+      // expired by the time they clicked).
+    }
+    refreshTokenStore.clear();
+    window.location.reload();
+  });
+}

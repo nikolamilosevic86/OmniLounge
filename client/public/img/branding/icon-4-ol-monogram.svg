@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72" role="img" aria-labelledby="i4title">
+  <title id="i4title">OmniLaunge icon 4: OL Monogram</title>
+  <defs>
+    <linearGradient id="oi4-stroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4addb"/>
+      <stop offset="0.5" stop-color="#e3bdee"/>
+      <stop offset="1" stop-color="#7fd4ec"/>
+    </linearGradient>
+  </defs>
+  <rect width="72" height="72" rx="16" fill="#16111c"/>
+  <g transform="translate(4,3)" fill="none" stroke="url(#oi4-stroke)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="34" cy="34" r="27"/>
+    <path d="M34 34 L34 58 L54 58"/>
+  </g>
+  <circle cx="59" cy="10" r="5" fill="#ffd9f3"/>
+</svg>
