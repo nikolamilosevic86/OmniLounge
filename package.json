@@ -10,10 +10,10 @@
     "test:watch": "vitest",
     "dev": "concurrently \"npm run dev:db\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:db": "docker compose up -d",
-    "dev:server": "python3 -m server.main",
+    "dev:server": "python3 -m server.main || python -m server.main",
     "dev:client": "vite",
     "build": "vite build",
-    "start": "python3 -m server.main"
+    "start": "python3 -m server.main || python -m server.main"
   },
   "dependencies": {
     "socket.io-client": "^4.8.0"

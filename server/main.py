@@ -9,10 +9,19 @@ from typing import Any
 import httpx
 import socketio
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+
+# Loads repo-root .env (see .env.example) into the process environment
+# before any server.* module reads its own config from os.getenv --
+# override=False so real environment variables (e.g. set by docker-compose
+# or a hosting platform) always win over whatever a local .env contains.
+# A missing .env file is not an error; it's the expected case in
+# production, where real env vars are set some other way.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 from server.config import ALLOWED_ORIGINS, MOVE_SPEED, PORT, TICK_RATE
 from server.db.database import Database

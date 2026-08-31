@@ -29,7 +29,7 @@ Because rooms, objects, and AI characters are all authorable rather than hardcod
 ## Tech Stack
 
 - Frontend: Vite, vanilla JavaScript, SVG avatar renderer, Socket.IO client
-- UI Design System: [Material Design 3 (Material Web Components)](https://m3.material.io/develop/web) — all UI screens (login, registration, admin panel, profile) follow Material 3 component guidelines and use the official `@material/web` package
+- UI Design System: hand-built dark theme using [Material Design 3](https://m3.material.io) color/shape/elevation design tokens (`--md-*` CSS custom properties), not the `@material/web` custom-element library — see the auth design doc's "Deliberate deviations" section for why.
 - Backend: Python, FastAPI, python-socketio
 - Database: PostgreSQL (Docker Compose)
 - Testing: Vitest (JS), pytest (Python)
@@ -49,29 +49,56 @@ client/                 Frontend app (Vite root)
 	css/
 	js/
 server/                 FastAPI + Socket.IO backend
+	auth/
 	db/
 	game/
 src/                    Shared JS domain logic (tested in Vitest)
 tests/                  JS tests
 tests_python/           Python tests
+scripts/                Standalone dev-tooling scripts (e.g. .env generation)
 docker-compose.yml      Local PostgreSQL + backend services
 requirements.txt        Python dependencies
 package.json            Node scripts and dependencies
+.env.example            Template for every environment variable the server reads (commit-safe)
+run.sh / run.bat        Single-command local dev bootstrap (macOS/Linux / Windows)
 ```
+
+## Quick Start (single command)
+
+```bash
+# macOS / Linux
+./run.sh
+```
+
+```bat
+REM Windows
+run.bat
+```
+
+Either script will, in order:
+1. Generate `.env` from `.env.example` if one doesn't exist yet (with a random dev JWT secret and local registration enabled, so you can register/log in immediately without any manual editing).
+2. Install Node dependencies (`npm install`) if `node_modules` is missing.
+3. Install Python dependencies (`pip install -r requirements.txt`).
+4. Start the database, backend, and frontend together (same as `npm run dev` below).
+
+Requires Docker Desktop (or another Docker engine) to already be running -- the script starts the Postgres *container*, not Docker itself.
 
 ## Prerequisites
 
 - Node.js 18+
 - Python 3.11+
-- Docker + Docker Compose
+- Docker + Docker Compose (daemon must be running)
 
-## Setup
+## Setup (manual, if you'd rather not use run.sh/run.bat)
 
 ```bash
-# 1) Install Node dependencies
+# 1) Copy the environment template and fill in real values (see Configuration below)
+cp .env.example .env
+
+# 2) Install Node dependencies
 npm install
 
-# 2) Install Python dependencies
+# 3) Install Python dependencies
 pip install -r requirements.txt
 ```
 
@@ -132,6 +159,24 @@ npm run build
 # Run backend app
 npm start
 ```
+
+## Configuration
+
+There is no static "config file" for authentication or the rest of the server to hand-edit — everything is read from environment variables at startup (see `server/config.py` and `server/auth/config.py`).
+
+```bash
+# 1) Copy the template and fill in real values (run.sh/run.bat do this for you automatically)
+cp .env.example .env
+
+# 2) Generate a real JWT secret (required -- the server refuses to start without one)
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+`server/main.py` loads `.env` automatically on startup (via `python-dotenv`); a real environment variable (e.g. one set by `docker-compose.yml` or a hosting platform) always takes priority over whatever `.env` contains. `.env` is gitignored — never commit it. `.env.example` documents every variable, grouped by feature (database, auth/JWT, password policy, rate limiting, email, initial admin bootstrap, OAuth2/SSO providers), and is safe to commit since it contains no real secrets.
+
+**Requiring an account for everyone (disabling guest/anonymous play)**: by default (`AUTH_ALLOW_GUEST_ACCESS=true`), anyone can create an avatar and join a room without ever registering — this is the app's original design. Set `AUTH_ALLOW_GUEST_ACCESS=false` to require a real account: the "Continue as a guest" link is hidden on the login page, and an anonymous visitor hitting the main game is redirected to the login page instead of seeing the creator screen. This is a client-side UX gate, not the actual security boundary — combine it with `AUTH_REQUIRE_SOCKET_AUTH=true` (see §16 of the auth design doc) if you also need the *backend* to reject unauthenticated real-time game connections outright.
+
+See [feature_designs/authentication_registration_feature_design.md](feature_designs/authentication_registration_feature_design.md) §0 for a summary of what authentication functionality is implemented vs. still outstanding.
 
 ## Environment Notes
 

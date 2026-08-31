@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.git/
+.DS_Store
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.venv/
+venv/
+.env
+tests/
+tests_python/
+docs/
+feature_designs/

@@ -43,7 +43,7 @@ import {
   formatGlobalLeaderboardEntry, puzzleTemplateFormValues, formatPuzzleAnalytics, puzzleDifficultySignal,
   validatePuzzleInput, puzzleTemplateCardOptions, puzzlePropCardOptions,
 } from './escape-room.js';
-import { bootstrapSession, createRefreshTokenStore, logoutUser } from '../../src/auth-client.js';
+import { bootstrapSession, createRefreshTokenStore, fetchProviders, logoutUser } from '../../src/auth-client.js';
 
 const BUBBLE_DURATION = 6000;
 const HOST_TOKENS_STORAGE_KEY = 'hobboverse-host-tokens';
@@ -4874,33 +4874,48 @@ initAuthSession();
 // "no in-app account UI yet" gap): shows the signed-in player's name on
 // the global-controls cluster instead of the generic "Sign in" link, and
 // makes the access token available to connectSocket() for §16's optional
-// Socket.IO auth. Runs after initCreator() kicks off the render, and does
-// not block it -- an anonymous visitor sees the normal creator screen
-// immediately regardless of how long this takes.
+// Socket.IO auth. Also enforces AUTH_ALLOW_GUEST_ACCESS=false by sending an
+// anonymous visitor to the login page instead of leaving them on the
+// creator screen. Runs after initCreator() kicks off the render, and does
+// not block it -- when guest access is allowed (the default), an
+// anonymous visitor sees the normal creator screen immediately regardless
+// of how long this takes; only a guest-disabled deployment redirects, and
+// only once this resolves (a real access boundary still lives server-side
+// -- see AUTH_REQUIRE_SOCKET_AUTH -- this is just the UI following suit).
 async function initAuthSession() {
-  if (!loginLink) return;
   const refreshTokenStore = createRefreshTokenStore();
-  const session = await bootstrapSession(fetch, refreshTokenStore);
-  if (!session) return;
+  const [session, providers] = await Promise.all([
+    bootstrapSession(fetch, refreshTokenStore),
+    fetchProviders(fetch).catch(() => ({ allow_guest_access: true })),
+  ]);
 
-  state.auth = session;
-  const icon = loginLink.querySelector('.material-symbols-outlined');
-  if (icon) icon.textContent = 'logout';
-  loginLink.removeAttribute('href');
-  loginLink.setAttribute('role', 'button');
-  loginLink.title = `Sign out (${session.user.display_name})`;
-  loginLink.setAttribute('aria-label', `Sign out of ${session.user.display_name}'s account`);
-  loginLink.addEventListener('click', async (event) => {
-    event.preventDefault();
-    try {
-      await logoutUser(fetch, state.auth?.accessToken);
-    } catch {
-      // Best-effort: the local session is cleared either way below, so a
-      // player is never stuck "logged in" in the UI just because the
-      // logout request itself failed (e.g. the access token had already
-      // expired by the time they clicked).
-    }
-    refreshTokenStore.clear();
-    window.location.reload();
-  });
+  if (session) {
+    state.auth = session;
+    if (!loginLink) return;
+    const icon = loginLink.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = 'logout';
+    loginLink.removeAttribute('href');
+    loginLink.setAttribute('role', 'button');
+    loginLink.title = `Sign out (${session.user.display_name})`;
+    loginLink.setAttribute('aria-label', `Sign out of ${session.user.display_name}'s account`);
+    loginLink.addEventListener('click', async (event) => {
+      event.preventDefault();
+      try {
+        await logoutUser(fetch, state.auth?.accessToken);
+      } catch {
+        // Best-effort: the local session is cleared either way below, so a
+        // player is never stuck "logged in" in the UI just because the
+        // logout request itself failed (e.g. the access token had already
+        // expired by the time they clicked).
+      }
+      refreshTokenStore.clear();
+      window.location.reload();
+    });
+    return;
+  }
+
+  if (providers.allow_guest_access === false) {
+    const redirectTarget = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login.html?redirect=${redirectTarget}`;
+  }
 }

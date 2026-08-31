@@ -27,6 +27,7 @@ const showRegisterBtn = document.getElementById('show-register-btn');
 const showLoginBtn = document.getElementById('show-login-btn');
 const oauth2ProvidersEl = document.getElementById('oauth2-providers');
 const oauth2DividerEl = document.getElementById('oauth2-divider');
+const guestLinkEl = document.getElementById('guest-link');
 
 function showBanner(message, kind = 'error') {
   authBanner.textContent = message;
@@ -134,6 +135,12 @@ async function initProviders() {
       registrationToggle.hidden = false;
       loginToggle.hidden = false;
     }
+    // Defaults to allowed if the field is somehow missing, matching the
+    // backend's own AUTH_ALLOW_GUEST_ACCESS default (fail open to the
+    // existing anonymous-play experience, not fail closed).
+    if (providers.allow_guest_access !== false && guestLinkEl) {
+      guestLinkEl.hidden = false;
+    }
     if (providers.oauth2_providers?.length) {
       oauth2DividerEl.hidden = false;
       oauth2ProvidersEl.hidden = false;
@@ -153,7 +160,11 @@ async function initProviders() {
     }
   } catch {
     // The login form still works without provider metadata; failing quietly
-    // here just means the registration tab/OAuth2 buttons stay hidden.
+    // here just means the registration tab/OAuth2 buttons stay hidden. The
+    // guest link fails *open* instead (shown), matching the backend's own
+    // AUTH_ALLOW_GUEST_ACCESS default -- a metadata fetch hiccup should
+    // never be the reason a normally-anonymous game becomes unreachable.
+    if (guestLinkEl) guestLinkEl.hidden = false;
   }
 }
 

@@ -29,6 +29,7 @@ def make_service(**overrides) -> AuthService:
         jwt_secret_key=SECRET,
         enable_local_registration=overrides.get("enable_local_registration", True),
         require_email_verification=overrides.get("require_email_verification", False),
+        allow_guest_access=overrides.get("allow_guest_access", True),
         password_policy=PasswordPolicy(min_length=8),
         session_config=SessionConfig(access_token_expire_minutes=30, refresh_token_expire_days=7),
     )
@@ -131,6 +132,12 @@ class TestMeAndProvidersEndpoints:
         result = await routes.get_providers(service=service, oauth2_providers={})
         assert result["local_login_enabled"] is True
         assert result["oauth2_providers"] == []
+        assert result["allow_guest_access"] is True
+
+    async def test_providers_reports_guest_access_disabled(self):
+        service = make_service(allow_guest_access=False)
+        result = await routes.get_providers(service=service, oauth2_providers={})
+        assert result["allow_guest_access"] is False
 
     async def test_providers_reports_configured_oauth2_providers(self):
         from server.auth.oauth2 import OAuth2ProviderSettings

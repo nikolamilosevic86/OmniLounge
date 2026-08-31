@@ -186,6 +186,7 @@ async def get_providers(
     return {
         "local_registration_enabled": config.enable_local_registration,
         "local_login_enabled": config.enable_local_login,
+        "allow_guest_access": config.allow_guest_access,
         "oauth2_providers": [
             {
                 "name": provider.name, "label": provider.label,

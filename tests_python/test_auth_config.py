@@ -12,6 +12,7 @@ ENV_VARS = [
     "AUTH_ADMIN_ONLY_REGISTRATION",
     "AUTH_REQUIRE_EMAIL_VERIFICATION",
     "AUTH_REQUIRE_SOCKET_AUTH",
+    "AUTH_ALLOW_GUEST_ACCESS",
     "AUTH_PASSWORD_MIN_LENGTH",
     "AUTH_PASSWORD_REQUIRE_UPPERCASE",
     "AUTH_PASSWORD_REQUIRE_SPECIAL",
@@ -59,6 +60,7 @@ class TestDefaults:
             assert cfg.admin_only_registration is False
             assert cfg.require_email_verification is False
             assert cfg.require_socket_auth is False
+            assert cfg.allow_guest_access is True
             assert cfg.password_policy.min_length == 8
             assert cfg.password_policy.require_uppercase is True
             assert cfg.password_policy.history_count == 5
@@ -152,6 +154,14 @@ class TestEnvOverrides:
             monkeypatch.undo()
             importlib.reload(auth_config_module)
 
+    def test_guest_access_can_be_disabled_via_env_var(self, monkeypatch):
+        reloaded = reload_with(monkeypatch, JWT_SECRET_KEY="g" * 32, AUTH_ALLOW_GUEST_ACCESS="false")
+        try:
+            assert reloaded.auth_config.allow_guest_access is False
+        finally:
+            monkeypatch.undo()
+            importlib.reload(auth_config_module)
+
     def test_password_history_count_is_configurable(self, monkeypatch):
         reloaded = reload_with(monkeypatch, JWT_SECRET_KEY="d" * 32, AUTH_PASSWORD_HISTORY_COUNT="3")
         try:
@@ -164,6 +174,21 @@ class TestEnvOverrides:
         reloaded = reload_with(monkeypatch, JWT_SECRET_KEY="e" * 32, AUTH_PASSWORD_EXPIRY_DAYS="90")
         try:
             assert reloaded.auth_config.password_policy.expiry_days == 90
+        finally:
+            monkeypatch.undo()
+            importlib.reload(auth_config_module)
+
+    def test_blank_optional_env_vars_are_treated_as_unset(self, monkeypatch):
+        """A .env file conventionally lists an unused key as `KEY=` (blank),
+        not omitted entirely -- must not crash, and must behave exactly
+        like the var being absent."""
+        reloaded = reload_with(
+            monkeypatch, JWT_SECRET_KEY="f" * 32,
+            AUTH_PASSWORD_EXPIRY_DAYS="", AUTH_PASSWORD_HISTORY_COUNT="",
+        )
+        try:
+            assert reloaded.auth_config.password_policy.expiry_days is None
+            assert reloaded.auth_config.password_policy.history_count == 5
         finally:
             monkeypatch.undo()
             importlib.reload(auth_config_module)

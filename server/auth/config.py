@@ -22,12 +22,19 @@ def _bool_env(name: str, default: bool) -> bool:
 
 def _int_env(name: str, default: int) -> int:
     raw = os.getenv(name)
-    return int(raw) if raw is not None else default
+    if raw is None or raw.strip() == "":
+        return default
+    return int(raw)
 
 
 def _optional_int_env(name: str) -> int | None:
     raw = os.getenv(name)
-    return int(raw) if raw is not None else None
+    # A blank string (not just an unset var) must also mean "disabled" --
+    # that's how a .env file conventionally represents "no value set" for
+    # a key that's still listed for discoverability (see .env.example).
+    if raw is None or raw.strip() == "":
+        return None
+    return int(raw)
 
 
 @dataclass
@@ -81,6 +88,13 @@ class AuthConfig:
     # anonymous. Flipping this on requires every Socket.IO client to also
     # send a valid access token at connect time -- opt-in only.
     require_socket_auth: bool = False
+    # On by default, matching this app's original anonymous-play design: an
+    # unauthenticated visitor can create an avatar and join a room without
+    # ever registering/logging in. Set to False to require a real account
+    # for anyone to use the app at all ("Continue as a guest" is hidden on
+    # the login page, and the main game redirects an anonymous visitor to
+    # the login page instead of showing the creator screen).
+    allow_guest_access: bool = True
 
     password_policy: PasswordPolicy = field(default_factory=PasswordPolicy)
     session_config: SessionConfig = field(default_factory=SessionConfig)
@@ -120,6 +134,7 @@ def _load_auth_config() -> AuthConfig:
         admin_only_registration=_bool_env("AUTH_ADMIN_ONLY_REGISTRATION", False),
         require_email_verification=_bool_env("AUTH_REQUIRE_EMAIL_VERIFICATION", False),
         require_socket_auth=_bool_env("AUTH_REQUIRE_SOCKET_AUTH", False),
+        allow_guest_access=_bool_env("AUTH_ALLOW_GUEST_ACCESS", True),
         password_policy=PasswordPolicy(
             min_length=_int_env("AUTH_PASSWORD_MIN_LENGTH", 8),
             require_uppercase=_bool_env("AUTH_PASSWORD_REQUIRE_UPPERCASE", True),

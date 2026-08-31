@@ -25,7 +25,7 @@ The third path is for quality and operations work. Read [07-testing-operations-a
 
 ## Scope Note
 
-These docs describe the currently implemented OmniLaunge runtime and also clarify boundaries between implemented behavior and roadmap design artifacts. For future educational world-builder expansion plans, see [feature_designs/educational_rooms_feature_design.md](../feature_designs/educational_rooms_feature_design.md).
+These docs describe the currently implemented OmniLaunge runtime and also clarify boundaries between implemented behavior and roadmap design artifacts. For future educational world-builder expansion plans, see [feature_designs/educational_rooms_feature_design.md](../feature_designs/educational_rooms_feature_design.md). For user authentication/registration (local accounts, admin-only mode, Azure Entra ID / OAuth2 SSO, security hardening) — implemented but tracked separately from this numbered series — see [feature_designs/authentication_registration_feature_design.md](../feature_designs/authentication_registration_feature_design.md), starting with its §0 "Implementation Status At A Glance".
 
 Current implementation status has advanced beyond a single fixed lobby. Basic multi-room foundation now exists in the backend with create/list/join events, server-side join guards (room full and invite-code checks), and room list filtering by topic, access, and activity/newest sorting. The client now includes a room chooser overlay with create/join flows and filter controls.
 
